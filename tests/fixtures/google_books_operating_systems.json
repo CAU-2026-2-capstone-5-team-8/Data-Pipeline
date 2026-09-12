@@ -1,0 +1,41 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 3,
+  "items": [
+    {
+      "id": "volume-os-1",
+      "selfLink": "https://www.googleapis.com/books/v1/volumes/volume-os-1",
+      "volumeInfo": {
+        "title": "Operating Systems: A Test",
+        "authors": ["Ada Example"],
+        "publisher": "Fixture Press",
+        "publishedDate": "2024-02-01",
+        "description": "A deterministic fixture description.",
+        "industryIdentifiers": [
+          {"type": "ISBN_10", "identifier": "0-123456-47-X"},
+          {"type": "ISBN_13", "identifier": "978-0-123456-47-2"}
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "volume-os-duplicate",
+      "volumeInfo": {
+        "title": "Operating Systems: A Test",
+        "authors": ["Ada Example"],
+        "industryIdentifiers": [
+          {"type": "ISBN_13", "identifier": "9780123456472"}
+        ],
+        "language": "en"
+      }
+    },
+    {
+      "id": "volume-os-fr",
+      "volumeInfo": {
+        "title": "Systemes d'exploitation",
+        "authors": ["Jean Exemple"],
+        "language": "fr"
+      }
+    }
+  ]
+}

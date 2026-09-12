@@ -1,0 +1,76 @@
+"""Open Library Search API metadata collector."""
+
+from typing import Any
+
+import httpx
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+from data_pipeline.collectors.google_books import is_transient_http_error
+
+API_URL = "https://openlibrary.org/search.json"
+TOPIC_TITLES = {
+    "operating-systems": "operating systems",
+    "linear-algebra": "linear algebra",
+}
+FIELDS = ",".join(
+    [
+        "key",
+        "title",
+        "author_name",
+        "first_publish_year",
+        "language",
+        "editions",
+        "editions.key",
+        "editions.title",
+        "editions.subtitle",
+        "editions.isbn",
+        "editions.publisher",
+        "editions.publish_date",
+        "editions.language",
+    ]
+)
+
+
+class OpenLibraryCollector:
+    def __init__(self, client: httpx.Client | None = None) -> None:
+        self._owns_client = client is None
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(20.0),
+            headers={"User-Agent": "cau-capstone-data-pipeline/0.1 (metadata research)"},
+        )
+
+    def close(self) -> None:
+        if self._owns_client:
+            self.client.close()
+
+    def __enter__(self) -> "OpenLibraryCollector":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
+    def search_books(self, topic: str, candidate_limit: int = 20) -> dict[str, Any]:
+        try:
+            title = TOPIC_TITLES[topic]
+        except KeyError as exc:
+            raise ValueError(f"unsupported topic: {topic}") from exc
+        response = self.client.get(
+            API_URL,
+            params={
+                "title": title,
+                "language": "eng",
+                "fields": FIELDS,
+                "limit": min(candidate_limit, 100),
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Open Library returned a non-object response")
+        return payload
