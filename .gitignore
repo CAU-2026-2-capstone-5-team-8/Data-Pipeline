@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+
+# Provider responses and generated canonical datasets are reproducible artifacts.
+data/raw/
+data/processed/

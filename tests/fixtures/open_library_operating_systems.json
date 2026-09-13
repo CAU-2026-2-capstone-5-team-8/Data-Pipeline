@@ -1,0 +1,49 @@
+{
+  "numFound": 3,
+  "docs": [
+    {
+      "key": "/works/OL1854541W",
+      "title": "Operating System Concepts",
+      "author_name": ["Abraham Silberschatz"],
+      "first_publish_year": 1988,
+      "language": ["eng", "und"],
+      "editions": {
+        "docs": [
+          {
+            "key": "/books/OL21152589M",
+            "title": "Operating System Concepts",
+            "isbn": ["0471694665", "9780471694663"],
+            "publisher": ["J. Wiley & Sons"],
+            "publish_date": ["2005"],
+            "language": ["eng"]
+          }
+        ]
+      }
+    },
+    {
+      "key": "/works/OL1970688W",
+      "title": "Modern Operating Systems",
+      "author_name": ["Andrew S. Tanenbaum", "Herbert Bos"],
+      "first_publish_year": 1992,
+      "language": ["eng", "spa"],
+      "editions": {
+        "docs": [
+          {
+            "key": "/books/OL25763599M",
+            "title": "Modern Operating Systems",
+            "isbn": ["013359162X", "9780133591620"],
+            "publisher": ["Pearson"],
+            "publish_date": ["2014"],
+            "language": ["eng"]
+          }
+        ]
+      }
+    },
+    {
+      "key": "/works/OL-NON-ENGLISH",
+      "title": "Systemes",
+      "author_name": ["Example"],
+      "language": ["fre"]
+    }
+  ]
+}
