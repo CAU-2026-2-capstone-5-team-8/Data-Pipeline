@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
-from data_pipeline.identifiers import normalize_bibliographic_text
+from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json
 from data_pipeline.normalizers import (
     normalize_google_books_response,
     normalize_isbn,
@@ -175,9 +175,11 @@ def test_open_library_normalizes_descriptions_and_hierarchical_toc() -> None:
         "Edition description",
         "A different work description",
     ]
-    assert len(dataset.sources) == 2
-    assert dataset.sources[1].url == "https://openlibrary.org/works/OL1W"
-    assert dataset.documents[1].source_id == dataset.sources[1].source_id
+    assert len(dataset.sources) == 3
+    assert dataset.sources[1].url == "https://openlibrary.org/books/OL1M.json"
+    assert dataset.sources[1].content_hash == sha256_json(payload["edition_details"]["/books/OL1M"])
+    assert dataset.sources[2].url == "https://openlibrary.org/works/OL1W.json"
+    assert dataset.documents[1].source_id == dataset.sources[2].source_id
     assert [entry.level for entry in dataset.toc] == [1, 2, 1]
     assert [entry.order_index for entry in dataset.toc] == [0, 0, 1]
     assert dataset.toc[1].parent_entry_id == dataset.toc[0].toc_entry_id
@@ -214,7 +216,7 @@ def test_open_library_deduplicates_identical_edition_and_work_descriptions() -> 
     )
 
     assert len(dataset.documents) == 1
-    assert len(dataset.sources) == 1
+    assert len(dataset.sources) == 2
 
 
 def test_open_library_rejects_work_description_for_a_different_edition() -> None:
@@ -249,6 +251,46 @@ def test_open_library_rejects_work_description_for_a_different_edition() -> None
 
     assert dataset.documents == []
     assert len(dataset.sources) == 1
+
+
+def test_malformed_toc_item_does_not_change_valid_base_level(caplog) -> None:
+    payload = {
+        "search_response": {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Linear Algebra",
+                    "author_name": ["Example Author"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "/books/OL1M",
+                                "title": "Linear Algebra",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "edition_details": {
+            "/books/OL1M": {
+                "table_of_contents": [
+                    {"level": 0, "title": ""},
+                    {"level": 1, "label": "1", "title": "Valid Root"},
+                ]
+            }
+        },
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="linear-algebra", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert len(dataset.toc) == 1
+    assert dataset.toc[0].level == 1
+    assert dataset.toc[0].parent_entry_id is None
+    assert "raw_index=0 reason=invalid_title_or_level" in caplog.text
 
 
 def test_open_library_edition_statement_enriches_incomplete_work_authors() -> None:

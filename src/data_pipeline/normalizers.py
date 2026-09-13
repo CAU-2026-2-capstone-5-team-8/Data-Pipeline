@@ -290,37 +290,15 @@ def _normalize_open_library_toc(value: Any, book_id: str, source_id: str) -> lis
         )
         return []
 
-    raw_levels = [
-        item.get("level")
-        for item in value
-        if isinstance(item, dict)
-        and isinstance(item.get("level"), int)
-        and not isinstance(item.get("level"), bool)
-    ]
-    if not raw_levels:
-        return []
-    base_level = min(raw_levels)
-    latest_by_level: dict[int, str] = {}
-    sibling_counts: dict[str | None, int] = {}
-    entries: list[TocEntry] = []
-
+    valid_items: list[tuple[int, dict[str, Any]]] = []
     for raw_index, item in enumerate(value):
-        if not isinstance(item, dict):
-            logger.warning(
-                "event=toc_entry_skipped provider=open_library book_id=%s "
-                "raw_index=%d reason=not_an_object",
-                book_id,
-                raw_index,
-            )
-            continue
-        title = item.get("title")
-        raw_level = item.get("level")
+        title = item.get("title") if isinstance(item, dict) else None
+        raw_level = item.get("level") if isinstance(item, dict) else None
         if (
             not isinstance(title, str)
             or not title.strip()
             or not isinstance(raw_level, int)
             or isinstance(raw_level, bool)
-            or raw_level < base_level
         ):
             logger.warning(
                 "event=toc_entry_skipped provider=open_library book_id=%s "
@@ -329,6 +307,18 @@ def _normalize_open_library_toc(value: Any, book_id: str, source_id: str) -> lis
                 raw_index,
             )
             continue
+        valid_items.append((raw_index, item))
+
+    if not valid_items:
+        return []
+    base_level = min(item["level"] for _, item in valid_items)
+    latest_by_level: dict[int, str] = {}
+    sibling_counts: dict[str | None, int] = {}
+    entries: list[TocEntry] = []
+
+    for raw_index, item in valid_items:
+        title = item["title"]
+        raw_level = item["level"]
 
         level = raw_level - base_level + 1
         parent_entry_id = latest_by_level.get(level - 1) if level > 1 else None
@@ -460,10 +450,31 @@ def _normalize_open_library_record(
     description_hashes: set[str] = set()
 
     edition_description = _open_library_text(edition_detail.get("description"))
+    edition_source_id = stable_id(
+        "source", "open_library_edition", external_id, book_id, retrieved_at.isoformat()
+    )
+    toc = _normalize_open_library_toc(
+        edition_detail.get("table_of_contents"), book_id, edition_source_id
+    )
     if edition_description is not None:
-        document = _open_library_description(edition_description, book_id, source_id)
+        document = _open_library_description(edition_description, book_id, edition_source_id)
         documents.append(document)
         description_hashes.add(document.content_hash)
+    if edition_description is not None or toc:
+        sources.append(
+            Source(
+                source_id=edition_source_id,
+                book_id=book_id,
+                provider="open_library",
+                source_type="metadata_api",
+                url=f"https://openlibrary.org{external_id}.json",
+                external_id=external_id,
+                retrieved_at=retrieved_at,
+                license=None,
+                rights_note=None,
+                content_hash=sha256_json(edition_detail),
+            )
+        )
 
     work_description = _open_library_text(work_detail.get("description"))
     selected_editions = _edition_numbers(edition_detail.get("edition_name"))
@@ -491,7 +502,7 @@ def _normalize_open_library_record(
             book_id=book_id,
             provider="open_library",
             source_type="metadata_api",
-            url=f"https://openlibrary.org{work_id}",
+            url=f"https://openlibrary.org{work_id}.json",
             external_id=work_id,
             retrieved_at=retrieved_at,
             license=None,
@@ -501,7 +512,6 @@ def _normalize_open_library_record(
         sources.append(work_source)
         documents.append(_open_library_description(work_description, book_id, work_source_id))
 
-    toc = _normalize_open_library_toc(edition_detail.get("table_of_contents"), book_id, source_id)
     return book, sources, documents, toc
 
 
