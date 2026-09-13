@@ -5,12 +5,14 @@ from pathlib import Path
 import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
-from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json
+from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json, sha256_text
 from data_pipeline.normalizers import (
     normalize_google_books_response,
     normalize_isbn,
     normalize_open_library_response,
+    normalize_publisher_page_response,
 )
+from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.validation import validate_dataset
 
 FIXTURE = Path(__file__).parent / "fixtures" / "google_books_operating_systems.json"
@@ -251,6 +253,58 @@ def test_open_library_rejects_work_description_for_a_different_edition() -> None
 
     assert dataset.documents == []
     assert len(dataset.sources) == 1
+
+
+def test_wiley_page_normalizes_exact_edition_toc() -> None:
+    source = publisher_source("wiley-osc7")
+    toc_html = """
+    <div class="chapterTitle"><h3>Chapter 1: Introduction</h3></div>
+    <div class="chapterTitle"><h3>Chapter 2: Operating-System Structures</h3></div>
+    <div class="chapterTitle"><h3>Appendix A: UNIX BSD</h3></div>
+    """
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": (
+            '<p>Operating System Concepts, Seventh Edition</p><a href="?itemId=0471694665">Book</a>'
+        ),
+        "toc_url": source.toc_url,
+        "toc_html": toc_html,
+    }
+
+    dataset = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books == []
+    assert dataset.documents == []
+    assert [entry.label for entry in dataset.toc] == ["1", "2", "A"]
+    assert [entry.title for entry in dataset.toc] == [
+        "Introduction",
+        "Operating-System Structures",
+        "UNIX BSD",
+    ]
+    assert [entry.order_index for entry in dataset.toc] == [0, 1, 2]
+    assert all(entry.level == 1 for entry in dataset.toc)
+    assert dataset.sources[0].book_id == source.book_id
+    assert dataset.sources[0].source_type == "publisher_page"
+    assert dataset.sources[0].content_hash == sha256_text(toc_html)
+
+
+def test_wiley_page_rejects_wrong_edition() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": "Operating System Concepts, Eighth Edition 0471694665",
+        "toc_url": source.toc_url,
+        "toc_html": '<div class="chapterTitle"><h3>Chapter 1: Introduction</h3></div>',
+    }
+
+    with pytest.raises(InvalidProviderResponse, match="expected edition"):
+        normalize_publisher_page_response(
+            payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+        )
 
 
 def test_malformed_toc_item_does_not_change_valid_base_level(caplog) -> None:
