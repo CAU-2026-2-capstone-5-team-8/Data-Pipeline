@@ -11,6 +11,7 @@ from data_pipeline.normalizers import (
     normalize_isbn,
     normalize_open_library_response,
 )
+from data_pipeline.validation import validate_dataset
 
 FIXTURE = Path(__file__).parent / "fixtures" / "google_books_operating_systems.json"
 OPEN_LIBRARY_FIXTURE = Path(__file__).parent / "fixtures" / "open_library_operating_systems.json"
@@ -126,6 +127,94 @@ def test_open_library_response_is_normalized_deterministically() -> None:
     assert dataset.sources[0].url == "https://openlibrary.org/books/OL21152589M"
     assert dataset.sources[0].provider == "open_library"
     assert dataset.documents == []
+
+
+def test_open_library_normalizes_descriptions_and_hierarchical_toc() -> None:
+    payload = {
+        "search_response": {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Linear Algebra",
+                    "author_name": ["Example Author"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "/books/OL1M",
+                                "title": "Linear Algebra",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "edition_details": {
+            "/books/OL1M": {
+                "description": {"type": "/type/text", "value": "Edition description"},
+                "table_of_contents": [
+                    {"level": 0, "label": "1", "title": "Vectors"},
+                    {"level": 1, "label": "1.1", "title": "Vector Spaces"},
+                    {"level": 0, "label": "2", "title": "Matrices"},
+                ],
+            }
+        },
+        "work_details": {
+            "/works/OL1W": {
+                "key": "/works/OL1W",
+                "description": "A different work description",
+            }
+        },
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="linear-algebra", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert [document.text for document in dataset.documents] == [
+        "Edition description",
+        "A different work description",
+    ]
+    assert len(dataset.sources) == 2
+    assert dataset.sources[1].url == "https://openlibrary.org/works/OL1W"
+    assert dataset.documents[1].source_id == dataset.sources[1].source_id
+    assert [entry.level for entry in dataset.toc] == [1, 2, 1]
+    assert [entry.order_index for entry in dataset.toc] == [0, 0, 1]
+    assert dataset.toc[1].parent_entry_id == dataset.toc[0].toc_entry_id
+    assert dataset.toc[2].parent_entry_id is None
+    assert validate_dataset(dataset) == []
+
+
+def test_open_library_deduplicates_identical_edition_and_work_descriptions() -> None:
+    payload = {
+        "search_response": {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Operating Systems",
+                    "author_name": ["Example Author"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "/books/OL1M",
+                                "title": "Operating Systems",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "edition_details": {"/books/OL1M": {"description": "Same description"}},
+        "work_details": {"/works/OL1W": {"description": {"value": "Same description"}}},
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="operating-systems", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert len(dataset.documents) == 1
+    assert len(dataset.sources) == 1
 
 
 def test_open_library_edition_statement_enriches_incomplete_work_authors() -> None:

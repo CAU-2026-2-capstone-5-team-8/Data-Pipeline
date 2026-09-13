@@ -124,6 +124,44 @@ class OpenLibraryCollector:
             time.sleep(0.1)
         return details
 
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
+    def fetch_work(self, work_key: str) -> dict[str, Any]:
+        """Fetch one public work record for description evidence."""
+        response = self.client.get(f"{BASE_URL}{work_key}.json")
+        response.raise_for_status()
+        return parse_json_object(response, "open-library")
+
+    def fetch_work_details(
+        self, search_response: dict[str, Any], candidate_limit: int
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch a bounded set of work records without failing the whole search."""
+        details: dict[str, dict[str, Any]] = {}
+        records = search_response.get("docs", [])
+        if not isinstance(records, list):
+            return details
+
+        for record in records[:candidate_limit]:
+            if not isinstance(record, dict):
+                continue
+            work_key = str(record.get("key", "")).strip()
+            if not work_key.startswith("/works/"):
+                continue
+            try:
+                details[work_key] = self.fetch_work(work_key)
+            except (httpx.HTTPError, InvalidProviderResponse) as exc:
+                logger.warning(
+                    "event=work_detail_fetch_failed provider=open_library work_key=%s error=%s",
+                    work_key,
+                    exc,
+                )
+            time.sleep(0.1)
+        return details
+
     @staticmethod
     def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
         """Return the exact public API parameters used for a topic search."""

@@ -16,7 +16,7 @@ from data_pipeline.identifiers import (
     sha256_text,
     stable_id,
 )
-from data_pipeline.models import Book, CanonicalDataset, Document, Source
+from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
 
 logger = logging.getLogger(__name__)
 
@@ -230,12 +230,122 @@ def _open_library_isbns(record: dict[str, Any]) -> tuple[str | None, str | None]
     )
 
 
+def _open_library_text(value: Any) -> str | None:
+    if isinstance(value, dict):
+        value = value.get("value")
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _open_library_description(text: str, book_id: str, source_id: str) -> Document:
+    return Document(
+        document_id=stable_id("doc", book_id, "description", source_id),
+        book_id=book_id,
+        document_type="description",
+        text=text,
+        source_id=source_id,
+        content_hash=sha256_text(text),
+    )
+
+
+def _normalize_open_library_toc(value: Any, book_id: str, source_id: str) -> list[TocEntry]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        logger.warning(
+            "event=toc_skipped provider=open_library book_id=%s reason=not_a_list",
+            book_id,
+        )
+        return []
+
+    raw_levels = [
+        item.get("level")
+        for item in value
+        if isinstance(item, dict)
+        and isinstance(item.get("level"), int)
+        and not isinstance(item.get("level"), bool)
+    ]
+    if not raw_levels:
+        return []
+    base_level = min(raw_levels)
+    latest_by_level: dict[int, str] = {}
+    sibling_counts: dict[str | None, int] = {}
+    entries: list[TocEntry] = []
+
+    for raw_index, item in enumerate(value):
+        if not isinstance(item, dict):
+            logger.warning(
+                "event=toc_entry_skipped provider=open_library book_id=%s "
+                "raw_index=%d reason=not_an_object",
+                book_id,
+                raw_index,
+            )
+            continue
+        title = item.get("title")
+        raw_level = item.get("level")
+        if (
+            not isinstance(title, str)
+            or not title.strip()
+            or not isinstance(raw_level, int)
+            or isinstance(raw_level, bool)
+            or raw_level < base_level
+        ):
+            logger.warning(
+                "event=toc_entry_skipped provider=open_library book_id=%s "
+                "raw_index=%d reason=invalid_title_or_level",
+                book_id,
+                raw_index,
+            )
+            continue
+
+        level = raw_level - base_level + 1
+        parent_entry_id = latest_by_level.get(level - 1) if level > 1 else None
+        if level > 1 and parent_entry_id is None:
+            logger.warning(
+                "event=toc_entry_skipped provider=open_library book_id=%s "
+                "raw_index=%d reason=missing_parent",
+                book_id,
+                raw_index,
+            )
+            continue
+
+        clean_title = title.strip()
+        raw_label = item.get("label")
+        label = raw_label.strip() if isinstance(raw_label, str) and raw_label.strip() else None
+        entry_id = stable_id("toc", book_id, source_id, str(raw_index), label or "", clean_title)
+        order_index = sibling_counts.get(parent_entry_id, 0)
+        sibling_counts[parent_entry_id] = order_index + 1
+        entries.append(
+            TocEntry(
+                toc_entry_id=entry_id,
+                book_id=book_id,
+                parent_entry_id=parent_entry_id,
+                level=level,
+                order_index=order_index,
+                label=label,
+                title=clean_title,
+                source_id=source_id,
+            )
+        )
+        latest_by_level[level] = entry_id
+        latest_by_level = {
+            known_level: known_id
+            for known_level, known_id in latest_by_level.items()
+            if known_level <= level
+        }
+
+    return entries
+
+
 def _normalize_open_library_record(
     record: dict[str, Any],
     topic: str,
     retrieved_at: datetime,
     edition_details: dict[str, dict[str, Any]],
-) -> tuple[Book, Source] | None:
+    work_details: dict[str, dict[str, Any]],
+) -> tuple[Book, list[Source], list[Document], list[TocEntry]] | None:
     work_id = str(record.get("key", "")).strip()
     edition_container = record.get("editions", {})
     if not isinstance(edition_container, dict):
@@ -264,6 +374,9 @@ def _normalize_open_library_record(
     edition_detail = edition_details.get(external_id, {})
     if not isinstance(edition_detail, dict):
         edition_detail = {}
+    work_detail = work_details.get(work_id, {})
+    if not isinstance(work_detail, dict):
+        work_detail = {}
     authors = _deduplicate_authors(record.get("author_name"))
     statement_authors = _authors_from_by_statement(edition_detail.get("by_statement"))
     if 0 < len(statement_authors) <= MAX_AUTHORS_PER_BOOK:
@@ -298,7 +411,7 @@ def _normalize_open_library_record(
         language="en",
         topics=TOPICS[topic],
     )
-    source = Source(
+    metadata_source = Source(
         source_id=source_id,
         book_id=book_id,
         provider="open_library",
@@ -312,7 +425,39 @@ def _normalize_open_library_record(
             {"search_record": record, "edition_detail": edition_detail or None}
         ),
     )
-    return book, source
+    sources = [metadata_source]
+    documents: list[Document] = []
+    description_hashes: set[str] = set()
+
+    edition_description = _open_library_text(edition_detail.get("description"))
+    if edition_description is not None:
+        document = _open_library_description(edition_description, book_id, source_id)
+        documents.append(document)
+        description_hashes.add(document.content_hash)
+
+    work_description = _open_library_text(work_detail.get("description"))
+    work_description_hash = sha256_text(work_description) if work_description is not None else None
+    if work_description is not None and work_description_hash not in description_hashes:
+        work_source_id = stable_id(
+            "source", "open_library_work", work_id, book_id, retrieved_at.isoformat()
+        )
+        work_source = Source(
+            source_id=work_source_id,
+            book_id=book_id,
+            provider="open_library",
+            source_type="metadata_api",
+            url=f"https://openlibrary.org{work_id}",
+            external_id=work_id,
+            retrieved_at=retrieved_at,
+            license=None,
+            rights_note=None,
+            content_hash=sha256_json(work_detail),
+        )
+        sources.append(work_source)
+        documents.append(_open_library_description(work_description, book_id, work_source_id))
+
+    toc = _normalize_open_library_toc(edition_detail.get("table_of_contents"), book_id, source_id)
+    return book, sources, documents, toc
 
 
 def normalize_open_library_response(
@@ -326,6 +471,8 @@ def normalize_open_library_response(
         raise ValueError(f"unsupported topic: {topic}")
 
     books: list[Book] = []
+    documents: list[Document] = []
+    toc: list[TocEntry] = []
     sources: list[Source] = []
     seen_books: set[str] = set()
     search_response = response.get("search_response", response)
@@ -334,6 +481,9 @@ def normalize_open_library_response(
     edition_details = response.get("edition_details", {})
     if not isinstance(edition_details, dict):
         edition_details = {}
+    work_details = response.get("work_details", {})
+    if not isinstance(work_details, dict):
+        work_details = {}
     for record in _provider_records(search_response, "docs", "open-library"):
         if not isinstance(record, dict):
             logger.warning(
@@ -341,7 +491,9 @@ def normalize_open_library_response(
             )
             continue
         try:
-            result = _normalize_open_library_record(record, topic, retrieved_at, edition_details)
+            result = _normalize_open_library_record(
+                record, topic, retrieved_at, edition_details, work_details
+            )
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             logger.warning(
                 "event=normalization_skipped provider=open_library work_id=%s error=%s",
@@ -351,14 +503,16 @@ def normalize_open_library_response(
             continue
         if result is None:
             continue
-        book, source = result
+        book, book_sources, book_documents, book_toc = result
         book_id = book.book_id
         if book_id in seen_books:
             continue
         books.append(book)
-        sources.append(source)
+        sources.extend(book_sources)
+        documents.extend(book_documents)
+        toc.extend(book_toc)
         seen_books.add(book_id)
         if len(books) >= limit:
             break
 
-    return CanonicalDataset(books=books, documents=[], toc=[], sources=sources)
+    return CanonicalDataset(books=books, documents=documents, toc=toc, sources=sources)
