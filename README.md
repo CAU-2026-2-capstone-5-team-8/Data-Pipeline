@@ -35,12 +35,14 @@ The 2026-09-13 Open Library experiment produced the following coverage for the c
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 0/5 | 3/5 | 0/5 | 0/5 |
+| Operating Systems | 5/5 | 0/5 | 2/5 | 0/5 | 0/5 |
 | Linear Algebra | 5/5 | 2/5 | 4/5 | 0/5 | 0/5 |
 
 The two structured TOCs contain 137 canonical entries with their parent-child hierarchy intact.
 This is useful progress but not the full MVP definition of done: TOC coverage is not yet a useful
 majority, and no public preface/introduction or preview/sample text has been collected.
+One work-level description was intentionally excluded because it explicitly described a different
+edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
 ## Setup and commands
 

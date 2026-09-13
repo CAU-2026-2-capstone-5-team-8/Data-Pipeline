@@ -217,6 +217,40 @@ def test_open_library_deduplicates_identical_edition_and_work_descriptions() -> 
     assert len(dataset.sources) == 1
 
 
+def test_open_library_rejects_work_description_for_a_different_edition() -> None:
+    payload = {
+        "search_response": {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Operating System Concepts",
+                    "author_name": ["Example Author"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "/books/OL1M",
+                                "title": "Operating System Concepts",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "edition_details": {"/books/OL1M": {"edition_name": "7th ed."}},
+        "work_details": {
+            "/works/OL1W": {"description": "This Eighth Edition adds new operating system topics."}
+        },
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="operating-systems", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.documents == []
+    assert len(dataset.sources) == 1
+
+
 def test_open_library_edition_statement_enriches_incomplete_work_authors() -> None:
     search_response = json.loads(OPEN_LIBRARY_FIXTURE.read_text(encoding="utf-8"))
     payload = {

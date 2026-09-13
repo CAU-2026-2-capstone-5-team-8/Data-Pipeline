@@ -25,6 +25,20 @@ TOPICS: dict[str, list[str]] = {
     "linear-algebra": ["mathematics", "linear-algebra"],
 }
 MAX_AUTHORS_PER_BOOK = 8
+EDITION_WORDS = {
+    "first": 1,
+    "second": 2,
+    "third": 3,
+    "fourth": 4,
+    "fifth": 5,
+    "sixth": 6,
+    "seventh": 7,
+    "eighth": 8,
+    "ninth": 9,
+    "tenth": 10,
+    "eleventh": 11,
+    "twelfth": 12,
+}
 
 
 def _string_list(value: Any) -> list[str]:
@@ -239,6 +253,22 @@ def _open_library_text(value: Any) -> str | None:
     return text or None
 
 
+def _edition_numbers(value: Any) -> set[int]:
+    if not isinstance(value, str):
+        return set()
+    normalized = value.casefold()
+    numbers = {
+        int(match.group(1))
+        for match in re.finditer(
+            r"\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:edition|ed\.?)(?:\b|$)", normalized
+        )
+    }
+    for word, number in EDITION_WORDS.items():
+        if re.search(rf"\b{word}\s+(?:edition|ed\.?)\b", normalized):
+            numbers.add(number)
+    return numbers
+
+
 def _open_library_description(text: str, book_id: str, source_id: str) -> Document:
     return Document(
         document_id=stable_id("doc", book_id, "description", source_id),
@@ -436,6 +466,21 @@ def _normalize_open_library_record(
         description_hashes.add(document.content_hash)
 
     work_description = _open_library_text(work_detail.get("description"))
+    selected_editions = _edition_numbers(edition_detail.get("edition_name"))
+    described_editions = _edition_numbers(work_description)
+    if (
+        selected_editions
+        and described_editions
+        and selected_editions.isdisjoint(described_editions)
+    ):
+        logger.warning(
+            "event=document_skipped provider=open_library book_id=%s "
+            "reason=edition_mismatch selected=%s described=%s",
+            book_id,
+            sorted(selected_editions),
+            sorted(described_editions),
+        )
+        work_description = None
     work_description_hash = sha256_text(work_description) if work_description is not None else None
     if work_description is not None and work_description_hash not in description_hashes:
         work_source_id = stable_id(
