@@ -69,6 +69,9 @@ def _collect_payload(
                     "edition_details": collector.fetch_edition_details(
                         payload, candidate_limit=edition_detail_limit
                     ),
+                    "work_details": collector.fetch_work_details(
+                        payload, candidate_limit=edition_detail_limit
+                    ),
                 }
             return payload, request_parameters
     except httpx.HTTPStatusError as exc:

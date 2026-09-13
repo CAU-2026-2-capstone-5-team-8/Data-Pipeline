@@ -43,3 +43,24 @@ def test_open_library_fetches_bounded_english_edition_details() -> None:
         details = collector.fetch_edition_details(response, candidate_limit=1)
 
     assert details["/books/OL1M"]["by_statement"].startswith("by First Author")
+
+
+def test_open_library_fetches_bounded_work_details() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"key": "/works/OL1W", "description": "Public description"},
+            request=request,
+        )
+
+    response = {
+        "docs": [
+            {"key": "/works/OL1W"},
+            {"key": "invalid-work-key"},
+        ]
+    }
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = OpenLibraryCollector(client=client)
+        details = collector.fetch_work_details(response, candidate_limit=2)
+
+    assert details == {"/works/OL1W": {"key": "/works/OL1W", "description": "Public description"}}

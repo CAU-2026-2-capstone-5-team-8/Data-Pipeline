@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 from typer.testing import CliRunner
 
-from data_pipeline.cli import app
+from data_pipeline.cli import _collect_payload, app
 from data_pipeline.collectors.open_library import OpenLibraryCollector
 from data_pipeline.storage import RawArtifact, write_raw_response
 
@@ -46,3 +46,36 @@ def test_build_reports_invalid_provider_collection_without_traceback(tmp_path) -
     assert result.exit_code != 0
     assert "invalid 'docs' collection" in result.output
     assert "Traceback" not in result.output
+
+
+def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None:
+    class FakeOpenLibraryCollector:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def search_parameters(topic, candidate_limit):
+            return {"title": topic, "limit": candidate_limit}
+
+        @staticmethod
+        def search_books(topic, candidate_limit):
+            return {"docs": [{"key": "/works/OL1W"}]}
+
+        @staticmethod
+        def fetch_edition_details(payload, candidate_limit):
+            return {"/books/OL1M": {"title": "Fixture"}}
+
+        @staticmethod
+        def fetch_work_details(payload, candidate_limit):
+            return {"/works/OL1W": {"description": "Public description"}}
+
+    monkeypatch.setattr("data_pipeline.cli.OpenLibraryCollector", FakeOpenLibraryCollector)
+
+    payload, _parameters = _collect_payload(
+        "open-library", "operating-systems", 20, edition_detail_limit=8
+    )
+
+    assert payload["work_details"]["/works/OL1W"]["description"] == "Public description"
