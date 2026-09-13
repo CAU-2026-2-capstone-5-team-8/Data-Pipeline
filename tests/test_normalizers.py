@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
-from data_pipeline.datasets import merge_datasets
+from data_pipeline.datasets import DatasetMergeError, merge_datasets
 from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json, sha256_text
 from data_pipeline.normalizers import (
     normalize_google_books_response,
@@ -356,6 +356,60 @@ def test_unchanged_wiley_evidence_merges_without_duplicate_toc() -> None:
     )
     assert merged.sources[0].content_hash == sha256_text(later_payload["home_html"])
     assert merged.sources[1].content_hash == sha256_text(later_payload["toc_html"])
+
+
+def test_newer_wiley_snapshot_replaces_changed_toc_heading() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+    first = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+    later_payload = {
+        **payload,
+        "toc_html": payload["toc_html"].replace(
+            "Chapter 2: Operating-System Structures",
+            "Chapter 2: Operating System Structures Revised",
+        ),
+    }
+    later = normalize_publisher_page_response(
+        later_payload,
+        topic="operating-systems",
+        retrieved_at=datetime(2026, 9, 13, 12, 0, tzinfo=UTC),
+    )
+
+    merged = merge_datasets([first, later])
+
+    assert len(merged.toc) == 26
+    assert merged.toc[1].title == "Operating System Structures Revised"
+    assert all(entry.title != "Operating-System Structures" for entry in merged.toc)
+
+
+def test_same_time_different_source_snapshots_are_rejected() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+    first = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+    conflicting = normalize_publisher_page_response(
+        {**payload, "toc_html": payload["toc_html"] + "\n"},
+        topic="operating-systems",
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    with pytest.raises(DatasetMergeError, match="same retrieval time"):
+        merge_datasets([first, conflicting])
 
 
 def test_malformed_toc_item_does_not_change_valid_base_level(caplog) -> None:

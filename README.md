@@ -69,6 +69,9 @@ uv run data-pipeline report
 `collect-publisher` requires the matching metadata book to exist in `data/processed` and stops if
 the exact canonical `book_id` is absent. Unknown publisher URLs cannot be supplied at the CLI; a
 new source must first be reviewed and added to the small version-controlled allowlist.
+Repeated retrievals of the same allowlisted URL update its canonical source snapshot. Documents
+and TOC entries owned by an older snapshot are replaced, while every immutable raw response is
+still retained for audit and offline rebuilding.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
