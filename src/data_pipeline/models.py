@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from data_pipeline.identifiers import is_valid_isbn_10, is_valid_isbn_13
 
 DocumentType = Literal[
     "description",
@@ -31,7 +33,7 @@ class CanonicalModel(BaseModel):
 
 
 class Book(CanonicalModel):
-    book_id: str = Field(min_length=1)
+    book_id: str = Field(pattern=r"^(isbn13:[0-9]{13}|isbn10:[0-9]{9}[0-9X]|book_[0-9a-f]{20})$")
     isbn_10: str | None = None
     isbn_13: str | None = None
     title: str = Field(min_length=1)
@@ -49,6 +51,32 @@ class Book(CanonicalModel):
         if not value:
             raise ValueError("title must not be blank")
         return value
+
+    @field_validator("isbn_10")
+    @classmethod
+    def isbn_10_must_be_valid(cls, value: str | None) -> str | None:
+        if value is not None and not is_valid_isbn_10(value):
+            raise ValueError("invalid ISBN-10 check digit")
+        return value
+
+    @field_validator("isbn_13")
+    @classmethod
+    def isbn_13_must_be_valid(cls, value: str | None) -> str | None:
+        if value is not None and not is_valid_isbn_13(value):
+            raise ValueError("invalid ISBN-13 check digit")
+        return value
+
+    @model_validator(mode="after")
+    def isbn_book_id_must_match(self) -> "Book":
+        if self.isbn_13 is not None and self.book_id != f"isbn13:{self.isbn_13}":
+            raise ValueError("book_id must use the record's ISBN-13")
+        if (
+            self.isbn_13 is None
+            and self.isbn_10 is not None
+            and self.book_id != f"isbn10:{self.isbn_10}"
+        ):
+            raise ValueError("book_id must use the record's ISBN-10")
+        return self
 
 
 class Document(CanonicalModel):
@@ -90,6 +118,13 @@ class Source(CanonicalModel):
     license: str | None = None
     rights_note: str | None = None
     content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def retrieved_at_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("retrieved_at must include a timezone")
+        return value
 
 
 class CanonicalDataset(CanonicalModel):

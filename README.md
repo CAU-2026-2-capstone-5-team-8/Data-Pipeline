@@ -31,18 +31,24 @@ Python 3.12 or later and [uv](https://docs.astral.sh/uv/) are required.
 uv sync
 uv run data-pipeline search --topic operating-systems --limit 5
 uv run data-pipeline collect --topic operating-systems --limit 5
+uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline report
 ```
 
-The raw response is saved at `data/raw/open_library/operating-systems.json`. Canonical data
-can be rebuilt without another network request:
+Each raw response is immutable and saved under a timestamped, content-addressed path such as
+`data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
+provider, topic, request limit, query parameters, and retrieval time. Canonical data can be
+rebuilt without another network request:
 
 ```bash
 uv run data-pipeline build \
-  --raw data/raw/open_library/operating-systems.json \
-  --topic operating-systems \
-  --limit 5
+  --raw data/raw/open_library/operating-systems/<artifact>.json \
+  --raw data/raw/open_library/linear-algebra/<artifact>.json
 ```
+
+Repeat `--raw` for multiple artifacts when rebuilding the combined two-topic dataset. Sequential
+`collect` commands safely merge new books into the existing canonical dataset. Conflicting records
+with the same deterministic ID stop the build instead of being silently selected.
 
 Supported MVP topics are `operating-systems` and `linear-algebra`. Generated raw and processed
 data are intentionally ignored by Git; only small test fixtures should be committed.

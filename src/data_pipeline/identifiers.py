@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 import unicodedata
 from typing import Any
 
@@ -22,5 +21,33 @@ def stable_id(prefix: str, *parts: str) -> str:
 
 
 def normalize_bibliographic_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).casefold()
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", normalized).split())
+    """Normalize text for matching while preserving Unicode and technical symbols."""
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    tokens: list[str] = []
+    for character in normalized:
+        if character.isalnum():
+            tokens.append(character)
+        elif character == "+":
+            tokens.append(" plus ")
+        elif character == "#":
+            tokens.append(" sharp ")
+        else:
+            tokens.append(" ")
+    return " ".join("".join(tokens).split())
+
+
+def is_valid_isbn_10(value: str) -> bool:
+    """Return whether a normalized ISBN-10 has a valid check digit."""
+    if len(value) != 10 or not value[:9].isdigit() or not (value[-1].isdigit() or value[-1] == "X"):
+        return False
+    digits = [int(character) for character in value[:9]]
+    digits.append(10 if value[-1] == "X" else int(value[-1]))
+    return sum((10 - index) * digit for index, digit in enumerate(digits)) % 11 == 0
+
+
+def is_valid_isbn_13(value: str) -> bool:
+    """Return whether a normalized ISBN-13 has a valid check digit."""
+    if len(value) != 13 or not value.isdigit():
+        return False
+    total = sum((1 if index % 2 == 0 else 3) * int(value[index]) for index in range(12))
+    return (10 - total % 10) % 10 == int(value[-1])

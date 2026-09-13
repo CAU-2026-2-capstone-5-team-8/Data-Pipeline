@@ -891,7 +891,7 @@ The MVP data pipeline is considered successful when:
 Before writing implementation code:
 
 1. Inspect the repository.
-2. Read this `AGENT.md` completely.
+2. Read this `AGENTS.md` completely.
 3. Inspect the current README and existing project files.
 4. Produce a concise implementation plan.
 5. Identify assumptions or uncertain external-source behavior.

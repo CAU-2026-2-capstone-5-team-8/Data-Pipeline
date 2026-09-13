@@ -12,8 +12,9 @@ def _duplicates(values: list[str]) -> list[str]:
 def validate_dataset(dataset: CanonicalDataset) -> list[str]:
     errors: list[str] = []
     book_ids = {book.book_id for book in dataset.books}
-    source_ids = {source.source_id for source in dataset.sources}
-    toc_ids = {entry.toc_entry_id for entry in dataset.toc}
+    sources_by_id = {source.source_id: source for source in dataset.sources}
+    toc_by_id = {entry.toc_entry_id: entry for entry in dataset.toc}
+    sourced_book_ids = {source.book_id for source in dataset.sources}
 
     for kind, values in (
         ("book_id", [book.book_id for book in dataset.books]),
@@ -34,22 +35,44 @@ def validate_dataset(dataset: CanonicalDataset) -> list[str]:
     for source in dataset.sources:
         if source.book_id not in book_ids:
             errors.append(f"source {source.source_id} references missing book {source.book_id}")
+    for book in dataset.books:
+        if book.book_id not in sourced_book_ids:
+            errors.append(f"book {book.book_id} has no source")
     for document in dataset.documents:
         if document.book_id not in book_ids:
             errors.append(
                 f"document {document.document_id} references missing book {document.book_id}"
             )
-        if document.source_id not in source_ids:
+        source = sources_by_id.get(document.source_id)
+        if source is None:
             errors.append(
                 f"document {document.document_id} references missing source {document.source_id}"
+            )
+        elif source.book_id != document.book_id:
+            errors.append(
+                f"document {document.document_id} references source {document.source_id} "
+                f"owned by different book {source.book_id}"
             )
     for entry in dataset.toc:
         if entry.book_id not in book_ids:
             errors.append(f"TOC {entry.toc_entry_id} references missing book {entry.book_id}")
-        if entry.source_id not in source_ids:
+        source = sources_by_id.get(entry.source_id)
+        if source is None:
             errors.append(f"TOC {entry.toc_entry_id} references missing source {entry.source_id}")
-        if entry.parent_entry_id is not None and entry.parent_entry_id not in toc_ids:
+        elif source.book_id != entry.book_id:
             errors.append(
-                f"TOC {entry.toc_entry_id} references missing parent {entry.parent_entry_id}"
+                f"TOC {entry.toc_entry_id} references source {entry.source_id} "
+                f"owned by different book {source.book_id}"
             )
+        if entry.parent_entry_id is not None:
+            parent = toc_by_id.get(entry.parent_entry_id)
+            if parent is None:
+                errors.append(
+                    f"TOC {entry.toc_entry_id} references missing parent {entry.parent_entry_id}"
+                )
+            elif parent.book_id != entry.book_id:
+                errors.append(
+                    f"TOC {entry.toc_entry_id} references parent {entry.parent_entry_id} "
+                    f"owned by different book {parent.book_id}"
+                )
     return errors

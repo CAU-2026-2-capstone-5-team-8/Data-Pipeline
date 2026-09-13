@@ -5,6 +5,8 @@ from typing import Any
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+from data_pipeline.collectors.base import parse_json_object
+
 API_URL = "https://www.googleapis.com/books/v1/volumes"
 TOPIC_QUERIES = {
     "operating-systems": 'subject:"Operating systems"',
@@ -45,22 +47,22 @@ class GoogleBooksCollector:
         reraise=True,
     )
     def search_books(self, topic: str, candidate_limit: int = 20) -> dict[str, Any]:
+        """Search English books for one supported topic."""
+        response = self.client.get(API_URL, params=self.search_parameters(topic, candidate_limit))
+        response.raise_for_status()
+        return parse_json_object(response, "google-books")
+
+    @staticmethod
+    def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
+        """Return the exact public API parameters used for a topic search."""
         try:
             query = TOPIC_QUERIES[topic]
         except KeyError as exc:
             raise ValueError(f"unsupported topic: {topic}") from exc
-        response = self.client.get(
-            API_URL,
-            params={
-                "q": query,
-                "langRestrict": "en",
-                "maxResults": min(candidate_limit, 40),
-                "orderBy": "relevance",
-                "printType": "books",
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise ValueError("Google Books returned a non-object response")
-        return payload
+        return {
+            "q": query,
+            "langRestrict": "en",
+            "maxResults": min(candidate_limit, 40),
+            "orderBy": "relevance",
+            "printType": "books",
+        }

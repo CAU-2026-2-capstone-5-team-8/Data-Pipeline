@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+from data_pipeline.collectors.base import parse_json_object
 from data_pipeline.collectors.google_books import is_transient_http_error
 
 API_URL = "https://openlibrary.org/search.json"
@@ -56,21 +57,21 @@ class OpenLibraryCollector:
         reraise=True,
     )
     def search_books(self, topic: str, candidate_limit: int = 20) -> dict[str, Any]:
+        """Search English editions for one supported topic."""
+        response = self.client.get(API_URL, params=self.search_parameters(topic, candidate_limit))
+        response.raise_for_status()
+        return parse_json_object(response, "open-library")
+
+    @staticmethod
+    def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
+        """Return the exact public API parameters used for a topic search."""
         try:
             title = TOPIC_TITLES[topic]
         except KeyError as exc:
             raise ValueError(f"unsupported topic: {topic}") from exc
-        response = self.client.get(
-            API_URL,
-            params={
-                "title": title,
-                "language": "eng",
-                "fields": FIELDS,
-                "limit": min(candidate_limit, 100),
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise ValueError("Open Library returned a non-object response")
-        return payload
+        return {
+            "title": title,
+            "language": "eng",
+            "fields": FIELDS,
+            "limit": min(candidate_limit, 100),
+        }

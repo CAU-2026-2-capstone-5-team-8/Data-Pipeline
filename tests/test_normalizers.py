@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from data_pipeline.identifiers import normalize_bibliographic_text
 from data_pipeline.normalizers import (
     normalize_google_books_response,
     normalize_isbn,
@@ -14,9 +15,20 @@ RETRIEVED_AT = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
 
 def test_normalize_isbn_removes_display_punctuation() -> None:
-    assert normalize_isbn("978-0-123456-47-2", 13) == "9780123456472"
-    assert normalize_isbn("0-123456-47-X", 10) == "012345647X"
+    assert normalize_isbn("978-0-306-40615-7", 13) == "9780306406157"
+    assert normalize_isbn("0-306-40615-2", 10) == "0306406152"
     assert normalize_isbn("too-short", 13) is None
+    assert normalize_isbn("978-0-123456-47-0", 13) is None
+
+
+def test_bibliographic_normalization_preserves_technical_and_unicode_distinctions() -> None:
+    normalized = {
+        normalize_bibliographic_text("C"),
+        normalize_bibliographic_text("C++"),
+        normalize_bibliographic_text("C#"),
+    }
+    assert len(normalized) == 3
+    assert normalize_bibliographic_text("홍길동") == "홍길동"
 
 
 def test_google_response_preserves_provenance_and_deduplicates_isbn() -> None:
@@ -30,7 +42,7 @@ def test_google_response_preserves_provenance_and_deduplicates_isbn() -> None:
     )
 
     assert len(dataset.books) == 1
-    assert dataset.books[0].book_id == "isbn13:9780123456472"
+    assert dataset.books[0].book_id == "isbn13:9780306406157"
     assert dataset.books[0].topics == ["computer-science", "operating-systems"]
     assert len(dataset.sources) == 1
     assert dataset.sources[0].book_id == dataset.books[0].book_id
@@ -83,3 +95,72 @@ def test_open_library_response_is_normalized_deterministically() -> None:
     assert dataset.sources[0].url == "https://openlibrary.org/books/OL21152589M"
     assert dataset.sources[0].provider == "open_library"
     assert dataset.documents == []
+
+
+def test_open_library_skips_work_without_english_edition() -> None:
+    payload = {
+        "docs": [
+            {
+                "key": "/works/OL1W",
+                "title": "Operating Systems",
+                "language": ["eng", "spa"],
+                "editions": {
+                    "docs": [
+                        {
+                            "key": "/books/OL1M",
+                            "title": "Sistemas operativos",
+                            "language": ["spa"],
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="operating-systems", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books == []
+    assert dataset.sources == []
+
+
+def test_provider_fallback_ids_do_not_collide_without_authors_or_isbn() -> None:
+    google = normalize_google_books_response(
+        {
+            "items": [
+                {
+                    "id": "same-id",
+                    "volumeInfo": {"title": "Untitled Manual", "language": "en"},
+                }
+            ]
+        },
+        topic="operating-systems",
+        limit=1,
+        retrieved_at=RETRIEVED_AT,
+    )
+    open_library = normalize_open_library_response(
+        {
+            "docs": [
+                {
+                    "key": "/works/same-id",
+                    "title": "Untitled Manual",
+                    "language": ["eng"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "same-id",
+                                "title": "Untitled Manual",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        topic="operating-systems",
+        limit=1,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert google.books[0].book_id != open_library.books[0].book_id
