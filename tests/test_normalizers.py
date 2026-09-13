@@ -2,6 +2,9 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
+from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.identifiers import normalize_bibliographic_text
 from data_pipeline.normalizers import (
     normalize_google_books_response,
@@ -19,6 +22,23 @@ def test_normalize_isbn_removes_display_punctuation() -> None:
     assert normalize_isbn("0-306-40615-2", 10) == "0306406152"
     assert normalize_isbn("too-short", 13) is None
     assert normalize_isbn("978-0-123456-47-0", 13) is None
+
+
+def test_provider_record_collections_must_be_lists() -> None:
+    with pytest.raises(InvalidProviderResponse, match="items"):
+        normalize_google_books_response(
+            {"items": None},
+            topic="operating-systems",
+            limit=1,
+            retrieved_at=RETRIEVED_AT,
+        )
+    with pytest.raises(InvalidProviderResponse, match="docs"):
+        normalize_open_library_response(
+            {"docs": {}},
+            topic="operating-systems",
+            limit=1,
+            retrieved_at=RETRIEVED_AT,
+        )
 
 
 def test_provider_date_formats_preserve_edition_year() -> None:

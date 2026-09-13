@@ -1,6 +1,7 @@
 """Raw-response preservation and canonical JSONL storage."""
 
 import os
+import shutil
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
@@ -81,7 +82,7 @@ def _write_jsonl(records: Iterable[BaseModel], path: Path) -> None:
 
 
 def write_dataset(dataset: CanonicalDataset, directory: Path) -> None:
-    """Replace all canonical files only after every temporary file is complete."""
+    """Publish a complete flat dataset and restore the previous set on replacement errors."""
     directory.mkdir(parents=True, exist_ok=True)
     collections = {
         "books.jsonl": dataset.books,
@@ -90,6 +91,8 @@ def write_dataset(dataset: CanonicalDataset, directory: Path) -> None:
         "sources.jsonl": dataset.sources,
     }
     temporary_paths: dict[str, Path] = {}
+    backup_paths: dict[str, Path] = {}
+    published: list[str] = []
     try:
         for filename, records in collections.items():
             with NamedTemporaryFile(
@@ -98,11 +101,43 @@ def write_dataset(dataset: CanonicalDataset, directory: Path) -> None:
                 temporary_path = Path(temporary.name)
             temporary_paths[filename] = temporary_path
             _write_jsonl(records, temporary_path)
+
+        final_paths = {filename: directory / filename for filename in collections}
+        existing = [path.exists() for path in final_paths.values()]
+        if any(existing) and not all(existing):
+            missing = ", ".join(
+                filename
+                for (filename, path), exists in zip(final_paths.items(), existing, strict=True)
+                if not exists
+            )
+            raise ValueError(f"partial canonical dataset; missing: {missing}")
+
+        if all(existing):
+            for filename, final_path in final_paths.items():
+                with NamedTemporaryFile(
+                    dir=directory, prefix=f".{filename}.", suffix=".bak", delete=False
+                ) as backup:
+                    backup_path = Path(backup.name)
+                shutil.copyfile(final_path, backup_path)
+                backup_paths[filename] = backup_path
+
         for filename, temporary_path in temporary_paths.items():
             os.replace(temporary_path, directory / filename)
+            published.append(filename)
+    except Exception:
+        for filename in reversed(published):
+            final_path = directory / filename
+            backup_path = backup_paths.get(filename)
+            if backup_path is None:
+                final_path.unlink(missing_ok=True)
+            else:
+                os.replace(backup_path, final_path)
+        raise
     finally:
         for temporary_path in temporary_paths.values():
             temporary_path.unlink(missing_ok=True)
+        for backup_path in backup_paths.values():
+            backup_path.unlink(missing_ok=True)
 
 
 def _read_jsonl(model: type[BaseModel], path: Path) -> list[BaseModel]:

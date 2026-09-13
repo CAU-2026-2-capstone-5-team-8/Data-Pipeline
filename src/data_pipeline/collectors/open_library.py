@@ -7,8 +7,11 @@ from typing import Any
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from data_pipeline.collectors.base import InvalidProviderResponse, parse_json_object
-from data_pipeline.collectors.google_books import is_transient_http_error
+from data_pipeline.collectors.base import (
+    InvalidProviderResponse,
+    is_transient_http_error,
+    parse_json_object,
+)
 
 API_URL = "https://openlibrary.org/search.json"
 BASE_URL = "https://openlibrary.org"
@@ -139,4 +142,4 @@ class OpenLibraryCollector:
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]

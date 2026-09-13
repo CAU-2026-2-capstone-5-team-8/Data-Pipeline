@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 
 import pytest
@@ -71,6 +72,36 @@ def test_jsonl_round_trip_writes_all_four_files(tmp_path) -> None:
         "toc.jsonl",
     ]
     assert validate_dataset(loaded) == []
+
+
+def test_dataset_publish_error_restores_previous_files(tmp_path, monkeypatch) -> None:
+    original = make_dataset()
+    write_dataset(original, tmp_path)
+    replacement = original.model_copy(deep=True)
+    replacement.books[0].title = "Replacement Title"
+    real_replace = os.replace
+    publish_calls = 0
+
+    def fail_second_publish(source, destination) -> None:
+        nonlocal publish_calls
+        if str(destination).endswith(".jsonl"):
+            publish_calls += 1
+            if publish_calls == 2:
+                raise OSError("simulated publication failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr("data_pipeline.storage.os.replace", fail_second_publish)
+
+    with pytest.raises(OSError, match="simulated publication failure"):
+        write_dataset(replacement, tmp_path)
+
+    assert read_dataset(tmp_path) == original
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "books.jsonl",
+        "documents.jsonl",
+        "sources.jsonl",
+        "toc.jsonl",
+    ]
 
 
 def test_validation_reports_broken_toc_parent_and_source_relationship() -> None:

@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.identifiers import (
     is_valid_isbn_10,
     is_valid_isbn_13,
@@ -29,7 +30,16 @@ MAX_AUTHORS_PER_BOOK = 8
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _provider_records(response: dict[str, Any], field: str, provider: str) -> list[Any]:
+    records = response.get(field, [])
+    if not isinstance(records, list):
+        raise InvalidProviderResponse(
+            f"{provider} returned an invalid {field!r} collection; expected a list"
+        )
+    return records
 
 
 def _deduplicate_authors(value: Any) -> list[str]:
@@ -178,7 +188,7 @@ def normalize_google_books_response(
     sources: list[Source] = []
     seen_books: set[str] = set()
 
-    for item in response.get("items", []):
+    for item in _provider_records(response, "items", "google-books"):
         if not isinstance(item, dict):
             logger.warning(
                 "event=normalization_skipped provider=google_books reason=record_not_object"
@@ -324,7 +334,7 @@ def normalize_open_library_response(
     edition_details = response.get("edition_details", {})
     if not isinstance(edition_details, dict):
         edition_details = {}
-    for record in search_response.get("docs", []):
+    for record in _provider_records(search_response, "docs", "open-library"):
         if not isinstance(record, dict):
             logger.warning(
                 "event=normalization_skipped provider=open_library reason=record_not_object"

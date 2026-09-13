@@ -96,15 +96,18 @@ def _expected_request_parameters(provider: str, topic: str, limit: int) -> dict:
 def _normalize(
     payload: dict, provider: str, topic: str, limit: int, retrieved_at: datetime
 ) -> CanonicalDataset:
-    if provider == "google-books":
-        return normalize_google_books_response(
-            payload, topic=topic, limit=limit, retrieved_at=retrieved_at
-        )
-    if provider == "open-library":
-        return normalize_open_library_response(
-            payload, topic=topic, limit=limit, retrieved_at=retrieved_at
-        )
-    raise typer.BadParameter("provider must be open-library or google-books")
+    try:
+        if provider == "google-books":
+            return normalize_google_books_response(
+                payload, topic=topic, limit=limit, retrieved_at=retrieved_at
+            )
+        if provider == "open-library":
+            return normalize_open_library_response(
+                payload, topic=topic, limit=limit, retrieved_at=retrieved_at
+            )
+        raise typer.BadParameter("provider must be open-library or google-books")
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command()
