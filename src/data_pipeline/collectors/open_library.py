@@ -1,14 +1,18 @@
-"""Open Library Search API metadata collector."""
+"""Open Library metadata collector."""
 
+import logging
+import time
 from typing import Any
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from data_pipeline.collectors.base import parse_json_object
+from data_pipeline.collectors.base import InvalidProviderResponse, parse_json_object
 from data_pipeline.collectors.google_books import is_transient_http_error
 
 API_URL = "https://openlibrary.org/search.json"
+BASE_URL = "https://openlibrary.org"
+logger = logging.getLogger(__name__)
 TOPIC_TITLES = {
     "operating-systems": "operating systems",
     "linear-algebra": "linear algebra",
@@ -62,6 +66,61 @@ class OpenLibraryCollector:
         response.raise_for_status()
         return parse_json_object(response, "open-library")
 
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
+    def fetch_edition(self, edition_key: str) -> dict[str, Any]:
+        """Fetch one public edition record for higher-quality bibliographic evidence."""
+        response = self.client.get(f"{BASE_URL}{edition_key}.json")
+        response.raise_for_status()
+        return parse_json_object(response, "open-library")
+
+    def fetch_edition_details(
+        self, search_response: dict[str, Any], candidate_limit: int
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch a bounded set of English edition records without failing the whole search."""
+        details: dict[str, dict[str, Any]] = {}
+        records = search_response.get("docs", [])
+        if not isinstance(records, list):
+            return details
+
+        for record in records[:candidate_limit]:
+            if not isinstance(record, dict):
+                continue
+            edition_container = record.get("editions")
+            if not isinstance(edition_container, dict):
+                continue
+            edition_records = edition_container.get("docs")
+            if not isinstance(edition_records, list):
+                continue
+            edition = next(
+                (
+                    item
+                    for item in edition_records
+                    if isinstance(item, dict) and "eng" in _string_list(item.get("language"))
+                ),
+                None,
+            )
+            if edition is None:
+                continue
+            edition_key = str(edition.get("key", "")).strip()
+            if not edition_key.startswith("/books/"):
+                continue
+            try:
+                details[edition_key] = self.fetch_edition(edition_key)
+            except (httpx.HTTPError, InvalidProviderResponse) as exc:
+                logger.warning(
+                    "event=edition_detail_fetch_failed provider=open_library "
+                    "edition_key=%s error=%s",
+                    edition_key,
+                    exc,
+                )
+            time.sleep(0.1)
+        return details
+
     @staticmethod
     def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
         """Return the exact public API parameters used for a topic search."""
@@ -75,3 +134,9 @@ class OpenLibraryCollector:
             "fields": FIELDS,
             "limit": min(candidate_limit, 100),
         }
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]

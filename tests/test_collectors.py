@@ -16,3 +16,30 @@ def test_collector_reports_malformed_success_response(collector_class) -> None:
 
         with pytest.raises(InvalidProviderResponse, match="malformed JSON"):
             collector.search_books("operating-systems", candidate_limit=5)
+
+
+def test_open_library_fetches_bounded_english_edition_details() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"key": "/books/OL1M", "by_statement": "by First Author, Second Author."},
+            request=request,
+        )
+
+    response = {
+        "docs": [
+            {
+                "editions": {
+                    "docs": [
+                        {"key": "/books/OL1M", "language": ["eng"]},
+                        {"key": "/books/OL2M", "language": ["spa"]},
+                    ]
+                }
+            }
+        ]
+    }
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = OpenLibraryCollector(client=client)
+        details = collector.fetch_edition_details(response, candidate_limit=1)
+
+    assert details["/books/OL1M"]["by_statement"].startswith("by First Author")

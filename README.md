@@ -18,9 +18,11 @@ data/processed/sources.jsonl
 ```
 
 Open Library is the default because its unauthenticated endpoint worked in the initial real-data
-experiment. Google Books is also implemented (`--provider google-books`), but its public endpoint
+experiment. Collection also fetches a bounded set of public edition records to improve edition
+author evidence; both the search response and edition details remain in the immutable raw
+artifact. Google Books is also implemented (`--provider google-books`), but its public endpoint
 returned HTTP 429 from the development environment on 2026-09-12. A preview link is not treated
-as preview text, and neither search response provides reliable structured TOCs; those coverage
+as preview text, and the current slice does not yet normalize structured TOCs; those coverage
 fields remain empty until a public document source is added.
 
 ## Setup and commands

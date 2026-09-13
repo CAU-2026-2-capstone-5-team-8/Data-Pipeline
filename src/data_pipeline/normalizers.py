@@ -23,12 +23,32 @@ TOPICS: dict[str, list[str]] = {
     "operating-systems": ["computer-science", "operating-systems"],
     "linear-algebra": ["mathematics", "linear-algebra"],
 }
+MAX_AUTHORS_PER_BOOK = 8
 
 
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _deduplicate_authors(value: Any) -> list[str]:
+    authors: list[str] = []
+    seen: set[str] = set()
+    for author in _string_list(value):
+        key = normalize_bibliographic_text(author)
+        if key and key not in seen:
+            authors.append(author)
+            seen.add(key)
+    return authors
+
+
+def _authors_from_by_statement(value: Any) -> list[str]:
+    if not isinstance(value, str):
+        return []
+    statement = re.sub(r"^\s*by\s+", "", value.strip(), flags=re.IGNORECASE).rstrip(".")
+    authors = re.split(r"\s*(?:,|\band\b)\s*", statement)
+    return _deduplicate_authors(authors)
 
 
 def normalize_isbn(value: str | None, length: int) -> str | None:
@@ -81,7 +101,7 @@ def _book_id(
 def _published_year(value: str | None) -> int | None:
     if not value:
         return None
-    match = re.match(r"^(\d{4})", value)
+    match = re.search(r"(?<!\d)(1\d{3}|20\d{2}|21\d{2})(?!\d)", value)
     return int(match.group(1)) if match else None
 
 
@@ -97,7 +117,7 @@ def _normalize_google_item(
     if not external_id or not title or language != "en":
         return None
 
-    authors = _string_list(info.get("authors"))
+    authors = _deduplicate_authors(info.get("authors"))
     isbn_10, isbn_13 = _isbns(info)
     book_id = _book_id(isbn_10, isbn_13, title, authors, "google_books", external_id)
     source_id = stable_id("source", "google_books", external_id, book_id, retrieved_at.isoformat())
@@ -201,7 +221,10 @@ def _open_library_isbns(record: dict[str, Any]) -> tuple[str | None, str | None]
 
 
 def _normalize_open_library_record(
-    record: dict[str, Any], topic: str, retrieved_at: datetime
+    record: dict[str, Any],
+    topic: str,
+    retrieved_at: datetime,
+    edition_details: dict[str, dict[str, Any]],
 ) -> tuple[Book, Source] | None:
     work_id = str(record.get("key", "")).strip()
     edition_container = record.get("editions", {})
@@ -228,7 +251,24 @@ def _normalize_open_library_record(
     title = str(edition.get("title") or record.get("title", "")).strip()
     if not external_id or not title:
         return None
-    authors = _string_list(record.get("author_name"))
+    edition_detail = edition_details.get(external_id, {})
+    if not isinstance(edition_detail, dict):
+        edition_detail = {}
+    authors = _deduplicate_authors(record.get("author_name"))
+    statement_authors = _authors_from_by_statement(edition_detail.get("by_statement"))
+    if 0 < len(statement_authors) <= MAX_AUTHORS_PER_BOOK:
+        combined_authors = _deduplicate_authors([*statement_authors, *authors])
+        authors = (
+            combined_authors if len(combined_authors) <= MAX_AUTHORS_PER_BOOK else statement_authors
+        )
+    if len(authors) > MAX_AUTHORS_PER_BOOK:
+        logger.warning(
+            "event=normalization_skipped provider=open_library "
+            "work_id=%s reason=unreliable_author_aggregation author_count=%d",
+            work_id,
+            len(authors),
+        )
+        return None
     isbn_10, isbn_13 = _open_library_isbns(edition)
     book_id = _book_id(isbn_10, isbn_13, title, authors, "open_library", external_id)
     source_id = stable_id("source", "open_library", external_id, book_id, retrieved_at.isoformat())
@@ -258,7 +298,9 @@ def _normalize_open_library_record(
         retrieved_at=retrieved_at,
         license=None,
         rights_note=None,
-        content_hash=sha256_json(record),
+        content_hash=sha256_json(
+            {"search_record": record, "edition_detail": edition_detail or None}
+        ),
     )
     return book, source
 
@@ -276,14 +318,20 @@ def normalize_open_library_response(
     books: list[Book] = []
     sources: list[Source] = []
     seen_books: set[str] = set()
-    for record in response.get("docs", []):
+    search_response = response.get("search_response", response)
+    if not isinstance(search_response, dict):
+        search_response = {}
+    edition_details = response.get("edition_details", {})
+    if not isinstance(edition_details, dict):
+        edition_details = {}
+    for record in search_response.get("docs", []):
         if not isinstance(record, dict):
             logger.warning(
                 "event=normalization_skipped provider=open_library reason=record_not_object"
             )
             continue
         try:
-            result = _normalize_open_library_record(record, topic, retrieved_at)
+            result = _normalize_open_library_record(record, topic, retrieved_at, edition_details)
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             logger.warning(
                 "event=normalization_skipped provider=open_library work_id=%s error=%s",

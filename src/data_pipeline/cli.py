@@ -44,7 +44,13 @@ def _ensure_topic(topic: str) -> None:
         raise typer.BadParameter(f"topic must be one of: {choices}")
 
 
-def _collect_payload(provider: str, topic: str, candidate_limit: int) -> tuple[dict, dict]:
+def _collect_payload(
+    provider: str,
+    topic: str,
+    candidate_limit: int,
+    *,
+    edition_detail_limit: int = 0,
+) -> tuple[dict, dict]:
     collectors = {
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
@@ -57,6 +63,13 @@ def _collect_payload(provider: str, topic: str, candidate_limit: int) -> tuple[d
         with collector_class() as collector:
             request_parameters = collector.search_parameters(topic, candidate_limit)
             payload = collector.search_books(topic, candidate_limit=candidate_limit)
+            if isinstance(collector, OpenLibraryCollector) and edition_detail_limit > 0:
+                payload = {
+                    "search_response": payload,
+                    "edition_details": collector.fetch_edition_details(
+                        payload, candidate_limit=edition_detail_limit
+                    ),
+                }
             return payload, request_parameters
     except httpx.HTTPStatusError as exc:
         raise typer.BadParameter(
@@ -126,7 +139,12 @@ def collect(
     _ensure_topic(topic)
     retrieved_at = datetime.now(UTC)
     candidate_limit = max(limit * 4, limit)
-    payload, request_parameters = _collect_payload(provider, topic, candidate_limit)
+    payload, request_parameters = _collect_payload(
+        provider,
+        topic,
+        candidate_limit,
+        edition_detail_limit=min(limit + 3, candidate_limit),
+    )
     artifact = RawArtifact(
         provider=provider,
         topic=topic,
