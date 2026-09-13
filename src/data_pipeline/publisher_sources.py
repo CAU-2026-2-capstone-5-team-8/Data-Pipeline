@@ -16,6 +16,7 @@ class PublisherSourceSpec:
     edition: int
     home_url: str
     toc_url: str
+    expected_toc_labels: tuple[str, ...]
 
 
 PUBLISHER_SOURCES = {
@@ -32,6 +33,7 @@ PUBLISHER_SOURCES = {
             "action=index&bcsId=2217&itemId=0471694665&itemTypeId=BKS"
         ),
         toc_url=("https://bcs.wiley.com/he-bcs/Books?action=contents&itemId=0471694665&bcsId=2217"),
+        expected_toc_labels=tuple(str(number) for number in range(1, 24)) + ("A", "B", "C"),
     )
 }
 

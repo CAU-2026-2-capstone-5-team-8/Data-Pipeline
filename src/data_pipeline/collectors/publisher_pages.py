@@ -16,7 +16,7 @@ class PublisherPageCollector:
         self._owns_client = client is None
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(20.0),
-            follow_redirects=True,
+            follow_redirects=False,
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1 (book evidence research)"},
         )
 
@@ -39,6 +39,8 @@ class PublisherPageCollector:
     )
     def _fetch_html(self, url: str) -> str:
         response = self.client.get(url)
+        if response.is_redirect:
+            raise InvalidProviderResponse("publisher page returned an unapproved redirect")
         response.raise_for_status()
         content_type = response.headers.get("content-type", "").casefold()
         if "text/html" not in content_type:

@@ -114,6 +114,8 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
     topic = artifact.topic
     limit = artifact.requested_limit
     if provider == "publisher-page":
+        if limit != 1:
+            raise typer.BadParameter("publisher raw artifact requested_limit must be 1")
         source_slug = artifact.request_parameters.get("source")
         if not isinstance(source_slug, str):
             raise typer.BadParameter("publisher raw artifact is missing its source slug")

@@ -1,13 +1,18 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from data_pipeline.cli import _collect_payload, app
 from data_pipeline.collectors.open_library import OpenLibraryCollector
+from data_pipeline.collectors.publisher_pages import PublisherPageCollector
 from data_pipeline.models import Book, CanonicalDataset, Source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
 from data_pipeline.validation import validate_dataset
+
+WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
+WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
 
 
 def test_build_rejects_topic_query_mismatch(tmp_path) -> None:
@@ -49,6 +54,26 @@ def test_build_reports_invalid_provider_collection_without_traceback(tmp_path) -
     assert result.exit_code != 0
     assert "invalid 'docs' collection" in result.output
     assert "Traceback" not in result.output
+
+
+def test_build_rejects_publisher_limit_other_than_one(tmp_path) -> None:
+    raw_path = tmp_path / "publisher.json"
+    artifact = RawArtifact(
+        provider="publisher-page",
+        topic="operating-systems",
+        requested_limit=2,
+        retrieved_at=datetime(2026, 9, 12, 12, 34, tzinfo=UTC),
+        request_parameters=PublisherPageCollector.request_parameters("wiley-osc7"),
+        response={},
+    )
+    write_raw_response(artifact, raw_path)
+
+    result = CliRunner().invoke(
+        app, ["build", "--raw", str(raw_path), "--output", str(tmp_path / "processed")]
+    )
+
+    assert result.exit_code != 0
+    assert "requested_limit must be 1" in result.output
 
 
 def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None:
@@ -114,9 +139,9 @@ def test_collect_publisher_merges_exact_book_evidence(tmp_path, monkeypatch) -> 
     payload = {
         "source_slug": source_spec.slug,
         "home_url": source_spec.home_url,
-        "home_html": "Operating System Concepts, Seventh Edition 0471694665",
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
         "toc_url": source_spec.toc_url,
-        "toc_html": '<div class="chapterTitle"><h3>Chapter 1: Introduction</h3></div>',
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
     }
     parameters = {
         "source": source_spec.slug,
@@ -135,8 +160,9 @@ def test_collect_publisher_merges_exact_book_evidence(tmp_path, monkeypatch) -> 
 
     dataset = read_dataset(tmp_path / "processed")
     assert result.exit_code == 0
-    assert "Publisher TOC entries collected: 1" in result.output
+    assert "Publisher TOC entries collected: 26" in result.output
     assert len(dataset.books) == 1
-    assert len(dataset.toc) == 1
+    assert len(dataset.toc) == 26
+    assert len(dataset.sources) == 3
     assert validate_dataset(dataset) == []
     assert len(list((tmp_path / "raw" / "publisher_page").rglob("*.json"))) == 1

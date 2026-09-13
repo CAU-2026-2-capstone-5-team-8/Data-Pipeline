@@ -584,16 +584,16 @@ def _wiley_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry
         text = heading.text(separator=" ", strip=True)
         match = re.fullmatch(r"(Chapter|Appendix)\s+([^:]+):\s*(.+)", text, re.IGNORECASE)
         if match is None:
-            logger.warning(
-                "event=toc_entry_skipped provider=wiley book_id=%s reason=unsupported_heading",
-                book_id,
+            raise InvalidProviderResponse(
+                f"Wiley TOC contained an unsupported heading for {book_id}: {text!r}"
             )
-            continue
         label = match.group(2).strip()
         title = match.group(3).strip()
         identity = (label.casefold(), title.casefold())
-        if not title or identity in seen:
-            continue
+        if identity in seen:
+            raise InvalidProviderResponse(
+                f"Wiley TOC contained a duplicate heading for {book_id}: {text!r}"
+            )
         seen.add(identity)
         order_index = len(entries)
         entries.append(
@@ -645,18 +645,44 @@ def normalize_publisher_page_response(
     if source_spec.edition not in _edition_numbers(home_text):
         raise InvalidProviderResponse("publisher identity page does not match the expected edition")
 
-    source_id = stable_id(
+    home_hash = sha256_text(home_html)
+    toc_hash = sha256_text(toc_html)
+    home_source_id = stable_id(
+        "source",
+        source_spec.provider,
+        source_spec.home_url,
+        source_spec.book_id,
+    )
+    toc_source_id = stable_id(
         "source",
         source_spec.provider,
         source_spec.toc_url,
         source_spec.book_id,
-        retrieved_at.isoformat(),
     )
-    toc = _wiley_toc_entries(toc_html, source_spec.book_id, source_id)
+    toc = _wiley_toc_entries(toc_html, source_spec.book_id, toc_source_id)
     if not toc:
         raise InvalidProviderResponse("publisher TOC page contained no supported headings")
-    source = Source(
-        source_id=source_id,
+    labels = tuple(entry.label for entry in toc)
+    if labels != source_spec.expected_toc_labels:
+        raise InvalidProviderResponse(
+            "publisher TOC page is incomplete or does not match the reviewed structure"
+        )
+
+    rights_note = "Public publisher companion page; no license statement found."
+    home_source = Source(
+        source_id=home_source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="publisher_page",
+        url=source_spec.home_url,
+        external_id=source_spec.isbn_10,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=home_hash,
+    )
+    toc_source = Source(
+        source_id=toc_source_id,
         book_id=source_spec.book_id,
         provider=source_spec.provider,
         source_type="publisher_page",
@@ -664,7 +690,7 @@ def normalize_publisher_page_response(
         external_id=source_spec.isbn_10,
         retrieved_at=retrieved_at,
         license=None,
-        rights_note="Public publisher companion page; no license statement found.",
-        content_hash=sha256_text(toc_html),
+        rights_note=rights_note,
+        content_hash=toc_hash,
     )
-    return CanonicalDataset(books=[], documents=[], toc=toc, sources=[source])
+    return CanonicalDataset(books=[], documents=[], toc=toc, sources=[home_source, toc_source])

@@ -104,3 +104,23 @@ def test_publisher_collector_rejects_non_html_response() -> None:
 
         with pytest.raises(InvalidProviderResponse, match="content type"):
             collector.fetch("wiley-osc7")
+
+
+def test_publisher_collector_does_not_follow_redirects() -> None:
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            302,
+            headers={"location": "https://unreviewed.example.test/page"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = PublisherPageCollector(client=client)
+
+        with pytest.raises(InvalidProviderResponse, match="unapproved redirect"):
+            collector.fetch("wiley-osc7")
+
+    assert len(requested_urls) == 1

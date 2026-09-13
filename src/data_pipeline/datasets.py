@@ -4,7 +4,7 @@ from collections.abc import Iterable
 
 from pydantic import BaseModel
 
-from data_pipeline.models import Book, CanonicalDataset
+from data_pipeline.models import Book, CanonicalDataset, Source
 
 
 class DatasetMergeError(ValueError):
@@ -39,6 +39,24 @@ def _merge_books(books: Iterable[Book]) -> list[Book]:
     return list(merged.values())
 
 
+def _merge_sources(sources: Iterable[Source]) -> list[Source]:
+    """Collapse repeated URL snapshots while retaining the latest raw provenance."""
+    merged: dict[str, Source] = {}
+    for source in sources:
+        existing = merged.get(source.source_id)
+        if existing is None:
+            merged[source.source_id] = source
+            continue
+        mutable_snapshot_fields = {"retrieved_at", "content_hash"}
+        existing_identity = existing.model_dump(exclude=mutable_snapshot_fields)
+        incoming_identity = source.model_dump(exclude=mutable_snapshot_fields)
+        if existing_identity != incoming_identity:
+            raise DatasetMergeError(f"conflicting source_id: {source.source_id}")
+        if source.retrieved_at > existing.retrieved_at:
+            merged[source.source_id] = source
+    return list(merged.values())
+
+
 def merge_datasets(datasets: Iterable[CanonicalDataset]) -> CanonicalDataset:
     """Merge datasets without silently resolving conflicting deterministic IDs."""
     items = list(datasets)
@@ -48,7 +66,5 @@ def merge_datasets(datasets: Iterable[CanonicalDataset]) -> CanonicalDataset:
             (document for dataset in items for document in dataset.documents), "document_id"
         ),
         toc=_merge_records((entry for dataset in items for entry in dataset.toc), "toc_entry_id"),
-        sources=_merge_records(
-            (source for dataset in items for source in dataset.sources), "source_id"
-        ),
+        sources=_merge_sources(source for dataset in items for source in dataset.sources),
     )
