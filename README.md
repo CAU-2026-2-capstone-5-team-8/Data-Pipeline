@@ -63,6 +63,14 @@ documents. The author's page explicitly applies the Creative Commons Attribution
 License, which is retained on every source record. No ISBN is asserted because none is stated in
 the collected official pages.
 
+The next Operating Systems OER slice collects Allen B. Downey's *Think OS: A Brief Introduction
+to Operating Systems*, version 0.7.4, from the official Green Tea Press pages. It replaces the
+edition-mismatched *Modern Operating Systems* candidate. The publisher page supplies the
+author-written description, while the linked public HTML book supplies a complete 11-chapter,
+65-entry hierarchical TOC, the preface, and the first chapter as sample text. The publisher page
+states CC BY-NC 3.0 and the versioned online book states CC BY-NC-SA 4.0; those differing terms are
+preserved on their respective source records instead of being collapsed into one license.
+
 Reviewed public catalog sources are available for *Operating Systems: Internals and Design
 Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
 pages expose each exact ISBN and edition, a description, and complete TOCs in ordinary HTML. The
@@ -83,13 +91,13 @@ current ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 4/5 | 4/5 | 1/5 | 1/5 | 1/5 |
+| Operating Systems | 5/5 | 5/5 | 4/5 | 2/5 | 2/5 | 1/5 |
 | Linear Algebra | 5/5 | 5/5 | 4/5 | 2/5 | 2/5 | 0/5 |
 
-The nine TOCs contain 780 canonical entries. The Open Library and eCampus TOCs retain their
-available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only, so
-their 35 entries are represented truthfully as top-level items. OSTEP contributes five thematic
-roots and 57 numbered child chapters.
+All ten books now have TOCs, containing 845 canonical entries. The Open Library and eCampus TOCs
+retain their available parent-child hierarchy; the Wiley pages expose chapter and appendix
+headings only, so their 35 entries are represented truthfully as top-level items. OSTEP contributes
+five thematic roots and 57 numbered child chapters.
 The canonical dataset also contains one 72,711-character public supplemental appendix for one
 Operating Systems book. It is useful real book-text evidence for downstream feasibility testing,
 but it intentionally does not increase the preview/sample coverage count.
@@ -97,11 +105,13 @@ OSTEP adds a 27,155-character preface, a 47,725-character introduction, and a 25
 sample chapter. This demonstrates that the schema and raw-to-canonical path can carry usable public
 book text without source-specific logic downstream. Coverage remains incomplete for most of the
 commercial titles, so the full MVP definition of done has not yet been reached.
-Hefferon adds an 8,106-character preface and a 140,910-character first chapter, demonstrating the
+Think OS adds a 1,694-character description, a 4,843-character preface, and a 10,538-character
+first chapter. Its HTML index contributes 11 chapter roots and 54 child sections. Hefferon adds an
+8,106-character preface and a 140,910-character first chapter, demonstrating the
 same public-text path for Linear Algebra. *Understanding Linear Algebra* adds an 8,902-character
 preface and five first-chapter preview pages containing 106,307 characters in total. Its PreTeXt
 navigation contributes 7 chapters, 38 second-level entries, and 177 third-level entries. The
-complete canonical result contains 10 books, 21 documents, 780 TOC entries, and 35 source records.
+complete canonical result contains 10 books, 23 documents, 845 TOC entries, and 37 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -122,6 +132,7 @@ uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline collect-open-textbook --source ostep-1.10
 uv run data-pipeline collect-open-textbook --source hefferon-linear-algebra-4
 uv run data-pipeline collect-open-textbook --source understanding-linear-algebra-2022
+uv run data-pipeline collect-open-textbook --source think-os-0.7.4
 uv run data-pipeline report
 ```
 
@@ -140,9 +151,9 @@ entry count, and top-level TOC structure all match.
 `collect-open-textbook` verifies the title, authors, publisher, version, year, ISBN, complete
 TOC or PDF outline, public document identity, resource media types, and reviewed text markers.
 Source-specific size limits are enforced: 5 MiB for OSTEP resources, 10 MiB for the reviewed 7.63
-MB Hefferon PDF, and 1 MiB per reviewed PreTeXt HTML page. It removes the configured weak candidate
-and all records scoped to that book before merging the new book. Repeated runs retain five books
-per topic and update only the selected source snapshots.
+MB Hefferon PDF, and 1 MiB per reviewed PreTeXt or Think OS HTML page. It removes the configured
+weak candidate and all records scoped to that book before merging the new book. Repeated runs
+retain five books per topic and update only the selected source snapshots.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
