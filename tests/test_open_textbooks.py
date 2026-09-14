@@ -12,7 +12,7 @@ from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.datasets import without_books
 from data_pipeline.identifiers import sha256_bytes, sha256_text
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
-from data_pipeline.normalizers import normalize_open_textbook_response
+from data_pipeline.normalizers import _same_web_resource, normalize_open_textbook_response
 from data_pipeline.open_textbook_sources import open_textbook_source
 from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
 from data_pipeline.validation import validate_dataset
@@ -618,6 +618,13 @@ def test_think_os_rejects_publisher_page_without_reviewed_index_link() -> None:
 
     with pytest.raises(InvalidProviderResponse, match="not linked"):
         normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_reviewed_link_comparison_rejects_malformed_ports() -> None:
+    assert not _same_web_resource(
+        "https://greenteapress.com:invalid/thinkos/html/index.html",
+        "https://greenteapress.com/thinkos/html/index.html",
+    )
 
 
 def test_think_os_preserves_different_page_license_statements() -> None:

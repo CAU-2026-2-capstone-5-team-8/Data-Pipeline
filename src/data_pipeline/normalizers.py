@@ -1003,9 +1003,13 @@ def _same_web_resource(left: str, right: str) -> bool:
     """Compare reviewed web links while ignoring only an HTTP-to-HTTPS scheme upgrade."""
     left_url = urlsplit(left)
     right_url = urlsplit(right)
+    try:
+        same_port = left_url.port == right_url.port
+    except ValueError:
+        return False
     return (
         left_url.hostname == right_url.hostname
-        and left_url.port == right_url.port
+        and same_port
         and left_url.path.rstrip("/") == right_url.path.rstrip("/")
         and left_url.query == right_url.query
     )
