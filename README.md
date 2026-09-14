@@ -24,11 +24,12 @@ additional descriptions. Search, edition, and work responses remain together in 
 raw artifact. Exact duplicate descriptions are emitted once, and every document and TOC entry
 references the API source record that supports it.
 
-An exact-edition publisher evidence slice is also available for the public Wiley companion site
-for *Operating System Concepts, 7th Edition*. Its allowlist entry binds the publisher page to the
-canonical book by ISBN, title, and edition. The collector fetches only the identity page and TOC
-page, preserves both HTML responses in one immutable raw artifact, and extracts the 26 visible
-chapter/appendix headings. It does not follow resource links or collect textbook body content.
+Exact-edition publisher evidence slices are also available for the public Wiley companion sites
+for *Operating System Concepts, 7th Edition* and *Elementary Linear Algebra, 10th Edition*. Each
+allowlist entry binds its publisher pages to the canonical book by ISBN, title, and edition. The
+collector fetches only the identity page and TOC page, preserves both HTML responses in one
+immutable raw artifact, and extracts the complete reviewed top-level heading sequence. It does not
+follow resource links or collect textbook body content.
 
 Google Books is also implemented (`--provider google-books`), but its public endpoint returned
 HTTP 429 from the development environment on 2026-09-12. A borrow link, scan identifier, preview
@@ -37,17 +38,17 @@ restricted scans or infer unavailable preface, introduction, preview, or sample 
 
 ## Real-data evidence experiment
 
-The 2026-09-13 Open Library plus Wiley experiment produced the following coverage for the current
+The 2026-09-14 Open Library plus Wiley experiment produced the following coverage for the current
 ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Operating Systems | 5/5 | 1/5 | 2/5 | 0/5 | 0/5 |
-| Linear Algebra | 5/5 | 2/5 | 4/5 | 0/5 | 0/5 |
+| Linear Algebra | 5/5 | 3/5 | 4/5 | 0/5 | 0/5 |
 
-The three TOCs contain 163 canonical entries. The two Open Library TOCs retain their available
-parent-child hierarchy; Wiley exposes chapter and appendix headings only, so those 26 entries are
-represented truthfully as top-level items.
+The four TOCs contain 172 canonical entries. The two Open Library TOCs retain their available
+parent-child hierarchy; the Wiley pages expose chapter and appendix headings only, so their 35
+entries are represented truthfully as top-level items.
 This is useful progress but not the full MVP definition of done: TOC coverage is not yet a useful
 majority, and no public preface/introduction or preview/sample text has been collected.
 One work-level description was intentionally excluded because it explicitly described a different
@@ -63,6 +64,7 @@ uv run data-pipeline search --topic operating-systems --limit 5
 uv run data-pipeline collect --topic operating-systems --limit 5
 uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline collect-publisher --source wiley-osc7
+uv run data-pipeline collect-publisher --source wiley-ela10
 uv run data-pipeline report
 ```
 
@@ -82,7 +84,8 @@ Canonical data can be rebuilt without another network request:
 uv run data-pipeline build \
   --raw data/raw/open_library/operating-systems/<artifact>.json \
   --raw data/raw/open_library/linear-algebra/<artifact>.json \
-  --raw data/raw/publisher_page/operating-systems/<artifact>.json
+  --raw data/raw/publisher_page/operating-systems/<artifact>.json \
+  --raw data/raw/publisher_page/linear-algebra/<artifact>.json
 ```
 
 Repeat `--raw` for multiple artifacts when rebuilding the combined two-topic dataset. Sequential
