@@ -1,4 +1,5 @@
 import base64
+import json
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -10,7 +11,7 @@ from data_pipeline.cli import app
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.datasets import without_books
-from data_pipeline.identifiers import sha256_bytes, sha256_text
+from data_pipeline.identifiers import sha256_bytes, sha256_text, stable_id
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
 from data_pipeline.normalizers import _same_web_resource, normalize_open_textbook_response
 from data_pipeline.open_textbook_sources import open_textbook_source
@@ -378,6 +379,154 @@ def _think_os_payload(*, omit_last_toc_entry: bool = False) -> dict:
     }
 
 
+def _nicholson_tags() -> str:
+    return (
+        '<div id="pageTagsHolder">license:ccbyncsa licenseversion:40 '
+        "authorname:wknicholson "
+        "source@https://lyryx.com/linear-algebra-applications</div>"
+    )
+
+
+def _nicholson_home_html() -> str:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+    page_links = "".join(
+        f'<a href="{document.url}">Reviewed page</a>'
+        for document in source.documents
+        if document.document_type in {"navigation", "toc"}
+    )
+    return (
+        "<html><body>"
+        f'<div id="titleHolder">{source.title} (Nicholson)</div>'
+        f"{_nicholson_tags()}"
+        f'<a href="{source.license_reference_url}">CC BY-NC-SA 4.0</a>'
+        f"{page_links}</body></html>"
+    )
+
+
+def _nicholson_toc_html(
+    chapter_index: int,
+    *,
+    omit_last_entry: bool = False,
+) -> str:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+    roots = (
+        "1: Systems of Linear Equations",
+        "2: Matrix Algebra",
+        "3: Determinants and Diagonalization",
+        "4: Vector Geometry",
+        "5: Vector Space Rⁿ",
+        "6: Vector Spaces",
+        "7: Linear Transformations",
+        "8: Orthogonality",
+        "9: Change of Basis",
+        "10: Inner Product Spaces",
+        "11: Canonical Forms",
+        "12: Appendices",
+    )
+    section_counts = (8, 11, 10, 7, 9, 8, 6, 12, 4, 6, 3, 4)
+    child_counts = (6, 9, 8, 5, 7, 6, 4, 9, 3, 5, 2, 3)
+    document = [item for item in source.documents if item.document_type == "toc"][chapter_index]
+    sections = []
+    for section_index in range(section_counts[chapter_index]):
+        title = f"{chapter_index + 1}.{section_index}: Section {section_index}"
+        if section_index == 0:
+            title = document.expected_text_markers[1]
+        if section_index == section_counts[chapter_index] - 1:
+            title = document.expected_text_markers[2]
+        children = ""
+        if section_index < child_counts[chapter_index] and not (
+            omit_last_entry and chapter_index == 11 and section_index == 2
+        ):
+            children = (
+                "<dd class='mt-listing-detailed-subpages'><ul>"
+                "<li class='mt-list-topics-childs'>"
+                f"<a>{chapter_index + 1}.{section_index}E: Exercises</a>"
+                "</li></ul></dd>"
+            )
+        sections.append(
+            "<li class='mt-list-topics'><dl>"
+            f"<dt class='mt-listing-detailed-title'><a>{title}</a></dt>"
+            f"{children}</dl></li>"
+        )
+    preview = next(item for item in source.documents if item.document_type == "preview")
+    preview_link = f'<a href="{preview.url}">Preview</a>' if chapter_index == 0 else ""
+    return (
+        "<html><body>"
+        f'<div id="titleHolder">{roots[chapter_index]}</div>'
+        f"{_nicholson_tags()}{preview_link}"
+        '<section class="mt-content-container"><div class="mt-guide-content"><ul>'
+        f"{''.join(sections)}</ul></div></section>"
+        f'<a href="{source.license_reference_url}">License</a>'
+        "</body></html>"
+    )
+
+
+def _nicholson_payload(*, omit_last_toc_entry: bool = False) -> dict:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+    metadata = {
+        "@context": "https://schema.org",
+        "@type": "Book",
+        "@id": "533",
+        "name": source.title,
+        "bookEdition": source.version,
+        "description": "A reviewed public description of linear algebra and its applications.",
+        "inLanguage": "English",
+        "license": "Attribution-NonCommercial-ShareAlike",
+        "copyrightYear": source.published_year,
+        "author": [{"@type": "Person", "name": source.authors[0]}],
+        "publisher": [{"@type": "Organization", "name": source.publisher}],
+        "isAccessibleForFree": True,
+    }
+    documents = []
+    toc_index = 0
+    for document in source.documents:
+        if document.document_type == "metadata":
+            html = (
+                '<html><body><script type="application/ld+json">'
+                f"{json.dumps(metadata)}</script></body></html>"
+            )
+        elif document.document_type == "navigation":
+            preface = next(item for item in source.documents if item.document_type == "preface")
+            html = (
+                "<html><body><div id='titleHolder'>Front Matter</div>"
+                f"{_nicholson_tags()}<p>TitlePage</p>"
+                f"<a href='{preface.url}'>Preface</a></body></html>"
+            )
+        elif document.document_type == "toc":
+            html = _nicholson_toc_html(
+                toc_index,
+                omit_last_entry=omit_last_toc_entry,
+            )
+            toc_index += 1
+        else:
+            page_title = (
+                "Preface"
+                if document.document_type == "preface"
+                else "1.1: Solutions and Elementary Operations"
+            )
+            html = (
+                f"<html><body><div id='titleHolder'>{page_title}</div>{_nicholson_tags()}"
+                '<section class="mt-content-container">'
+                f"<p>{' '.join(document.expected_text_markers)}</p>"
+                "<p>Reviewed public textbook evidence.</p>"
+                "<footer>Platform navigation and attribution controls.</footer>"
+                "</section></body></html>"
+            )
+        documents.append(
+            {
+                "url": document.url,
+                "media_type": document.media_type,
+                "content_base64": base64.b64encode(html.encode()).decode(),
+            }
+        )
+    return {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": _nicholson_home_html(),
+        "documents": documents,
+    }
+
+
 def test_open_textbook_collector_fetches_only_allowlisted_resources() -> None:
     source = open_textbook_source("ostep-1.10")
     requested_urls = []
@@ -565,6 +714,87 @@ def test_pretext_normalizes_description_preface_previews_toc_and_provenance() ->
     assert dataset.sources[0].source_type == "author_page"
     assert all(item.license == source.license for item in dataset.sources)
     assert validate_dataset(dataset) == []
+
+
+def test_libretexts_normalizes_description_preface_preview_toc_and_provenance() -> None:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+
+    dataset = normalize_open_textbook_response(
+        _nicholson_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].book_id == source.book_id
+    assert dataset.books[0].authors == ["W. Keith Nicholson"]
+    assert dataset.books[0].publisher == "Lyryx"
+    assert dataset.books[0].isbn_10 is None
+    assert dataset.books[0].isbn_13 is None
+    assert [document.document_type for document in dataset.documents] == [
+        "description",
+        "preface",
+        "preview",
+    ]
+    assert "Platform navigation" not in dataset.documents[-1].text
+    assert len(dataset.toc) == 167
+    assert {level: sum(entry.level == level for entry in dataset.toc) for level in (1, 2, 3)} == {
+        1: 12,
+        2: 88,
+        3: 67,
+    }
+    assert len(dataset.sources) == 17
+    metadata_source = next(
+        item for item in dataset.sources if item.provider == "open_textbook_library"
+    )
+    assert metadata_source.source_id == stable_id(
+        "source", "open_textbook_library", metadata_source.url, source.book_id
+    )
+    assert metadata_source.license == "Attribution-NonCommercial-ShareAlike"
+    assert all(
+        item.license == source.license
+        for item in dataset.sources
+        if item.provider == source.provider
+    )
+    assert validate_dataset(dataset) == []
+
+
+def test_libretexts_rejects_incomplete_toc() -> None:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+
+    with pytest.raises(InvalidProviderResponse, match="TOC does not match review"):
+        normalize_open_textbook_response(
+            _nicholson_payload(omit_last_toc_entry=True),
+            topic=source.topic,
+            retrieved_at=RETRIEVED_AT,
+        )
+
+
+def test_libretexts_rejects_changed_structured_book_identity() -> None:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+    payload = _nicholson_payload()
+    metadata_spec = next(item for item in source.documents if item.document_type == "metadata")
+    raw_metadata = next(item for item in payload["documents"] if item["url"] == metadata_spec.url)
+    html = base64.b64decode(raw_metadata["content_base64"]).decode()
+    raw_metadata["content_base64"] = base64.b64encode(
+        html.replace('"copyrightYear": 2023', '"copyrightYear": 2022').encode()
+    ).decode()
+
+    with pytest.raises(InvalidProviderResponse, match="metadata does not match review"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_libretexts_requires_reviewed_preface_link_chain() -> None:
+    source = open_textbook_source("nicholson-linear-algebra-2023")
+    payload = _nicholson_payload()
+    navigation_spec = next(item for item in source.documents if item.document_type == "navigation")
+    raw_navigation = next(
+        item for item in payload["documents"] if item["url"] == navigation_spec.url
+    )
+    html = base64.b64decode(raw_navigation["content_base64"]).decode()
+    raw_navigation["content_base64"] = base64.b64encode(
+        html.replace("06%3A_Preface", "06%3A_Unreviewed").encode()
+    ).decode()
+
+    with pytest.raises(InvalidProviderResponse, match="preface is not linked"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
 
 
 def test_think_os_normalizes_description_preface_sample_toc_and_licenses() -> None:

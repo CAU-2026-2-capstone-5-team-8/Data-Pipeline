@@ -1,4 +1,4 @@
-"""Collector for a reviewed author-hosted open textbook."""
+"""Collector for a reviewed public open textbook."""
 
 import base64
 from typing import Any

@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import json
 import logging
 import re
 from datetime import datetime
@@ -1409,6 +1410,455 @@ def _pretext_document_text(html: str, name: str) -> str:
     return text
 
 
+def _libretexts_page_title(tree: HTMLParser, name: str) -> str:
+    """Return the reviewed MindTouch page title stored in the response."""
+    title = tree.css_first("#titleHolder")
+    if title is None:
+        raise InvalidProviderResponse(f"LibreTexts {name} page is missing its title")
+    text = " ".join(title.text(separator=" ", strip=True).split())
+    if not text:
+        raise InvalidProviderResponse(f"LibreTexts {name} page has an empty title")
+    return text
+
+
+def _validate_libretexts_license(tree: HTMLParser, name: str) -> None:
+    """Verify the per-page license and authorship tags preserved by LibreTexts."""
+    tags = tree.css_first("#pageTagsHolder")
+    if tags is None:
+        raise InvalidProviderResponse(f"LibreTexts {name} page is missing provenance tags")
+    tag_text = tags.text(separator=" ", strip=True)
+    expected_tags = (
+        "license:ccbyncsa",
+        "licenseversion:40",
+        "authorname:wknicholson",
+        "source@https://lyryx.com/linear-algebra-applications",
+    )
+    if any(marker not in tag_text for marker in expected_tags):
+        raise InvalidProviderResponse(
+            f"LibreTexts {name} page license or authorship does not match review"
+        )
+
+
+def _libretexts_document_text(html: str, name: str) -> str:
+    """Extract visible book text while excluding the platform footer and attribution UI."""
+    content = HTMLParser(html).css_first("section.mt-content-container")
+    if content is None:
+        raise InvalidProviderResponse(f"LibreTexts {name} page is missing book content")
+    parts = []
+    node = content.child
+    while node is not None:
+        if node.tag == "footer":
+            break
+        if node.tag not in {"-text", "script", "style"}:
+            text = " ".join(node.text(separator=" ", strip=True).split())
+            if text:
+                parts.append(text)
+        node = node.next
+    result = "\n\n".join(parts)
+    if not result:
+        raise InvalidProviderResponse(f"LibreTexts {name} page contains no book text")
+    return result
+
+
+def _split_libretexts_toc_title(value: str) -> tuple[str | None, str]:
+    """Split a visible LibreTexts TOC label without using it as an ordering key."""
+    normalized = " ".join(value.split())
+    label, separator, title = normalized.partition(":")
+    if not separator or not label.strip() or not title.strip():
+        raise InvalidProviderResponse("LibreTexts TOC entry has an invalid labeled title")
+    return label.strip(), title.strip()
+
+
+def _libretexts_chapter_toc(
+    html: str,
+    book_id: str,
+    source_id: str,
+    root_index: int,
+) -> list[TocEntry]:
+    """Parse one reviewed LibreTexts chapter listing as three canonical levels."""
+    tree = HTMLParser(html)
+    root_label, root_title = _split_libretexts_toc_title(
+        _libretexts_page_title(tree, f"chapter {root_index + 1}")
+    )
+    root_id = stable_id("toc", book_id, source_id, str(root_index), root_title)
+    entries = [
+        TocEntry(
+            toc_entry_id=root_id,
+            book_id=book_id,
+            parent_entry_id=None,
+            level=1,
+            order_index=root_index,
+            label=root_label,
+            title=root_title,
+            source_id=source_id,
+        )
+    ]
+    content = tree.css_first("section.mt-content-container")
+    if content is None:
+        raise InvalidProviderResponse("LibreTexts chapter page is missing its topic listing")
+    topics = content.css("li.mt-list-topics")
+    if not topics:
+        raise InvalidProviderResponse("LibreTexts chapter page has no section entries")
+    for section_index, topic in enumerate(topics):
+        title_node = topic.css_first("dt.mt-listing-detailed-title > a")
+        if title_node is None:
+            raise InvalidProviderResponse("LibreTexts section is missing its title link")
+        label, title = _split_libretexts_toc_title(title_node.text(separator=" ", strip=True))
+        section_id = stable_id(
+            "toc", book_id, source_id, str(root_index), str(section_index), title
+        )
+        entries.append(
+            TocEntry(
+                toc_entry_id=section_id,
+                book_id=book_id,
+                parent_entry_id=root_id,
+                level=2,
+                order_index=section_index,
+                label=label,
+                title=title,
+                source_id=source_id,
+            )
+        )
+        for child_index, child in enumerate(topic.css("li.mt-list-topics-childs")):
+            child_link = child.css_first("a")
+            if child_link is None:
+                raise InvalidProviderResponse("LibreTexts subsection is missing its title link")
+            child_label, child_title = _split_libretexts_toc_title(
+                child_link.text(separator=" ", strip=True)
+            )
+            entries.append(
+                TocEntry(
+                    toc_entry_id=stable_id(
+                        "toc",
+                        book_id,
+                        source_id,
+                        str(root_index),
+                        str(section_index),
+                        str(child_index),
+                        child_title,
+                    ),
+                    book_id=book_id,
+                    parent_entry_id=section_id,
+                    level=3,
+                    order_index=child_index,
+                    label=child_label,
+                    title=child_title,
+                    source_id=source_id,
+                )
+            )
+    return entries
+
+
+def _open_textbook_library_book(html: str) -> dict[str, Any]:
+    """Read the single structured Book record from an Open Textbook Library page."""
+    records = []
+    for node in HTMLParser(html).css('script[type="application/ld+json"]'):
+        try:
+            value = json.loads(node.text())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        values = value if isinstance(value, list) else [value]
+        records.extend(
+            item for item in values if isinstance(item, dict) and item.get("@type") == "Book"
+        )
+    if len(records) != 1:
+        raise InvalidProviderResponse(
+            "Open Textbook Library page must contain one structured Book record"
+        )
+    return records[0]
+
+
+def _normalize_nicholson_response(
+    response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize Nicholson metadata and public LibreTexts HTML evidence."""
+    if (
+        source_spec.license is None
+        or source_spec.license_reference_url is None
+        or source_spec.version is None
+        or source_spec.publisher is None
+    ):
+        raise InvalidProviderResponse("Nicholson allowlist provenance is incomplete")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("LibreTexts home URL does not match allowlist")
+    home_html = response.get("home_html")
+    raw_documents = response.get("documents")
+    if not isinstance(home_html, str) or not isinstance(raw_documents, list):
+        raise InvalidProviderResponse("LibreTexts response has invalid content fields")
+    if len(home_html.encode("utf-8")) > source_spec.max_resource_bytes:
+        raise InvalidProviderResponse("LibreTexts home page exceeds its reviewed size limit")
+
+    home_tree = HTMLParser(home_html)
+    if _libretexts_page_title(home_tree, "home") != f"{source_spec.title} (Nicholson)":
+        raise InvalidProviderResponse("LibreTexts home page does not match the reviewed book")
+    _validate_libretexts_license(home_tree, "home")
+    home_links = _resolved_links(home_tree, source_spec.home_url)
+    if not any(_same_web_resource(link, source_spec.license_reference_url) for link in home_links):
+        raise InvalidProviderResponse("LibreTexts home page is missing its license link")
+
+    expected_documents = {document.url: document for document in source_spec.documents}
+    if len(raw_documents) != len(expected_documents):
+        raise InvalidProviderResponse("LibreTexts response has an unexpected document count")
+    html_by_url: dict[str, str] = {}
+    for raw_document in raw_documents:
+        if not isinstance(raw_document, dict):
+            raise InvalidProviderResponse("LibreTexts response contains an invalid document")
+        url = raw_document.get("url")
+        if not isinstance(url, str) or url not in expected_documents or url in html_by_url:
+            raise InvalidProviderResponse("LibreTexts document URL does not match allowlist")
+        document_spec = expected_documents[url]
+        if raw_document.get("media_type") != document_spec.media_type:
+            raise InvalidProviderResponse("LibreTexts document has an invalid media type")
+        encoded_content = raw_document.get("content_base64")
+        if not isinstance(encoded_content, str):
+            raise InvalidProviderResponse("LibreTexts document is missing base64 content")
+        try:
+            content = base64.b64decode(encoded_content, validate=True)
+            html = content.decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            raise InvalidProviderResponse("LibreTexts document has invalid encoded HTML") from exc
+        if len(content) > source_spec.max_resource_bytes:
+            raise InvalidProviderResponse("LibreTexts document exceeds its reviewed size limit")
+        tree = HTMLParser(html)
+        reviewed_text = tree.root.text(separator=" ", strip=True)
+        normalized_text = normalize_bibliographic_text(reviewed_text)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_text
+            for marker in document_spec.expected_text_markers
+        ):
+            raise InvalidProviderResponse(
+                f"LibreTexts page does not match reviewed document: {document_spec.external_id}"
+            )
+        if document_spec.document_type != "metadata":
+            _validate_libretexts_license(tree, document_spec.external_id)
+        html_by_url[url] = html
+
+    metadata_specs = [
+        document for document in source_spec.documents if document.document_type == "metadata"
+    ]
+    navigation_specs = [
+        document for document in source_spec.documents if document.document_type == "navigation"
+    ]
+    toc_specs = [document for document in source_spec.documents if document.document_type == "toc"]
+    preface_specs = [
+        document for document in source_spec.documents if document.document_type == "preface"
+    ]
+    preview_specs = [
+        document for document in source_spec.documents if document.document_type == "preview"
+    ]
+    if not (
+        len(metadata_specs)
+        == len(navigation_specs)
+        == len(preface_specs)
+        == len(preview_specs)
+        == 1
+        and len(toc_specs) == 12
+    ):
+        raise InvalidProviderResponse("Nicholson allowlist does not match the reviewed page set")
+    metadata_spec = metadata_specs[0]
+    navigation_spec = navigation_specs[0]
+    preface_spec = preface_specs[0]
+    preview_spec = preview_specs[0]
+
+    if not all(
+        any(_same_web_resource(link, document.url) for link in home_links)
+        for document in (navigation_spec, *toc_specs)
+    ):
+        raise InvalidProviderResponse("LibreTexts chapter set is not linked from its home page")
+    navigation_links = _resolved_links(
+        HTMLParser(html_by_url[navigation_spec.url]), navigation_spec.url
+    )
+    if not any(_same_web_resource(link, preface_spec.url) for link in navigation_links):
+        raise InvalidProviderResponse("LibreTexts preface is not linked from Front Matter")
+    first_chapter_links = _resolved_links(
+        HTMLParser(html_by_url[toc_specs[0].url]), toc_specs[0].url
+    )
+    if not any(_same_web_resource(link, preview_spec.url) for link in first_chapter_links):
+        raise InvalidProviderResponse("LibreTexts preview is not linked from chapter 1")
+
+    metadata = _open_textbook_library_book(html_by_url[metadata_spec.url])
+    expected_metadata = {
+        "@id": "533",
+        "name": source_spec.title,
+        "bookEdition": source_spec.version,
+        "inLanguage": "English",
+        "license": metadata_spec.license,
+        "copyrightYear": source_spec.published_year,
+        "isAccessibleForFree": True,
+    }
+    if any(metadata.get(key) != value for key, value in expected_metadata.items()):
+        raise InvalidProviderResponse("Open Textbook Library metadata does not match review")
+    authors = metadata.get("author")
+    publishers = metadata.get("publisher")
+    if (
+        not isinstance(authors, list)
+        or [author.get("name") for author in authors if isinstance(author, dict)]
+        != list(source_spec.authors)
+        or not isinstance(publishers, list)
+        or [publisher.get("name") for publisher in publishers if isinstance(publisher, dict)]
+        != [source_spec.publisher]
+    ):
+        raise InvalidProviderResponse("Open Textbook Library authorship does not match review")
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        raise InvalidProviderResponse("Open Textbook Library description is missing")
+    description = " ".join(description.split())
+
+    expected_book_id = stable_id(
+        "book",
+        normalize_bibliographic_text(source_spec.title),
+        normalize_bibliographic_text(source_spec.authors[0]),
+    )
+    if source_spec.book_id != expected_book_id:
+        raise InvalidProviderResponse("Nicholson fallback book ID is not deterministic")
+    source_ids = {
+        document.url: stable_id(
+            "source",
+            (
+                "open_textbook_library"
+                if document.document_type == "metadata"
+                else source_spec.provider
+            ),
+            document.url,
+            source_spec.book_id,
+        )
+        for document in source_spec.documents
+    }
+    toc = []
+    for root_index, toc_spec in enumerate(toc_specs):
+        toc.extend(
+            _libretexts_chapter_toc(
+                html_by_url[toc_spec.url],
+                source_spec.book_id,
+                source_ids[toc_spec.url],
+                root_index,
+            )
+        )
+    expected_roots = [
+        "Systems of Linear Equations",
+        "Matrix Algebra",
+        "Determinants and Diagonalization",
+        "Vector Geometry",
+        "Vector Space Rⁿ",
+        "Vector Spaces",
+        "Linear Transformations",
+        "Orthogonality",
+        "Change of Basis",
+        "Inner Product Spaces",
+        "Canonical Forms",
+        "Appendices",
+    ]
+    level_counts = {level: sum(entry.level == level for entry in toc) for level in (1, 2, 3)}
+    if (
+        len(toc) != 167
+        or [entry.title for entry in toc if entry.parent_entry_id is None] != expected_roots
+        or level_counts != {1: 12, 2: 88, 3: 67}
+        or any(entry.level > 3 for entry in toc)
+    ):
+        raise InvalidProviderResponse("LibreTexts TOC does not match review")
+
+    metadata_source_id = source_ids[metadata_spec.url]
+    preface_text = _libretexts_document_text(html_by_url[preface_spec.url], "preface")
+    preview_text = _libretexts_document_text(html_by_url[preview_spec.url], "preview")
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", metadata_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=metadata_source_id,
+            content_hash=sha256_text(description),
+        ),
+        Document(
+            document_id=stable_id(
+                "doc",
+                source_spec.book_id,
+                "preface",
+                preface_spec.external_id,
+                source_ids[preface_spec.url],
+            ),
+            book_id=source_spec.book_id,
+            document_type="preface",
+            text=preface_text,
+            source_id=source_ids[preface_spec.url],
+            content_hash=sha256_text(preface_text),
+        ),
+        Document(
+            document_id=stable_id(
+                "doc",
+                source_spec.book_id,
+                "preview",
+                preview_spec.external_id,
+                source_ids[preview_spec.url],
+            ),
+            book_id=source_spec.book_id,
+            document_type="preview",
+            text=preview_text,
+            source_id=source_ids[preview_spec.url],
+            content_hash=sha256_text(preview_text),
+        ),
+    ]
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    libretexts_rights = (
+        "The preserved LibreTexts page tags identify W. Keith Nicholson, the Lyryx source, "
+        "and CC BY-NC-SA 4.0."
+    )
+    metadata_rights = (
+        "The Open Textbook Library structured Book record identifies this work as free to "
+        "access and states Attribution-NonCommercial-ShareAlike without a version number."
+    )
+    sources = [
+        Source(
+            source_id=home_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="open_textbook",
+            url=source_spec.home_url,
+            external_id=f"{source_spec.slug}:home",
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=libretexts_rights,
+            content_hash=sha256_text(home_html),
+        )
+    ]
+    sources.extend(
+        Source(
+            source_id=source_ids[document.url],
+            book_id=source_spec.book_id,
+            provider=(
+                "open_textbook_library"
+                if document.document_type == "metadata"
+                else source_spec.provider
+            ),
+            source_type="open_textbook",
+            url=document.url,
+            external_id=document.external_id,
+            retrieved_at=retrieved_at,
+            license=document.license or source_spec.license,
+            rights_note=(
+                metadata_rights if document.document_type == "metadata" else libretexts_rights
+            ),
+            content_hash=sha256_text(html_by_url[document.url]),
+        )
+        for document in source_spec.documents
+    )
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=None,
+        isbn_13=None,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=source_spec.publisher,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[source_spec.topic],
+    )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
+
+
 def _normalize_understanding_linear_algebra_response(
     response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -1884,6 +2334,8 @@ def normalize_open_textbook_response(
         return _normalize_think_os_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "pretext_html":
         return _normalize_understanding_linear_algebra_response(response, source_spec, retrieved_at)
+    if source_spec.source_format == "libretexts_html":
+        return _normalize_nicholson_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "hefferon_pdf_outline":
         return _normalize_hefferon_response(response, source_spec, retrieved_at)
     if source_spec.source_format != "ostep_chapter_pdfs":
