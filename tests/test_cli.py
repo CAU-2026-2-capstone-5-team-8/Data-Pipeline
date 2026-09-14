@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -5,14 +6,17 @@ from typer.testing import CliRunner
 
 from data_pipeline.cli import _collect_payload, app
 from data_pipeline.collectors.open_library import OpenLibraryCollector
+from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
 from data_pipeline.models import Book, CanonicalDataset, Source
+from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
 from data_pipeline.validation import validate_dataset
 
 WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
 WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
+ECAMPUS_FIXTURE = Path(__file__).parent / "fixtures" / "ecampus_stallings_os4.html"
 
 
 def test_build_rejects_topic_query_mismatch(tmp_path) -> None:
@@ -166,3 +170,71 @@ def test_collect_publisher_merges_exact_book_evidence(tmp_path, monkeypatch) -> 
     assert len(dataset.sources) == 3
     assert validate_dataset(dataset) == []
     assert len(list((tmp_path / "raw" / "publisher_page").rglob("*.json"))) == 1
+
+
+def test_collect_public_page_merges_description_and_toc(tmp_path, monkeypatch) -> None:
+    source_spec = public_book_source("ecampus-stallings-os4")
+    fixture_spec = replace(
+        source_spec,
+        expected_toc_count=12,
+        expected_root_titles=(
+            "Web Site for Operating Systems: Internals and Design Principles",
+            "Preface",
+            "PART ONE BACKGROUND",
+            "APPENDICES",
+            "Index",
+        ),
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.public_book_source", lambda _slug: fixture_spec)
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10="0130319996",
+        isbn_13=source_spec.isbn_13,
+        title=source_spec.title,
+        authors=["William Stallings"],
+        publisher="Prentice Hall",
+        published_year=2000,
+        language="en",
+        topics=["computer-science", "operating-systems"],
+    )
+    metadata_source = Source(
+        source_id="source_metadata",
+        book_id=book.book_id,
+        provider="fixture",
+        source_type="metadata_api",
+        url="https://example.test/book",
+        retrieved_at=datetime(2026, 9, 12, tzinfo=UTC),
+        content_hash="sha256:" + "a" * 64,
+    )
+    write_dataset(
+        CanonicalDataset(books=[book], documents=[], toc=[], sources=[metadata_source]),
+        tmp_path / "processed",
+    )
+    payload = {
+        "source_slug": source_spec.slug,
+        "url": source_spec.url,
+        "html": ECAMPUS_FIXTURE.read_text(encoding="utf-8"),
+    }
+    monkeypatch.setattr(
+        "data_pipeline.cli._collect_public_book_payload",
+        lambda _source: (
+            payload,
+            PublicBookPageCollector.request_parameters(source_spec.slug),
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["collect-public-page", "--source", source_spec.slug, "--data-dir", str(tmp_path)],
+    )
+
+    dataset = read_dataset(tmp_path / "processed")
+    assert result.exit_code == 0
+    assert "Public-page documents collected: 1" in result.output
+    assert "Public-page TOC entries collected: 12" in result.output
+    assert len(dataset.books) == 1
+    assert len(dataset.documents) == 1
+    assert len(dataset.toc) == 12
+    assert len(dataset.sources) == 2
+    assert validate_dataset(dataset) == []
+    assert len(list((tmp_path / "raw" / "public_book_page").rglob("*.json"))) == 1

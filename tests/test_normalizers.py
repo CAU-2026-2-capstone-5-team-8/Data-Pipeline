@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,12 +8,15 @@ import pytest
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.datasets import DatasetMergeError, merge_datasets
 from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json, sha256_text
+from data_pipeline.models import Book, CanonicalDataset
 from data_pipeline.normalizers import (
     normalize_google_books_response,
     normalize_isbn,
     normalize_open_library_response,
+    normalize_public_book_page_response,
     normalize_publisher_page_response,
 )
+from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.validation import validate_dataset
 
@@ -22,6 +26,7 @@ WILEY_ELA_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_ela10_home.
 WILEY_ELA_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_ela10_toc.html"
 WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
 WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
+ECAMPUS_FIXTURE = Path(__file__).parent / "fixtures" / "ecampus_stallings_os4.html"
 RETRIEVED_AT = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
 
@@ -434,6 +439,95 @@ def test_same_time_different_source_snapshots_are_rejected() -> None:
 
     with pytest.raises(DatasetMergeError, match="same retrieval time"):
         merge_datasets([first, conflicting])
+
+
+def test_public_book_page_normalizes_description_and_hierarchical_toc(monkeypatch) -> None:
+    source = public_book_source("ecampus-stallings-os4")
+    reviewed_roots = (
+        "Web Site for Operating Systems: Internals and Design Principles",
+        "Preface",
+        "PART ONE BACKGROUND",
+        "APPENDICES",
+        "Index",
+    )
+    fixture_spec = replace(
+        source,
+        expected_toc_count=12,
+        expected_root_titles=reviewed_roots,
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.public_book_source", lambda _slug: fixture_spec)
+    html = ECAMPUS_FIXTURE.read_text(encoding="utf-8")
+
+    dataset = normalize_public_book_page_response(
+        {"source_slug": source.slug, "url": source.url, "html": html},
+        topic="operating-systems",
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert len(dataset.documents) == 1
+    assert dataset.documents[0].document_type == "description"
+    assert dataset.documents[0].text.startswith("A public catalog description")
+    assert len(dataset.toc) == 12
+    assert (
+        tuple(entry.title for entry in dataset.toc if entry.parent_entry_id is None)
+        == reviewed_roots
+    )
+    by_title = {entry.title: entry for entry in dataset.toc}
+    assert by_title["Reader's Guide"].parent_entry_id == by_title["Preface"].toc_entry_id
+    assert (
+        by_title["Basic Elements"].parent_entry_id
+        == by_title["Computer System Overview"].toc_entry_id
+    )
+    assert (
+        by_title["Appendix 1A Memory"].parent_entry_id
+        == by_title["Computer System Overview"].toc_entry_id
+    )
+    assert by_title["Appendix A TCP/IP"].parent_entry_id == by_title["APPENDICES"].toc_entry_id
+    assert by_title["A.1 Overview"].parent_entry_id == by_title["Appendix A TCP/IP"].toc_entry_id
+    assert dataset.sources[0].source_type == "other"
+    assert dataset.sources[0].content_hash == sha256_text(html)
+    assert (
+        validate_dataset(
+            CanonicalDataset(
+                books=[
+                    Book(
+                        book_id=source.book_id,
+                        isbn_10="0130319996",
+                        isbn_13=source.isbn_13,
+                        title=source.title,
+                        authors=["William Stallings"],
+                        publisher="Prentice Hall",
+                        published_year=2000,
+                        language="en",
+                        topics=["computer-science", "operating-systems"],
+                    )
+                ],
+                documents=dataset.documents,
+                toc=dataset.toc,
+                sources=dataset.sources,
+            )
+        )
+        == []
+    )
+
+
+def test_public_book_page_rejects_incomplete_toc(monkeypatch) -> None:
+    source = public_book_source("ecampus-stallings-os4")
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.public_book_source",
+        lambda _slug: replace(source, expected_toc_count=13),
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="entry count"):
+        normalize_public_book_page_response(
+            {
+                "source_slug": source.slug,
+                "url": source.url,
+                "html": ECAMPUS_FIXTURE.read_text(encoding="utf-8"),
+            },
+            topic="operating-systems",
+            retrieved_at=RETRIEVED_AT,
+        )
 
 
 def test_malformed_toc_item_does_not_change_valid_base_level(caplog) -> None:
