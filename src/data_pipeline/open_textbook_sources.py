@@ -42,6 +42,8 @@ class OpenTextbookSourceSpec:
     max_resource_bytes: int = 5 * 1024 * 1024
     expected_page_count: int | None = None
     preface_page_range: tuple[int, int] | None = None
+    home_license_reference_url: str | None = None
+    home_license: str | None = None
 
 
 OPEN_TEXTBOOK_SOURCES = {
@@ -230,6 +232,66 @@ OPEN_TEXTBOOK_SOURCES = {
         source_format="pretext_html",
         license_reference_url="https://creativecommons.org/licenses/by/4.0/",
         license="Creative Commons Attribution 4.0 International License",
+        max_resource_bytes=1024 * 1024,
+    ),
+    "think-os-0.7.4": OpenTextbookSourceSpec(
+        slug="think-os-0.7.4",
+        provider="green_tea_press",
+        topic="operating-systems",
+        replaces_book_id="isbn13:9781292025773",
+        book_id="book_7d22aef622717f0ad24b",
+        isbn_10=None,
+        isbn_13=None,
+        title="Think OS: A Brief Introduction to Operating Systems",
+        authors=("Allen B. Downey",),
+        publisher="Green Tea Press",
+        published_year=2015,
+        version="0.7.4",
+        home_url="https://greenteapress.com/wp/think-os/",
+        documents=(
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="think-os-0.7.4:html-index",
+                url="https://greenteapress.com/thinkos/html/index.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Think OS: A Brief Introduction to Operating Systems",
+                    "Version 0.7.4",
+                    "Compilation",
+                    "Semaphores in C",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preface",
+                external_id="think-os-0.7.4:preface",
+                url="https://greenteapress.com/thinkos/html/thinkos001.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "This book is intended for a different audience",
+                    "A note on this draft",
+                    "Contributor List",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="sample_chapter",
+                external_id="think-os-0.7.4:chapter-1",
+                url="https://greenteapress.com/thinkos/html/thinkos003.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Chapter 1 Compilation",
+                    "Compiled and interpreted languages",
+                    "Understanding errors",
+                ),
+            ),
+        ),
+        source_format="think_os_html",
+        license_reference_url="http://creativecommons.org/licenses/by-nc-sa/4.0/",
+        license=(
+            "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 "
+            "International Unported License"
+        ),
+        home_license_reference_url="http://creativecommons.org/licenses/by-nc/3.0/",
+        home_license="Creative Commons Attribution-NonCommercial 3.0 Unported License",
         max_resource_bytes=1024 * 1024,
     ),
 }

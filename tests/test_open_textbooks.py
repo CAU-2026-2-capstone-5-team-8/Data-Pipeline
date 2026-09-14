@@ -279,6 +279,105 @@ def _ula_payload(*, omit_last_toc_entry: bool = False) -> dict:
     }
 
 
+def _think_os_home_html() -> str:
+    source = open_textbook_source("think-os-0.7.4")
+    description = "".join(
+        f"<p>Description paragraph {index} for operating systems programmers.</p>"
+        for index in range(1, 9)
+    )
+    return (
+        "<html><head><title>Think OS - Green Tea Press</title></head><body>"
+        "<article><h1>Think OS</h1><div class='entry-content'>"
+        "<h3>A Brief Introduction to Operating Systems</h3><p>by Allen B. Downey</p>"
+        f"<p><a href='http://greenteapress.com/thinkos/html/index.html'>Read HTML</a></p>"
+        f"<h3>Description</h3>{description}"
+        f"<p>Think OS is a Free Book under <a href='{source.home_license_reference_url}'>"
+        f"{source.home_license}</a>.</p></div></article></body></html>"
+    )
+
+
+def _think_os_index_html(*, omit_last_entry: bool = False) -> str:
+    source = open_textbook_source("think-os-0.7.4")
+    root_titles = (
+        "Compilation",
+        "Processes",
+        "Virtual memory",
+        "Files and file systems",
+        "More bits and bytes",
+        "Memory management",
+        "Caching",
+        "Multitasking",
+        "Threads",
+        "Condition variables",
+        "Semaphores in C",
+    )
+    child_counts = (7, 3, 6, 4, 5, 3, 8, 5, 5, 5, 3)
+    chapters = []
+    for chapter_index, (title, child_count) in enumerate(
+        zip(root_titles, child_counts, strict=True), start=1
+    ):
+        children = []
+        for child_index in range(1, child_count + 1):
+            if omit_last_entry and chapter_index == 11 and child_index == child_count:
+                continue
+            child_title = (
+                "Compiled and interpreted languages"
+                if (chapter_index, child_index) == (1, 1)
+                else "Understanding errors"
+                if (chapter_index, child_index) == (1, 7)
+                else f"Section {chapter_index}.{child_index}"
+            )
+            children.append(
+                f"<li><a href='thinkos{chapter_index + 2:03}.html#section-{child_index}'>"
+                f"{child_title}</a></li>"
+            )
+        chapters.append(
+            f"<li><a href='thinkos{chapter_index + 2:03}.html'>{title}</a>"
+            f"<ul>{''.join(children)}</ul></li>"
+        )
+    return (
+        "<html><body><div id='content'>"
+        f"<p>{source.title}</p><p>{source.authors[0]}</p>"
+        f"<p>Version {source.version}</p><p>Copyright {source.published_year}</p>"
+        f"<p>{source.license} <a href='{source.license_reference_url}'>License</a></p>"
+        "<ul><li><a href='thinkos001.html'>Preface</a><ul>"
+        "<li><a href='thinkos001.html#note'>A note on this draft</a></li>"
+        "<li><a href='thinkos001.html#code'>Using the code</a></li>"
+        "<li><a href='thinkos001.html#contributors'>Contributor List</a></li>"
+        "</ul></li><li><a href='thinkos002.html'>Contents</a></li>"
+        f"{''.join(chapters)}</ul></div></body></html>"
+    )
+
+
+def _think_os_payload(*, omit_last_toc_entry: bool = False) -> dict:
+    source = open_textbook_source("think-os-0.7.4")
+    documents = []
+    for document in source.documents:
+        if document.document_type == "toc":
+            html = _think_os_index_html(omit_last_entry=omit_last_toc_entry)
+        else:
+            html = (
+                "<html><body><div id='content'><div class='notice'>PDF navigation</div>"
+                f"<h1>{document.document_type}</h1>"
+                f"<p>{' '.join(document.expected_text_markers)}</p>"
+                "<p>Reviewed public operating systems evidence.</p>"
+                "</div><div id='sidebar'>Unrelated books</div></body></html>"
+            )
+        documents.append(
+            {
+                "url": document.url,
+                "media_type": document.media_type,
+                "content_base64": base64.b64encode(html.encode()).decode(),
+            }
+        )
+    return {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": _think_os_home_html(),
+        "documents": documents,
+    }
+
+
 def test_open_textbook_collector_fetches_only_allowlisted_resources() -> None:
     source = open_textbook_source("ostep-1.10")
     requested_urls = []
@@ -466,6 +565,71 @@ def test_pretext_normalizes_description_preface_previews_toc_and_provenance() ->
     assert dataset.sources[0].source_type == "author_page"
     assert all(item.license == source.license for item in dataset.sources)
     assert validate_dataset(dataset) == []
+
+
+def test_think_os_normalizes_description_preface_sample_toc_and_licenses() -> None:
+    source = open_textbook_source("think-os-0.7.4")
+
+    dataset = normalize_open_textbook_response(
+        _think_os_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].book_id == source.book_id
+    assert dataset.books[0].authors == ["Allen B. Downey"]
+    assert dataset.books[0].publisher == "Green Tea Press"
+    assert [document.document_type for document in dataset.documents] == [
+        "description",
+        "preface",
+        "sample_chapter",
+    ]
+    assert len(dataset.toc) == 65
+    assert {level: sum(entry.level == level for entry in dataset.toc) for level in (1, 2)} == {
+        1: 11,
+        2: 54,
+    }
+    assert [entry.title for entry in dataset.toc if entry.level == 1][0] == "Compilation"
+    assert [entry.title for entry in dataset.toc if entry.level == 1][-1] == "Semaphores in C"
+    assert len(dataset.sources) == 4
+    assert dataset.sources[0].license == source.home_license
+    assert all(item.license == source.license for item in dataset.sources[1:])
+    assert "PDF navigation" not in dataset.documents[1].text
+    assert "Unrelated books" not in dataset.documents[2].text
+    assert validate_dataset(dataset) == []
+
+
+def test_think_os_rejects_incomplete_toc() -> None:
+    source = open_textbook_source("think-os-0.7.4")
+
+    with pytest.raises(InvalidProviderResponse, match="TOC does not match review"):
+        normalize_open_textbook_response(
+            _think_os_payload(omit_last_toc_entry=True),
+            topic=source.topic,
+            retrieved_at=RETRIEVED_AT,
+        )
+
+
+def test_think_os_rejects_publisher_page_without_reviewed_index_link() -> None:
+    source = open_textbook_source("think-os-0.7.4")
+    payload = _think_os_payload()
+    payload["home_html"] = payload["home_html"].replace(
+        "http://greenteapress.com/thinkos/html/index.html",
+        "http://example.test/thinkos/html/index.html",
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="not linked"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_think_os_preserves_different_page_license_statements() -> None:
+    source = open_textbook_source("think-os-0.7.4")
+    payload = _think_os_payload()
+    payload["home_html"] = payload["home_html"].replace(
+        source.home_license_reference_url,
+        "http://creativecommons.org/licenses/by-nc-sa/4.0/",
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="publisher page is missing its license"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
 
 
 def test_pretext_rejects_incomplete_toc() -> None:

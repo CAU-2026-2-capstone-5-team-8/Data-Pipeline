@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from io import BytesIO
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from pydantic import ValidationError
 from pypdf import PdfReader
@@ -999,6 +999,346 @@ def _resolved_links(tree: HTMLParser, base_url: str, *, strip_fragment: bool = F
     return links
 
 
+def _same_web_resource(left: str, right: str) -> bool:
+    """Compare reviewed web links while ignoring only an HTTP-to-HTTPS scheme upgrade."""
+    left_url = urlsplit(left)
+    right_url = urlsplit(right)
+    return (
+        left_url.hostname == right_url.hostname
+        and left_url.port == right_url.port
+        and left_url.path.rstrip("/") == right_url.path.rstrip("/")
+        and left_url.query == right_url.query
+    )
+
+
+def _think_os_document_text(html: str, document_type: str) -> str:
+    """Extract book text from a reviewed HeVeA page without its site sidebar."""
+    content = HTMLParser(html).css_first("#content")
+    if content is None:
+        raise InvalidProviderResponse(f"Think OS {document_type} page is missing book content")
+    parts = []
+    child = content.child
+    while child is not None:
+        classes = child.attributes.get("class", "").split() if child.tag != "-text" else []
+        if "notice" not in classes:
+            text = " ".join(child.text(separator=" ", strip=True).split())
+            if text:
+                parts.append(text)
+        child = child.next
+    result = "\n\n".join(parts)
+    if not result:
+        raise InvalidProviderResponse(f"Think OS {document_type} page contains no text")
+    return result
+
+
+def _think_os_description(tree: HTMLParser) -> str:
+    """Extract only the author-written description from the Green Tea Press page."""
+    content = tree.css_first(".entry-content")
+    if content is None:
+        raise InvalidProviderResponse("Think OS publisher page is missing its article content")
+    description_heading = next(
+        (
+            heading
+            for heading in _direct_elements(content, "h3")
+            if heading.text(separator=" ", strip=True) == "Description"
+        ),
+        None,
+    )
+    if description_heading is None:
+        raise InvalidProviderResponse("Think OS publisher page is missing its description heading")
+    paragraphs = []
+    node = description_heading.next
+    while node is not None:
+        if node.tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            break
+        if node.tag == "p":
+            text = " ".join(node.text(separator=" ", strip=True).split())
+            if "is a Free Book" in text:
+                break
+            if text:
+                paragraphs.append(text)
+        node = node.next
+    if len(paragraphs) != 8:
+        raise InvalidProviderResponse("Think OS publisher description does not match review")
+    return "\n\n".join(paragraphs)
+
+
+def _think_os_toc(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse the reviewed HeVeA index while retaining chapter-section hierarchy."""
+    content = HTMLParser(html).css_first("#content")
+    if content is None:
+        raise InvalidProviderResponse("Think OS index is missing book content")
+    top_lists = _direct_elements(content, "ul")
+    if len(top_lists) != 1:
+        raise InvalidProviderResponse("Think OS index has an unexpected TOC root")
+    root_items = _direct_elements(top_lists[0], "li")
+    if len(root_items) < 3:
+        raise InvalidProviderResponse("Think OS index has no reviewed concept chapters")
+
+    entries: list[TocEntry] = []
+
+    def visit(item: Any, parent_id: str | None, level: int, path: tuple[int, ...]) -> None:
+        links = _direct_elements(item, "a")
+        if len(links) != 1:
+            raise InvalidProviderResponse("Think OS TOC entry has an unexpected title link")
+        title = " ".join(links[0].text(separator=" ", strip=True).split())
+        if not title:
+            raise InvalidProviderResponse("Think OS TOC entry has an empty title")
+        entry = TocEntry(
+            toc_entry_id=stable_id(
+                "toc", book_id, source_id, *(str(index) for index in path), title
+            ),
+            book_id=book_id,
+            parent_entry_id=parent_id,
+            level=level,
+            order_index=path[-1],
+            label=None,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        child_lists = _direct_elements(item, "ul")
+        if len(child_lists) > 1:
+            raise InvalidProviderResponse("Think OS TOC entry has multiple child lists")
+        if child_lists:
+            for child_index, child_item in enumerate(_direct_elements(child_lists[0], "li")):
+                visit(child_item, entry.toc_entry_id, level + 1, (*path, child_index))
+
+    skipped_titles = [
+        " ".join(_direct_elements(item, "a")[0].text(separator=" ", strip=True).split())
+        for item in root_items[:2]
+        if len(_direct_elements(item, "a")) == 1
+    ]
+    if skipped_titles != ["Preface", "Contents"]:
+        raise InvalidProviderResponse("Think OS index front matter does not match review")
+    for root_index, item in enumerate(root_items[2:]):
+        visit(item, None, 1, (root_index,))
+    return entries
+
+
+def _normalize_think_os_response(
+    response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize reviewed Green Tea Press and Think OS public HTML evidence."""
+    if (
+        source_spec.license is None
+        or source_spec.license_reference_url is None
+        or source_spec.home_license is None
+        or source_spec.home_license_reference_url is None
+        or source_spec.version is None
+        or source_spec.publisher is None
+    ):
+        raise InvalidProviderResponse("Think OS allowlist provenance is incomplete")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("Think OS home URL does not match allowlist")
+    home_html = response.get("home_html")
+    raw_documents = response.get("documents")
+    if not isinstance(home_html, str) or not isinstance(raw_documents, list):
+        raise InvalidProviderResponse("Think OS response has invalid content fields")
+    if len(home_html.encode("utf-8")) > source_spec.max_resource_bytes:
+        raise InvalidProviderResponse("Think OS publisher page exceeds its reviewed size limit")
+
+    home_tree = HTMLParser(home_html)
+    home_text = home_tree.root.text(separator=" ", strip=True)
+    normalized_home = normalize_bibliographic_text(home_text)
+    home_markers = (source_spec.title, *source_spec.authors, source_spec.publisher)
+    if any(normalize_bibliographic_text(marker) not in normalized_home for marker in home_markers):
+        raise InvalidProviderResponse("Think OS publisher page does not match the reviewed book")
+    home_links = _resolved_links(home_tree, source_spec.home_url)
+    if source_spec.home_license_reference_url not in home_links:
+        raise InvalidProviderResponse("Think OS publisher page is missing its license link")
+
+    expected_documents = {document.url: document for document in source_spec.documents}
+    if len(raw_documents) != len(expected_documents):
+        raise InvalidProviderResponse("Think OS response has an unexpected document count")
+    html_by_url: dict[str, str] = {}
+    for raw_document in raw_documents:
+        if not isinstance(raw_document, dict):
+            raise InvalidProviderResponse("Think OS response contains an invalid document")
+        url = raw_document.get("url")
+        if not isinstance(url, str) or url not in expected_documents or url in html_by_url:
+            raise InvalidProviderResponse("Think OS document URL does not match allowlist")
+        document_spec = expected_documents[url]
+        if raw_document.get("media_type") != document_spec.media_type:
+            raise InvalidProviderResponse("Think OS document has an invalid media type")
+        encoded_content = raw_document.get("content_base64")
+        if not isinstance(encoded_content, str):
+            raise InvalidProviderResponse("Think OS document is missing base64 content")
+        try:
+            content = base64.b64decode(encoded_content, validate=True)
+            html = content.decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            raise InvalidProviderResponse("Think OS document has invalid encoded HTML") from exc
+        if len(content) > source_spec.max_resource_bytes:
+            raise InvalidProviderResponse("Think OS document exceeds its reviewed size limit")
+        reviewed_text = (
+            HTMLParser(html).root.text(separator=" ", strip=True)
+            if document_spec.document_type == "toc"
+            else _think_os_document_text(html, document_spec.document_type)
+        )
+        normalized_text = normalize_bibliographic_text(reviewed_text)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_text
+            for marker in document_spec.expected_text_markers
+        ):
+            raise InvalidProviderResponse(
+                f"Think OS page does not match reviewed document: {document_spec.document_type}"
+            )
+        html_by_url[url] = html
+
+    toc_spec = next(
+        (document for document in source_spec.documents if document.document_type == "toc"), None
+    )
+    if toc_spec is None:
+        raise InvalidProviderResponse("Think OS allowlist is missing its index page")
+    if not any(_same_web_resource(link, toc_spec.url) for link in home_links):
+        raise InvalidProviderResponse("Think OS index is not linked from its publisher page")
+    toc_html = html_by_url[toc_spec.url]
+    toc_tree = HTMLParser(toc_html)
+    toc_text = toc_tree.root.text(separator=" ", strip=True)
+    normalized_toc_text = normalize_bibliographic_text(toc_text)
+    toc_markers = (
+        source_spec.title,
+        *source_spec.authors,
+        f"Version {source_spec.version}",
+        f"Copyright {source_spec.published_year}",
+        source_spec.license,
+    )
+    if any(
+        normalize_bibliographic_text(marker) not in normalized_toc_text for marker in toc_markers
+    ):
+        raise InvalidProviderResponse("Think OS index identity does not match review")
+    toc_links = _resolved_links(toc_tree, toc_spec.url)
+    if source_spec.license_reference_url not in toc_links:
+        raise InvalidProviderResponse("Think OS index is missing its content license link")
+    if any(
+        document.url not in toc_links
+        for document in source_spec.documents
+        if document.document_type != "toc"
+    ):
+        raise InvalidProviderResponse("Think OS evidence page is not linked from its index")
+
+    expected_book_id = stable_id(
+        "book",
+        normalize_bibliographic_text(source_spec.title),
+        normalize_bibliographic_text(source_spec.authors[0]),
+    )
+    if source_spec.book_id != expected_book_id:
+        raise InvalidProviderResponse("Think OS fallback book ID is not deterministic")
+
+    source_ids = {
+        document.url: stable_id("source", source_spec.provider, document.url, source_spec.book_id)
+        for document in source_spec.documents
+    }
+    toc = _think_os_toc(toc_html, source_spec.book_id, source_ids[toc_spec.url])
+    roots = [entry.title for entry in toc if entry.parent_entry_id is None]
+    expected_roots = [
+        "Compilation",
+        "Processes",
+        "Virtual memory",
+        "Files and file systems",
+        "More bits and bytes",
+        "Memory management",
+        "Caching",
+        "Multitasking",
+        "Threads",
+        "Condition variables",
+        "Semaphores in C",
+    ]
+    level_counts = {level: sum(entry.level == level for entry in toc) for level in (1, 2)}
+    if (
+        len(toc) != 65
+        or roots != expected_roots
+        or level_counts != {1: 11, 2: 54}
+        or any(entry.level > 2 for entry in toc)
+    ):
+        raise InvalidProviderResponse("Think OS TOC does not match review")
+
+    description = _think_os_description(home_tree)
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    home_rights = "The Green Tea Press page states that Think OS is available under CC BY-NC 3.0."
+    content_rights = (
+        "The online book pages apply CC BY-NC-SA 4.0 to version 0.7.4; this differs "
+        "from the publisher description page and is preserved per source."
+    )
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", home_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=home_source_id,
+            content_hash=sha256_text(description),
+        )
+    ]
+    for document_spec in source_spec.documents:
+        if document_spec.document_type == "toc":
+            continue
+        text = _think_os_document_text(html_by_url[document_spec.url], document_spec.document_type)
+        source_id = source_ids[document_spec.url]
+        documents.append(
+            Document(
+                document_id=stable_id(
+                    "doc",
+                    source_spec.book_id,
+                    document_spec.document_type,
+                    document_spec.external_id,
+                    source_id,
+                ),
+                book_id=source_spec.book_id,
+                document_type=document_spec.document_type,
+                text=text,
+                source_id=source_id,
+                content_hash=sha256_text(text),
+            )
+        )
+
+    sources = [
+        Source(
+            source_id=home_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="publisher_page",
+            url=source_spec.home_url,
+            external_id=f"{source_spec.slug}:home",
+            retrieved_at=retrieved_at,
+            license=source_spec.home_license,
+            rights_note=home_rights,
+            content_hash=sha256_text(home_html),
+        )
+    ]
+    sources.extend(
+        Source(
+            source_id=source_ids[document.url],
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="open_textbook",
+            url=document.url,
+            external_id=document.external_id,
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=content_rights,
+            content_hash=sha256_text(html_by_url[document.url]),
+        )
+        for document in source_spec.documents
+    )
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=None,
+        isbn_13=None,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=source_spec.publisher,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[source_spec.topic],
+    )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
+
+
 def _pretext_toc(html: str, book_id: str, source_id: str) -> list[TocEntry]:
     """Parse the reviewed PreTeXt chapter tree without flattening its hierarchy."""
     tree = HTMLParser(html)
@@ -1526,7 +1866,7 @@ def _normalize_hefferon_response(
 def normalize_open_textbook_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
-    """Normalize one reviewed open textbook page and its public PDF evidence."""
+    """Normalize one reviewed open textbook and its public evidence."""
     source_slug = response.get("source_slug")
     if not isinstance(source_slug, str):
         raise InvalidProviderResponse("open textbook response is missing source_slug")
@@ -1536,6 +1876,8 @@ def normalize_open_textbook_response(
         raise InvalidProviderResponse(str(exc)) from exc
     if topic != source_spec.topic:
         raise InvalidProviderResponse("open textbook response topic does not match its allowlist")
+    if source_spec.source_format == "think_os_html":
+        return _normalize_think_os_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "pretext_html":
         return _normalize_understanding_linear_algebra_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "hefferon_pdf_outline":
