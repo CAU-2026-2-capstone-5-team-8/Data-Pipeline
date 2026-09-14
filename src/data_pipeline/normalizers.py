@@ -719,7 +719,7 @@ def _direct_table_rows(table: Any) -> list[Any]:
     return [row for row in table.css("tr") if row.parent.mem_id == body.mem_id]
 
 
-def _public_page_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+def _indented_table_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
     """Parse eCampus TOC indentation into explicit canonical parent relationships."""
     tree = HTMLParser(html)
     content = _public_page_section(tree, "Table of Contents")
@@ -774,6 +774,47 @@ def _public_page_toc_entries(html: str, book_id: str, source_id: str) -> list[To
     return entries
 
 
+def _heading_sequence_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse an ordered Part/Chapter heading sequence into two TOC levels."""
+    tree = HTMLParser(html)
+    content = _public_page_section(tree, "Table of Contents")
+    entries: list[TocEntry] = []
+    current_part: TocEntry | None = None
+    for heading in content.css("h3"):
+        text = heading.text(separator=" ", strip=True)
+        part_match = re.fullmatch(r"(Part\s+[A-Za-z]+):\s*(.+)", text)
+        chapter_match = re.fullmatch(r"(\d+)\s+(.+)", text)
+        order_index = len(entries)
+        if part_match is not None:
+            label = part_match.group(1)
+            title = part_match.group(2).strip()
+            parent_entry_id = None
+            level = 1
+        elif chapter_match is not None and current_part is not None:
+            label = chapter_match.group(1)
+            title = chapter_match.group(2).strip()
+            parent_entry_id = current_part.toc_entry_id
+            level = 2
+        else:
+            raise InvalidProviderResponse(
+                f"public book page TOC contained an unsupported heading: {text!r}"
+            )
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), label, title),
+            book_id=book_id,
+            parent_entry_id=parent_entry_id,
+            level=level,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        if level == 1:
+            current_part = entry
+    return entries
+
+
 def normalize_public_book_page_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -813,7 +854,10 @@ def normalize_public_book_page_response(
         )
 
     source_id = stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
-    toc = _public_page_toc_entries(html, source_spec.book_id, source_id)
+    if source_spec.toc_format == "indented_table":
+        toc = _indented_table_toc_entries(html, source_spec.book_id, source_id)
+    else:
+        toc = _heading_sequence_toc_entries(html, source_spec.book_id, source_id)
     if len(toc) != source_spec.expected_toc_count:
         raise InvalidProviderResponse(
             "public book page TOC is incomplete or does not match the reviewed entry count"
@@ -822,6 +866,14 @@ def normalize_public_book_page_response(
     if root_titles != source_spec.expected_root_titles:
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed top-level structure"
+        )
+    chapter_labels = tuple(entry.label for entry in toc if entry.level == 2 and entry.label)
+    if (
+        source_spec.expected_chapter_labels
+        and chapter_labels != source_spec.expected_chapter_labels
+    ):
+        raise InvalidProviderResponse(
+            "public book page TOC does not match the reviewed chapter sequence"
         )
 
     description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)

@@ -27,6 +27,7 @@ WILEY_ELA_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_ela10_toc.ht
 WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
 WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
 ECAMPUS_FIXTURE = Path(__file__).parent / "fixtures" / "ecampus_stallings_os4.html"
+ECAMPUS_SINGHAL_FIXTURE = Path(__file__).parent / "fixtures" / "ecampus_singhal_os1.html"
 RETRIEVED_AT = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
 
@@ -524,6 +525,59 @@ def test_public_book_page_rejects_incomplete_toc(monkeypatch) -> None:
                 "source_slug": source.slug,
                 "url": source.url,
                 "html": ECAMPUS_FIXTURE.read_text(encoding="utf-8"),
+            },
+            topic="operating-systems",
+            retrieved_at=RETRIEVED_AT,
+        )
+
+
+def test_public_book_page_normalizes_complete_part_and_chapter_sequence(monkeypatch) -> None:
+    source = public_book_source("ecampus-singhal-os1")
+    fixture_spec = replace(
+        source,
+        expected_toc_count=5,
+        expected_root_titles=("Process Synchronization", "Distributed Operating Systems"),
+        expected_chapter_labels=("1", "2", "3"),
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.public_book_source", lambda _slug: fixture_spec)
+
+    dataset = normalize_public_book_page_response(
+        {
+            "source_slug": source.slug,
+            "url": source.url,
+            "html": ECAMPUS_SINGHAL_FIXTURE.read_text(encoding="utf-8"),
+        },
+        topic="operating-systems",
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert [(entry.level, entry.label, entry.title) for entry in dataset.toc] == [
+        (1, "Part One", "Process Synchronization"),
+        (2, "1", "Overview"),
+        (2, "2", "Synchronization Mechanisms"),
+        (1, "Part Two", "Distributed Operating Systems"),
+        (2, "3", "Architectures of Distributed Systems"),
+    ]
+    assert dataset.toc[1].parent_entry_id == dataset.toc[0].toc_entry_id
+    assert dataset.toc[4].parent_entry_id == dataset.toc[3].toc_entry_id
+
+
+def test_public_book_page_rejects_changed_chapter_sequence(monkeypatch) -> None:
+    source = public_book_source("ecampus-singhal-os1")
+    fixture_spec = replace(
+        source,
+        expected_toc_count=5,
+        expected_root_titles=("Process Synchronization", "Distributed Operating Systems"),
+        expected_chapter_labels=("1", "2", "4"),
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.public_book_source", lambda _slug: fixture_spec)
+
+    with pytest.raises(InvalidProviderResponse, match="chapter sequence"):
+        normalize_public_book_page_response(
+            {
+                "source_slug": source.slug,
+                "url": source.url,
+                "html": ECAMPUS_SINGHAL_FIXTURE.read_text(encoding="utf-8"),
             },
             topic="operating-systems",
             retrieved_at=RETRIEVED_AT,

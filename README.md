@@ -31,12 +31,13 @@ collector fetches only the identity page and TOC page, preserves both HTML respo
 immutable raw artifact, and extracts the complete reviewed top-level heading sequence. It does not
 follow resource links or collect textbook body content.
 
-One reviewed public catalog source is available for *Operating Systems: Internals and Design
-Principles, 4th Edition*. The eCampus page exposes the exact ISBN and edition, a description, and a
-detailed 201-entry TOC in ordinary HTML. The collector preserves that single response and converts
-its visible indentation into explicit parent relationships. Since this is a bookstore catalog
-rather than a publisher or author page, its source is explicitly recorded as `other`; no license
-or access rights are inferred from the page.
+Reviewed public catalog sources are available for *Operating Systems: Internals and Design
+Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
+pages expose each exact ISBN and edition, a description, and complete TOCs in ordinary HTML. The
+collector preserves each single-page response. It converts the first page's visible indentation
+into explicit parent relationships and the second page's 7-Part/20-Chapter sequence into two
+canonical levels. Since these are bookstore catalog pages rather than publisher or author pages,
+their sources are explicitly recorded as `other`; no license or access rights are inferred.
 
 Google Books is also implemented (`--provider google-books`), but its public endpoint returned
 HTTP 429 from the development environment on 2026-09-12. A borrow link, scan identifier, preview
@@ -50,15 +51,14 @@ ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 2/5 | 2/5 | 0/5 | 0/5 |
+| Operating Systems | 5/5 | 3/5 | 3/5 | 0/5 | 0/5 |
 | Linear Algebra | 5/5 | 3/5 | 4/5 | 0/5 | 0/5 |
 
-The five TOCs contain 373 canonical entries. The two Open Library TOCs and the eCampus TOC retain
+The six TOCs contain 400 canonical entries. The two Open Library TOCs and two eCampus TOCs retain
 their available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only,
-so their 35 entries are represented truthfully as top-level items.
-This is useful progress but not the full MVP definition of done: TOC coverage has reached half of
-the books but not yet a useful majority, and no public preface/introduction or preview/sample text
-has been collected.
+so their 35 entries are represented truthfully as top-level items. TOC coverage now forms a useful
+majority, but this is not yet the full MVP definition of done: no public preface/introduction or
+preview/sample text has been collected.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -74,6 +74,7 @@ uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline collect-publisher --source wiley-osc7
 uv run data-pipeline collect-publisher --source wiley-ela10
 uv run data-pipeline collect-public-page --source ecampus-stallings-os4
+uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline report
 ```
 
