@@ -18,6 +18,7 @@ from data_pipeline.identifiers import (
     stable_id,
 )
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
+from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_sources import publisher_source
 
 logger = logging.getLogger(__name__)
@@ -694,3 +695,156 @@ def normalize_publisher_page_response(
         content_hash=toc_hash,
     )
     return CanonicalDataset(books=[], documents=[], toc=toc, sources=[home_source, toc_source])
+
+
+def _public_page_section(tree: HTMLParser, heading: str) -> Any:
+    """Return the content element immediately following a named catalog heading."""
+    for candidate in tree.css("div.summary h2"):
+        if candidate.text(separator=" ", strip=True).casefold() != heading.casefold():
+            continue
+        content = candidate.next
+        while content is not None and content.tag == "-text":
+            content = content.next
+        classes = content.attributes.get("class", "").split() if content is not None else []
+        if content is not None and content.tag == "div" and "content" in classes:
+            return content
+    raise InvalidProviderResponse(f"public book page is missing its {heading} section")
+
+
+def _direct_table_rows(table: Any) -> list[Any]:
+    """Return rows owned by one table, excluding rows from nested indentation tables."""
+    body = table.css_first("tbody")
+    if body is None:
+        return []
+    return [row for row in table.css("tr") if row.parent.mem_id == body.mem_id]
+
+
+def _public_page_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse eCampus TOC indentation into explicit canonical parent relationships."""
+    tree = HTMLParser(html)
+    content = _public_page_section(tree, "Table of Contents")
+    table = content.css_first("table")
+    if table is None:
+        raise InvalidProviderResponse("public book page TOC section contained no table")
+
+    entries: list[TocEntry] = []
+    hierarchy: list[tuple[int, TocEntry]] = []
+    for row in _direct_table_rows(table):
+        cells = [cell for cell in row.css("td") if cell.parent.mem_id == row.mem_id]
+        if not cells:
+            continue
+        first_cell = cells[0]
+        nested_table = first_cell.css_first("table")
+        if nested_table is None:
+            indent = 0
+            title = first_cell.text(separator=" ", strip=True)
+        else:
+            nested_cells = nested_table.css("td")
+            if len(nested_cells) < 2:
+                raise InvalidProviderResponse("public book page TOC contained a malformed row")
+            width = nested_cells[0].attributes.get("width", "")
+            if not width.isdigit():
+                raise InvalidProviderResponse("public book page TOC contained an invalid indent")
+            indent = int(width)
+            title = nested_cells[-1].text(separator=" ", strip=True)
+        if not title:
+            raise InvalidProviderResponse("public book page TOC contained an empty title")
+
+        # Numbered chapter appendices are siblings of chapter sections even though
+        # this catalog page renders them one indentation step deeper.
+        if re.match(r"^Appendix\s+\d+[A-Z]\b", title, flags=re.IGNORECASE):
+            indent = 40
+        while hierarchy and hierarchy[-1][0] >= indent:
+            hierarchy.pop()
+        parent = hierarchy[-1][1] if hierarchy else None
+        level = parent.level + 1 if parent is not None else 1
+        order_index = len(entries)
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), str(indent), title),
+            book_id=book_id,
+            parent_entry_id=parent.toc_entry_id if parent is not None else None,
+            level=level,
+            order_index=order_index,
+            label=None,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        hierarchy.append((indent, entry))
+    return entries
+
+
+def normalize_public_book_page_response(
+    response: dict[str, Any], *, topic: str, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize one reviewed exact-edition public catalog page."""
+    source_slug = response.get("source_slug")
+    if not isinstance(source_slug, str):
+        raise InvalidProviderResponse("public book response is missing source_slug")
+    try:
+        source_spec = public_book_source(source_slug)
+    except ValueError as exc:
+        raise InvalidProviderResponse(str(exc)) from exc
+    if topic != source_spec.topic:
+        raise InvalidProviderResponse(
+            "public book response topic does not match its allowlist entry"
+        )
+    if response.get("url") != source_spec.url:
+        raise InvalidProviderResponse("public book response URL does not match allowlist")
+    html = response.get("html")
+    if not isinstance(html, str):
+        raise InvalidProviderResponse("public book response must contain an HTML string")
+
+    tree = HTMLParser(html)
+    title_node = tree.css_first("h1.title")
+    isbn_node = tree.css_first('[itemprop="isbn"]')
+    edition_node = tree.css_first('[itemprop="bookEdition"]')
+    page_title = title_node.text(separator=" ", strip=True) if title_node is not None else ""
+    page_isbn = isbn_node.text(separator=" ", strip=True) if isbn_node is not None else ""
+    page_edition = edition_node.text(separator=" ", strip=True) if edition_node is not None else ""
+    if (
+        normalize_bibliographic_text(page_title) != normalize_bibliographic_text(source_spec.title)
+        or page_isbn != source_spec.isbn_13
+    ):
+        raise InvalidProviderResponse("public book identity page does not match the expected book")
+    if source_spec.edition not in _edition_numbers(f"{page_edition} edition"):
+        raise InvalidProviderResponse(
+            "public book identity page does not match the expected edition"
+        )
+
+    source_id = stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
+    toc = _public_page_toc_entries(html, source_spec.book_id, source_id)
+    if len(toc) != source_spec.expected_toc_count:
+        raise InvalidProviderResponse(
+            "public book page TOC is incomplete or does not match the reviewed entry count"
+        )
+    root_titles = tuple(entry.title for entry in toc if entry.parent_entry_id is None)
+    if root_titles != source_spec.expected_root_titles:
+        raise InvalidProviderResponse(
+            "public book page TOC does not match the reviewed top-level structure"
+        )
+
+    description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)
+    if not description:
+        raise InvalidProviderResponse("public book page contained an empty summary")
+    document = Document(
+        document_id=stable_id("doc", source_spec.book_id, "description", source_id),
+        book_id=source_spec.book_id,
+        document_type="description",
+        text=description,
+        source_id=source_id,
+        content_hash=sha256_text(description),
+    )
+    source = Source(
+        source_id=source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="other",
+        url=source_spec.url,
+        external_id=source_spec.isbn_13,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note="Public bookstore catalog page; no license statement found.",
+        content_hash=sha256_text(html),
+    )
+    return CanonicalDataset(books=[], documents=[document], toc=toc, sources=[source])

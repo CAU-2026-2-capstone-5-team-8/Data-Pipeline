@@ -31,6 +31,13 @@ collector fetches only the identity page and TOC page, preserves both HTML respo
 immutable raw artifact, and extracts the complete reviewed top-level heading sequence. It does not
 follow resource links or collect textbook body content.
 
+One reviewed public catalog source is available for *Operating Systems: Internals and Design
+Principles, 4th Edition*. The eCampus page exposes the exact ISBN and edition, a description, and a
+detailed 201-entry TOC in ordinary HTML. The collector preserves that single response and converts
+its visible indentation into explicit parent relationships. Since this is a bookstore catalog
+rather than a publisher or author page, its source is explicitly recorded as `other`; no license
+or access rights are inferred from the page.
+
 Google Books is also implemented (`--provider google-books`), but its public endpoint returned
 HTTP 429 from the development environment on 2026-09-12. A borrow link, scan identifier, preview
 URL, or TOC heading named `Preface` is not treated as public book text. The pipeline does not fetch
@@ -43,14 +50,15 @@ ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 1/5 | 2/5 | 0/5 | 0/5 |
+| Operating Systems | 5/5 | 2/5 | 2/5 | 0/5 | 0/5 |
 | Linear Algebra | 5/5 | 3/5 | 4/5 | 0/5 | 0/5 |
 
-The four TOCs contain 172 canonical entries. The two Open Library TOCs retain their available
-parent-child hierarchy; the Wiley pages expose chapter and appendix headings only, so their 35
-entries are represented truthfully as top-level items.
-This is useful progress but not the full MVP definition of done: TOC coverage is not yet a useful
-majority, and no public preface/introduction or preview/sample text has been collected.
+The five TOCs contain 373 canonical entries. The two Open Library TOCs and the eCampus TOC retain
+their available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only,
+so their 35 entries are represented truthfully as top-level items.
+This is useful progress but not the full MVP definition of done: TOC coverage has reached half of
+the books but not yet a useful majority, and no public preface/introduction or preview/sample text
+has been collected.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -65,6 +73,7 @@ uv run data-pipeline collect --topic operating-systems --limit 5
 uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline collect-publisher --source wiley-osc7
 uv run data-pipeline collect-publisher --source wiley-ela10
+uv run data-pipeline collect-public-page --source ecampus-stallings-os4
 uv run data-pipeline report
 ```
 
@@ -74,6 +83,9 @@ new source must first be reviewed and added to the small version-controlled allo
 Repeated retrievals of the same allowlisted URL update its canonical source snapshot. Documents
 and TOC entries owned by an older snapshot are replaced, while every immutable raw response is
 still retained for audit and offline rebuilding.
+`collect-public-page` applies the same exact-book and allowlist boundary to a reviewed ordinary
+public HTML source. It additionally rejects a response unless the ISBN, edition, complete reviewed
+entry count, and top-level TOC structure all match.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
@@ -85,7 +97,8 @@ uv run data-pipeline build \
   --raw data/raw/open_library/operating-systems/<artifact>.json \
   --raw data/raw/open_library/linear-algebra/<artifact>.json \
   --raw data/raw/publisher_page/operating-systems/<artifact>.json \
-  --raw data/raw/publisher_page/linear-algebra/<artifact>.json
+  --raw data/raw/publisher_page/linear-algebra/<artifact>.json \
+  --raw data/raw/public_book_page/operating-systems/<artifact>.json
 ```
 
 Repeat `--raw` for multiple artifacts when rebuilding the combined two-topic dataset. Sequential
