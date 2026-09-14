@@ -22,15 +22,21 @@ class OpenTextbookSourceSpec:
     topic: str
     replaces_book_id: str
     book_id: str
-    isbn_10: str
-    isbn_13: str
+    isbn_10: str | None
+    isbn_13: str | None
     title: str
     authors: tuple[str, ...]
-    publisher: str
+    publisher: str | None
     published_year: int
-    version: str
+    version: str | None
     home_url: str
     documents: tuple[OpenTextbookDocumentSpec, ...]
+    source_format: str = "ostep_chapter_pdfs"
+    license_url: str | None = None
+    license: str | None = None
+    max_resource_bytes: int = 5 * 1024 * 1024
+    expected_page_count: int | None = None
+    preface_page_range: tuple[int, int] | None = None
 
 
 OPEN_TEXTBOOK_SOURCES = {
@@ -72,6 +78,43 @@ OPEN_TEXTBOOK_SOURCES = {
                 expected_text_markers=("The Abstraction", "The Process", "virtualizing the CPU"),
             ),
         ),
+    ),
+    "hefferon-linear-algebra-4": OpenTextbookSourceSpec(
+        slug="hefferon-linear-algebra-4",
+        provider="hefferon",
+        topic="linear-algebra",
+        replaces_book_id="isbn13:9780126736502",
+        book_id="book_b9e14d342f56d9651d61",
+        isbn_10=None,
+        isbn_13=None,
+        title="Linear Algebra",
+        authors=("Jim Hefferon",),
+        publisher=None,
+        published_year=2020,
+        version="Fourth edition",
+        home_url="https://hefferon.net/linearalgebra/",
+        documents=(
+            OpenTextbookDocumentSpec(
+                document_type="full_text",
+                external_id="hefferon-linear-algebra-fourth-edition",
+                url="https://jheffero.w3.uvm.edu/linearalgebra/book.pdf",
+                expected_text_markers=(
+                    "Linear Algebra",
+                    "Jim Hefferon",
+                    "Fourth edition",
+                    "Chapter One",
+                ),
+            ),
+        ),
+        source_format="hefferon_pdf_outline",
+        license_url="https://hefferon.net/source.html",
+        license=(
+            "GNU Free Documentation License OR Creative Commons "
+            "Attribution-ShareAlike 3.0 United States License"
+        ),
+        max_resource_bytes=10 * 1024 * 1024,
+        expected_page_count=525,
+        preface_page_range=(2, 6),
     ),
 }
 

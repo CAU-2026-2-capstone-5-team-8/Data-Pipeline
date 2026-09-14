@@ -19,6 +19,58 @@ from data_pipeline.validation import validate_dataset
 RETRIEVED_AT = datetime(2026, 9, 14, 12, tzinfo=UTC)
 
 
+class _FakePage:
+    def __init__(self, text: str = "") -> None:
+        self.text = text
+
+    def extract_text(self) -> str:
+        return self.text
+
+
+class _FakeDestination:
+    def __init__(self, title: str, page_index: int) -> None:
+        self.title = title
+        self.page_index = page_index
+
+
+class _FakeHefferonReader:
+    def __init__(self, _stream, page_count: int = 525) -> None:
+        self.pages = [_FakePage() for _ in range(page_count)]
+        if page_count >= 93:
+            self.pages[0] = _FakePage("LINEAR ALGEBRA Jim Hefferon Fourth edition")
+            self.pages[2] = _FakePage(
+                "Preface standard US undergraduate first course Jim Hefferon 2020-Apr-26"
+            )
+            self.pages[10] = _FakePage(
+                "Chapter One Linear Systems Gauss's Method Analyzing Networks"
+            )
+        self.metadata = {"/Title": "Linear Algebra", "/Author": "Jim Hefferon"}
+        root_titles = [
+            "Linear Systems",
+            "Vector Spaces",
+            "Maps Between Spaces",
+            "Determinants",
+            "Similarity",
+            "Appendix",
+        ]
+        root_pages = [10, 92, 182, 334, 406, 496]
+        self.outline = []
+        for root_index, (title, page_index) in enumerate(zip(root_titles, root_pages, strict=True)):
+            self.outline.append(_FakeDestination(title, page_index))
+            child_count = 14 if root_index == 0 else 15
+            children = [
+                _FakeDestination(f"{title} child {index + 1}", page_index)
+                for index in range(child_count)
+            ]
+            if root_index == 0:
+                children.insert(1, [_FakeDestination("Nested subsection", page_index)])
+            self.outline.append(children)
+
+    @staticmethod
+    def get_destination_page_number(destination: _FakeDestination) -> int:
+        return destination.page_index
+
+
 def _home_html() -> str:
     source = open_textbook_source("ostep-1.10")
     heading_cells = "".join(
@@ -73,6 +125,31 @@ def _extracted_text(pdf: bytes) -> str:
     return " | ".join(document.expected_text_markers)
 
 
+def _hefferon_payload() -> dict:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    return {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": (
+            "<html><body><p>Linear Algebra by Jim Hefferon is a text for a first "
+            "undergraduate course. It is Free.</p><a href='../source.html'>License</a>"
+            "</body></html>"
+        ),
+        "license_url": source.license_url,
+        "license_html": (
+            "<html><body>Linear Algebra GNU Free Documentation License or Creative Commons "
+            "Attribution-ShareAlike 3.0 United States License</body></html>"
+        ),
+        "documents": [
+            {
+                "url": source.documents[0].url,
+                "media_type": "application/pdf",
+                "content_base64": base64.b64encode(b"%PDF-hefferon").decode(),
+            }
+        ],
+    }
+
+
 def test_open_textbook_collector_fetches_only_allowlisted_resources() -> None:
     source = open_textbook_source("ostep-1.10")
     requested_urls = []
@@ -106,6 +183,35 @@ def test_open_textbook_collector_rejects_arbitrary_source() -> None:
         collector = OpenTextbookCollector(client=client)
         with pytest.raises(ValueError, match="source must be one of"):
             collector.fetch("arbitrary-url")
+
+
+def test_hefferon_collector_preserves_home_license_and_pdf() -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == source.documents[0].url:
+            return httpx.Response(
+                200,
+                content=b"%PDF-hefferon",
+                headers={"content-type": "application/pdf"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            text="<html><body>Author evidence</body></html>",
+            headers={"content-type": "text/html; charset=utf-8"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = OpenTextbookCollector(client=client).fetch(source.slug)
+
+    assert requested_urls == [source.home_url, source.license_url, source.documents[0].url]
+    assert payload["license_url"] == source.license_url
+    assert payload["license_html"].startswith("<html>")
+    assert len(payload["documents"]) == 1
 
 
 def test_open_textbook_normalizes_book_documents_toc_and_provenance(monkeypatch) -> None:
@@ -142,6 +248,63 @@ def test_open_textbook_normalizes_book_documents_toc_and_provenance(monkeypatch)
     assert chapter_25.parent_entry_id == concurrency.toc_entry_id
     assert chapter_25.order_index == 0
     assert validate_dataset(dataset) == []
+
+
+def test_hefferon_normalizes_pdf_outline_and_selected_text(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeHefferonReader)
+
+    dataset = normalize_open_textbook_response(
+        _hefferon_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].book_id == source.book_id
+    assert dataset.books[0].isbn_10 is None
+    assert dataset.books[0].isbn_13 is None
+    assert dataset.books[0].publisher is None
+    assert [document.document_type for document in dataset.documents] == [
+        "description",
+        "preface",
+        "sample_chapter",
+    ]
+    assert len(dataset.toc) == 96
+    assert [entry.title for entry in dataset.toc if entry.level == 1] == [
+        "Linear Systems",
+        "Vector Spaces",
+        "Maps Between Spaces",
+        "Determinants",
+        "Similarity",
+        "Appendix",
+    ]
+    assert sum(entry.level == 3 for entry in dataset.toc) == 1
+    assert len(dataset.sources) == 3
+    assert {item.source_type for item in dataset.sources} == {"author_page", "open_textbook"}
+    assert all(item.license == source.license for item in dataset.sources)
+    assert dataset.sources[-1].content_hash == sha256_bytes(b"%PDF-hefferon")
+    assert validate_dataset(dataset) == []
+
+
+def test_hefferon_rejects_changed_pdf_page_count(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.PdfReader",
+        lambda stream: _FakeHefferonReader(stream, page_count=524),
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="page count"):
+        normalize_open_textbook_response(
+            _hefferon_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+        )
+
+
+def test_hefferon_rejects_unverified_license(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    payload = _hefferon_payload()
+    payload["license_html"] = "<html><body>License unavailable</body></html>"
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeHefferonReader)
+
+    with pytest.raises(InvalidProviderResponse, match="license page"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
 
 
 def test_open_textbook_requires_complete_numbered_toc(monkeypatch) -> None:

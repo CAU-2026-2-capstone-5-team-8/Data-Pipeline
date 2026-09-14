@@ -9,8 +9,6 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from data_pipeline.collectors.base import InvalidProviderResponse, is_transient_http_error
 from data_pipeline.open_textbook_sources import open_textbook_source
 
-MAX_RESOURCE_BYTES = 5 * 1024 * 1024
-
 
 class OpenTextbookCollector:
     """Fetch one allowlisted textbook home page and its reviewed public PDFs."""
@@ -40,7 +38,7 @@ class OpenTextbookCollector:
         wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
         reraise=True,
     )
-    def _fetch(self, url: str, expected_content_type: str) -> bytes:
+    def _fetch(self, url: str, expected_content_type: str, max_bytes: int) -> bytes:
         response = self.client.get(url)
         if response.is_redirect:
             raise InvalidProviderResponse("open textbook source returned an unapproved redirect")
@@ -54,17 +52,27 @@ class OpenTextbookCollector:
         content = response.content
         if not content:
             raise InvalidProviderResponse("open textbook source returned empty content")
-        if len(content) > MAX_RESOURCE_BYTES:
-            raise InvalidProviderResponse("open textbook resource exceeded the 5 MiB MVP limit")
+        if len(content) > max_bytes:
+            limit_mib = max_bytes // (1024 * 1024)
+            raise InvalidProviderResponse(
+                f"open textbook resource exceeded its {limit_mib} MiB MVP limit"
+            )
         return content
 
     def fetch(self, source_slug: str) -> dict[str, Any]:
-        """Fetch only the allowlisted home page and three reviewed evidence PDFs."""
+        """Fetch only the allowlisted home, license, and reviewed PDF resources."""
         source = open_textbook_source(source_slug)
-        home = self._fetch(source.home_url, "text/html").decode("utf-8", errors="replace")
+        home = self._fetch(source.home_url, "text/html", 1024 * 1024).decode(
+            "utf-8", errors="replace"
+        )
+        license_html = None
+        if source.license_url is not None:
+            license_html = self._fetch(source.license_url, "text/html", 1024 * 1024).decode(
+                "utf-8", errors="replace"
+            )
         documents = []
         for document in source.documents:
-            content = self._fetch(document.url, "application/pdf")
+            content = self._fetch(document.url, "application/pdf", source.max_resource_bytes)
             if not content.startswith(b"%PDF-"):
                 raise InvalidProviderResponse("open textbook document response is not a PDF")
             documents.append(
@@ -74,19 +82,26 @@ class OpenTextbookCollector:
                     "content_base64": base64.b64encode(content).decode("ascii"),
                 }
             )
-        return {
+        payload = {
             "source_slug": source.slug,
             "home_url": source.home_url,
             "home_html": home,
             "documents": documents,
         }
+        if source.license_url is not None:
+            payload["license_url"] = source.license_url
+            payload["license_html"] = license_html
+        return payload
 
     @staticmethod
     def request_parameters(source_slug: str) -> dict[str, str | list[str]]:
         """Return the complete allowlisted request inputs used for reproducibility."""
         source = open_textbook_source(source_slug)
-        return {
+        parameters: dict[str, str | list[str]] = {
             "source": source.slug,
             "home_url": source.home_url,
             "document_urls": [document.url for document in source.documents],
         }
+        if source.license_url is not None:
+            parameters["license_url"] = source.license_url
+        return parameters

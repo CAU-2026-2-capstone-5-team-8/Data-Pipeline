@@ -24,7 +24,7 @@ from data_pipeline.identifiers import (
     stable_id,
 )
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
-from data_pipeline.open_textbook_sources import open_textbook_source
+from data_pipeline.open_textbook_sources import OpenTextbookSourceSpec, open_textbook_source
 from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
@@ -904,6 +904,303 @@ def _ostep_toc(html: str, book_id: str, source_id: str) -> list[TocEntry]:
     return entries
 
 
+def _reader_page_text(reader: PdfReader, start: int, end: int, document_name: str) -> str:
+    """Extract a reviewed PDF page range with visible page boundaries."""
+    if start < 0 or end <= start or end > len(reader.pages):
+        raise InvalidProviderResponse(
+            f"open textbook {document_name} page range is outside the reviewed PDF"
+        )
+    pages = [
+        text.strip()
+        for page in reader.pages[start:end]
+        if (text := page.extract_text()) and text.strip()
+    ]
+    if not pages:
+        raise InvalidProviderResponse(f"open textbook {document_name} contained no text")
+    return "\n\n".join(pages)
+
+
+def _pdf_outline_toc(reader: PdfReader, book_id: str, source_id: str) -> list[TocEntry]:
+    """Preserve a reviewed PDF bookmark tree as canonical TOC hierarchy."""
+    entries: list[TocEntry] = []
+
+    def visit(items: list[Any], parent_id: str | None, level: int, path: tuple[int, ...]) -> None:
+        order_index = 0
+        previous_entry: TocEntry | None = None
+        for item in items:
+            if isinstance(item, list):
+                if previous_entry is None:
+                    raise InvalidProviderResponse("open textbook PDF outline has orphan children")
+                visit(
+                    item,
+                    previous_entry.toc_entry_id,
+                    level + 1,
+                    (*path, previous_entry.order_index),
+                )
+                continue
+            title = getattr(item, "title", None)
+            if not isinstance(title, str) or not title.strip():
+                raise InvalidProviderResponse("open textbook PDF outline has an empty title")
+            page_index = reader.get_destination_page_number(item)
+            if page_index is None or page_index < 0 or page_index >= len(reader.pages):
+                raise InvalidProviderResponse(
+                    "open textbook PDF outline has an invalid destination"
+                )
+            normalized_title = " ".join(title.split())
+            entry = TocEntry(
+                toc_entry_id=stable_id(
+                    "toc",
+                    book_id,
+                    source_id,
+                    *(str(index) for index in (*path, order_index)),
+                    normalized_title,
+                ),
+                book_id=book_id,
+                parent_entry_id=parent_id,
+                level=level,
+                order_index=order_index,
+                label=None,
+                title=normalized_title,
+                source_id=source_id,
+            )
+            entries.append(entry)
+            previous_entry = entry
+            order_index += 1
+
+    outline = reader.outline
+    if not isinstance(outline, list):
+        raise InvalidProviderResponse("open textbook PDF is missing a bookmark outline")
+    visit(outline, None, 1, ())
+    return entries
+
+
+def _hefferon_description(tree: HTMLParser) -> str:
+    """Extract the concise author-written description from the textbook home page."""
+    for paragraph in tree.css("p"):
+        text = " ".join(paragraph.text(separator=" ", strip=True).split())
+        if text.startswith("Linear Algebra by Jim Hefferon is a text"):
+            return text
+    raise InvalidProviderResponse("Hefferon home page is missing its reviewed description")
+
+
+def _normalize_hefferon_response(
+    response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize Hefferon's fourth-edition PDF outline and selected public text."""
+    if source_spec.license_url is None or source_spec.license is None:
+        raise InvalidProviderResponse("Hefferon allowlist license metadata is incomplete")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("Hefferon home URL does not match allowlist")
+    if response.get("license_url") != source_spec.license_url:
+        raise InvalidProviderResponse("Hefferon license URL does not match allowlist")
+    home_html = response.get("home_html")
+    license_html = response.get("license_html")
+    raw_documents = response.get("documents")
+    if (
+        not isinstance(home_html, str)
+        or not isinstance(license_html, str)
+        or not isinstance(raw_documents, list)
+    ):
+        raise InvalidProviderResponse("Hefferon response has invalid content fields")
+    if source_spec.license_url.rsplit("/", 1)[-1] not in home_html:
+        raise InvalidProviderResponse("Hefferon license page is not linked from the home page")
+    if len(raw_documents) != 1 or len(source_spec.documents) != 1:
+        raise InvalidProviderResponse("Hefferon response must contain one reviewed PDF")
+
+    tree = HTMLParser(home_html)
+    home_text = tree.root.text(separator=" ", strip=True)
+    normalized_home = normalize_bibliographic_text(home_text)
+    if any(
+        normalize_bibliographic_text(marker) not in normalized_home
+        for marker in (source_spec.title, *source_spec.authors, "first undergraduate course")
+    ):
+        raise InvalidProviderResponse("Hefferon home page does not match the reviewed book")
+    description = _hefferon_description(tree)
+
+    license_text = HTMLParser(license_html).root.text(separator=" ", strip=True)
+    normalized_license = normalize_bibliographic_text(license_text)
+    license_markers = (
+        source_spec.title,
+        "GNU Free Documentation License",
+        "Creative Commons Attribution-ShareAlike 3.0 United States License",
+    )
+    if any(
+        normalize_bibliographic_text(marker) not in normalized_license for marker in license_markers
+    ):
+        raise InvalidProviderResponse("Hefferon license page does not match the reviewed terms")
+
+    raw_document = raw_documents[0]
+    document_spec = source_spec.documents[0]
+    if not isinstance(raw_document, dict) or raw_document.get("url") != document_spec.url:
+        raise InvalidProviderResponse("Hefferon PDF URL does not match allowlist")
+    if raw_document.get("media_type") != "application/pdf":
+        raise InvalidProviderResponse("Hefferon PDF has an invalid media type")
+    encoded_content = raw_document.get("content_base64")
+    if not isinstance(encoded_content, str):
+        raise InvalidProviderResponse("Hefferon PDF is missing base64 content")
+    try:
+        content = base64.b64decode(encoded_content, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidProviderResponse("Hefferon PDF contains invalid base64") from exc
+    if not content.startswith(b"%PDF-"):
+        raise InvalidProviderResponse("Hefferon document content is not a PDF")
+
+    try:
+        reader = PdfReader(BytesIO(content))
+        if (
+            source_spec.expected_page_count is None
+            or len(reader.pages) != source_spec.expected_page_count
+        ):
+            raise InvalidProviderResponse("Hefferon PDF page count does not match review")
+        first_page = _reader_page_text(reader, 0, 1, "identity page")
+        normalized_first_page = normalize_bibliographic_text(first_page)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_first_page
+            for marker in document_spec.expected_text_markers[:3]
+        ):
+            raise InvalidProviderResponse("Hefferon PDF identity does not match the reviewed book")
+        metadata = reader.metadata or {}
+        if normalize_bibliographic_text(
+            str(metadata.get("/Title", ""))
+        ) != normalize_bibliographic_text(source_spec.title) or normalize_bibliographic_text(
+            source_spec.authors[0]
+        ) not in normalize_bibliographic_text(str(metadata.get("/Author", ""))):
+            raise InvalidProviderResponse("Hefferon PDF metadata does not match the reviewed book")
+
+        pdf_source_id = stable_id(
+            "source", source_spec.provider, document_spec.url, source_spec.book_id
+        )
+        toc = _pdf_outline_toc(reader, source_spec.book_id, pdf_source_id)
+        roots = [entry for entry in toc if entry.parent_entry_id is None]
+        expected_roots = [
+            "Linear Systems",
+            "Vector Spaces",
+            "Maps Between Spaces",
+            "Determinants",
+            "Similarity",
+            "Appendix",
+        ]
+        if len(toc) != 96 or [entry.title for entry in roots] != expected_roots:
+            raise InvalidProviderResponse("Hefferon PDF outline does not match review")
+        root_destinations = [item for item in reader.outline if not isinstance(item, list)]
+        first_chapter_start = reader.get_destination_page_number(root_destinations[0])
+        second_chapter_start = reader.get_destination_page_number(root_destinations[1])
+        if first_chapter_start is None or second_chapter_start is None:
+            raise InvalidProviderResponse("Hefferon PDF chapter destinations are missing")
+        if source_spec.preface_page_range is None:
+            raise InvalidProviderResponse("Hefferon preface page range is not configured")
+        preface = _reader_page_text(
+            reader, *source_spec.preface_page_range, document_name="preface"
+        )
+        sample = _reader_page_text(
+            reader, first_chapter_start, second_chapter_start, "sample chapter"
+        )
+    except (PdfReadError, ValueError) as exc:
+        raise InvalidProviderResponse(f"Hefferon PDF could not be parsed: {exc}") from exc
+
+    preface_markers = ("Preface", "standard US undergraduate first course", "2020-Apr-26")
+    sample_markers = ("Chapter One", "Linear Systems", "Gauss's Method", "Analyzing Networks")
+    for document_name, text, markers in (
+        ("preface", preface, preface_markers),
+        ("sample chapter", sample, sample_markers),
+    ):
+        normalized_text = normalize_bibliographic_text(text)
+        if any(normalize_bibliographic_text(marker) not in normalized_text for marker in markers):
+            raise InvalidProviderResponse(f"Hefferon {document_name} text does not match review")
+
+    expected_book_id = stable_id(
+        "book",
+        normalize_bibliographic_text(source_spec.title),
+        normalize_bibliographic_text(source_spec.authors[0]),
+    )
+    if source_spec.book_id != expected_book_id:
+        raise InvalidProviderResponse("Hefferon fallback book ID is not deterministic")
+    rights_note = "The author's license page explicitly applies these terms to Linear Algebra."
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    license_source_id = stable_id(
+        "source", source_spec.provider, source_spec.license_url, source_spec.book_id
+    )
+    sources = [
+        Source(
+            source_id=home_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="author_page",
+            url=source_spec.home_url,
+            external_id=f"{source_spec.slug}:home",
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=rights_note,
+            content_hash=sha256_text(home_html),
+        ),
+        Source(
+            source_id=license_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="author_page",
+            url=source_spec.license_url,
+            external_id=f"{source_spec.slug}:license",
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=rights_note,
+            content_hash=sha256_text(license_html),
+        ),
+        Source(
+            source_id=pdf_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="open_textbook",
+            url=document_spec.url,
+            external_id=document_spec.external_id,
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=rights_note,
+            content_hash=sha256_bytes(content),
+        ),
+    ]
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", home_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=home_source_id,
+            content_hash=sha256_text(description),
+        ),
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "preface", pdf_source_id),
+            book_id=source_spec.book_id,
+            document_type="preface",
+            text=preface,
+            source_id=pdf_source_id,
+            content_hash=sha256_text(preface),
+        ),
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "sample_chapter", pdf_source_id),
+            book_id=source_spec.book_id,
+            document_type="sample_chapter",
+            text=sample,
+            source_id=pdf_source_id,
+            content_hash=sha256_text(sample),
+        ),
+    ]
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=None,
+        isbn_13=None,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=None,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[source_spec.topic],
+    )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
+
+
 def normalize_open_textbook_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -917,6 +1214,10 @@ def normalize_open_textbook_response(
         raise InvalidProviderResponse(str(exc)) from exc
     if topic != source_spec.topic:
         raise InvalidProviderResponse("open textbook response topic does not match its allowlist")
+    if source_spec.source_format == "hefferon_pdf_outline":
+        return _normalize_hefferon_response(response, source_spec, retrieved_at)
+    if source_spec.source_format != "ostep_chapter_pdfs":
+        raise InvalidProviderResponse("open textbook source format is unsupported")
     if response.get("home_url") != source_spec.home_url:
         raise InvalidProviderResponse("open textbook home URL does not match allowlist")
     home_html = response.get("home_html")
@@ -927,6 +1228,8 @@ def normalize_open_textbook_response(
     tree = HTMLParser(home_html)
     home_text = tree.root.text(separator=" ", strip=True)
     normalized_home = normalize_bibliographic_text(home_text)
+    if source_spec.publisher is None or source_spec.version is None or source_spec.isbn_10 is None:
+        raise InvalidProviderResponse("OSTEP allowlist identity is incomplete")
     identity_markers = (
         source_spec.title,
         *source_spec.authors,
