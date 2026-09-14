@@ -15,6 +15,7 @@ class OpenTextbookDocumentSpec:
     identity_text_markers: tuple[str, ...] = ()
     preface_text_markers: tuple[str, ...] = ()
     sample_text_markers: tuple[str, ...] = ()
+    license: str | None = None
 
 
 @dataclass(frozen=True)
@@ -293,6 +294,257 @@ OPEN_TEXTBOOK_SOURCES = {
         home_license_reference_url="http://creativecommons.org/licenses/by-nc/3.0/",
         home_license="Creative Commons Attribution-NonCommercial 3.0 Unported License",
         max_resource_bytes=1024 * 1024,
+    ),
+    "nicholson-linear-algebra-2023": OpenTextbookSourceSpec(
+        slug="nicholson-linear-algebra-2023",
+        provider="libretexts",
+        topic="linear-algebra",
+        replaces_book_id="isbn13:9780205080106",
+        book_id="book_d061d898abc6ada0c56b",
+        isbn_10=None,
+        isbn_13=None,
+        title="Linear Algebra with Applications",
+        authors=("W. Keith Nicholson",),
+        publisher="Lyryx",
+        published_year=2023,
+        version="2023-A-D",
+        home_url=(
+            "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+            "Linear_Algebra_with_Applications_(Nicholson)"
+        ),
+        documents=(
+            OpenTextbookDocumentSpec(
+                document_type="metadata",
+                external_id="open-textbook-library:533",
+                url="https://open.umn.edu/opentextbooks/textbooks/533.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Linear Algebra with Applications",
+                    "W. Keith Nicholson",
+                    "2023-A-D",
+                    "Lyryx",
+                ),
+                license="Attribution-NonCommercial-ShareAlike",
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="navigation",
+                external_id="libretexts:nicholson:front-matter",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/00%3A_Front_Matter"
+                ),
+                media_type="text/html",
+                expected_text_markers=("Front Matter", "TitlePage", "Preface"),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-1",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/"
+                    "01%3A_Systems_of_Linear_Equations"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "1: Systems of Linear Equations",
+                    "1.0: Prelude to Systems of Linear Equations",
+                    "1.E: Supplementary Exercises for Chapter 1",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-2",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/02%3A_Matrix_Algebra"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "2: Matrix Algebra",
+                    "2.0: Prelude to Matrix Algebra",
+                    "2.E: Supplementary Exercises for Chapter 2",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-3",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/"
+                    "03%3A_Determinants_and_Diagonalization"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "3: Determinants and Diagonalization",
+                    "3.0: Prelude to Determinants and Diagonalization",
+                    "3.E: Supplementary Exercises for Chapter 3",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-4",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/04%3A_Vector_Geometry"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "4: Vector Geometry",
+                    "4.0: Prelude to Vector Geometry",
+                    "4.E: Supplementary Exercises for Chapter 4",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-5",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/05%3A_Vector_Space_R"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "5: Vector Space Rⁿ",
+                    "5.0: Prelude to Vector Space Rⁿ",
+                    "5.E: Supplementary Exercises for Chapter 5",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-6",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/06%3A_Vector_Spaces"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "6: Vector Spaces",
+                    "6.0: Prelude to Vector Spaces",
+                    "6.E: Supplementary Exercises for Chapter 6",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-7",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/"
+                    "07%3A_Linear_Transformations"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "7: Linear Transformations",
+                    "7.0: Prelude to Linear Transformations",
+                    "7.5: More on Linear Recurrences",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-8",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/08%3A_Orthogonality"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "8: Orthogonality",
+                    "8.0: Prelude to Orthogonality",
+                    "8.11: An Application to Statistical Principal Component Analysis",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-9",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/09%3A_Change_of_Basis"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "9: Change of Basis",
+                    "9.0: Prelude to Change of Basis",
+                    "9.3: Invariant Subspaces and Direct Sums",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-10",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/"
+                    "10%3A_Inner_Product_Spaces"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "10: Inner Product Spaces",
+                    "10.0: Prelude to Inner Product Spaces",
+                    "10.5: An Application to Fourier Approximation",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-11",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/11%3A_Canonical_Forms"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "11: Canonical Forms",
+                    "11.0: Prelude to Canonical Forms",
+                    "11.2: The Jordan Canonical Form",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="libretexts:nicholson:chapter-12",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/12%3A_Appendices"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "12: Appendices",
+                    "12.A: Complex Numbers",
+                    "12.D: Polynomials",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preface",
+                external_id="libretexts:nicholson:preface",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/00%3A_Front_Matter/"
+                    "06%3A_Preface"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "This textbook is an introduction to the ideas and techniques "
+                    "of linear algebra",
+                    "SUGGESTED COURSE OUTLINES",
+                    "ACKNOWLEDGMENTS",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preview",
+                external_id="libretexts:nicholson:section-1.1",
+                url=(
+                    "https://math.libretexts.org/Bookshelves/Linear_Algebra/"
+                    "Linear_Algebra_with_Applications_(Nicholson)/"
+                    "01%3A_Systems_of_Linear_Equations/"
+                    "1.01%3A_Solutions_and_Elementary_Operations"
+                ),
+                media_type="text/html",
+                expected_text_markers=(
+                    "Practical problems in many fields of study",
+                    "Elementary Operations",
+                    "system of linear equations",
+                ),
+            ),
+        ),
+        source_format="libretexts_html",
+        license_reference_url="https://creativecommons.org/licenses/by-nc-sa/4.0",
+        license=("Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License"),
+        max_resource_bytes=512 * 1024,
     ),
 }
 

@@ -63,6 +63,18 @@ documents. The author's page explicitly applies the Creative Commons Attribution
 License, which is retained on every source record. No ISBN is asserted because none is stated in
 the collected official pages.
 
+The third Linear Algebra OER slice collects W. Keith Nicholson's *Linear Algebra with
+Applications*. It replaces the evidence-empty 1984 Gareth Williams candidate. A structured
+[Open Textbook Library record](https://open.umn.edu/opentextbooks/textbooks/533) supplies the
+reviewed title, author, publisher, 2023 version, rights statement, and description. The public
+[LibreTexts book](https://math.libretexts.org/Bookshelves/Linear_Algebra/Linear_Algebra_with_Applications_(Nicholson))
+supplies twelve ordinary-HTML chapter listings, the linked preface, and section 1.1 as preview
+text. The chapter listings emit 167 three-level TOC entries without using the site's empty
+JavaScript-generated TOC shell. LibreTexts page tags preserve the author, upstream Lyryx source,
+and CC BY-NC-SA 4.0 statement on each collected page; the less-specific Open Textbook Library
+license value is retained separately rather than being upgraded. No ISBN is asserted because the
+reviewed records do not provide one.
+
 The next Operating Systems OER slice collects Allen B. Downey's *Think OS: A Brief Introduction
 to Operating Systems*, version 0.7.4, from the official Green Tea Press pages. It replaces the
 edition-mismatched *Modern Operating Systems* candidate. The publisher page supplies the
@@ -86,15 +98,15 @@ restricted scans or infer unavailable preface, introduction, preview, or sample 
 
 ## Real-data evidence experiment
 
-The combined public-source experiment on 2026-09-14 produced the following coverage for the
+The combined public-source experiment on 2026-09-15 produced the following coverage for the
 current ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Operating Systems | 5/5 | 5/5 | 4/5 | 2/5 | 2/5 | 1/5 |
-| Linear Algebra | 5/5 | 5/5 | 4/5 | 2/5 | 2/5 | 0/5 |
+| Linear Algebra | 5/5 | 5/5 | 5/5 | 3/5 | 3/5 | 0/5 |
 
-All ten books now have TOCs, containing 845 canonical entries. The Open Library and eCampus TOCs
+All ten books now have TOCs, containing 938 canonical entries. The Open Library and eCampus TOCs
 retain their available parent-child hierarchy; the Wiley pages expose chapter and appendix
 headings only, so their 35 entries are represented truthfully as top-level items. OSTEP contributes
 five thematic roots and 57 numbered child chapters.
@@ -111,7 +123,10 @@ first chapter. Its HTML index contributes 11 chapter roots and 54 child sections
 same public-text path for Linear Algebra. *Understanding Linear Algebra* adds an 8,902-character
 preface and five first-chapter preview pages containing 106,307 characters in total. Its PreTeXt
 navigation contributes 7 chapters, 38 second-level entries, and 177 third-level entries. The
-complete canonical result contains 10 books, 23 documents, 845 TOC entries, and 37 source records.
+Nicholson slice adds a 725-character description, a 19,955-character preface, and a
+16,526-character first-section preview. Its twelve chapter pages contribute 12 chapter roots,
+88 second-level entries, and 67 exercise children. The complete canonical result contains 10
+books, 26 documents, 938 TOC entries, and 52 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -133,6 +148,7 @@ uv run data-pipeline collect-open-textbook --source ostep-1.10
 uv run data-pipeline collect-open-textbook --source hefferon-linear-algebra-4
 uv run data-pipeline collect-open-textbook --source understanding-linear-algebra-2022
 uv run data-pipeline collect-open-textbook --source think-os-0.7.4
+uv run data-pipeline collect-open-textbook --source nicholson-linear-algebra-2023
 uv run data-pipeline report
 ```
 
@@ -151,9 +167,10 @@ entry count, and top-level TOC structure all match.
 `collect-open-textbook` verifies the title, authors, publisher, version, year, ISBN, complete
 TOC or PDF outline, public document identity, resource media types, and reviewed text markers.
 Source-specific size limits are enforced: 5 MiB for OSTEP resources, 10 MiB for the reviewed 7.63
-MB Hefferon PDF, and 1 MiB per reviewed PreTeXt or Think OS HTML page. It removes the configured
-weak candidate and all records scoped to that book before merging the new book. Repeated runs
-retain five books per topic and update only the selected source snapshots.
+MB Hefferon PDF, 1 MiB per reviewed PreTeXt or Think OS HTML page, and 512 KiB per Nicholson HTML
+page. It removes the configured weak candidate and all records scoped to that book before merging
+the new book. Repeated runs retain five books per topic and update only the selected source
+snapshots.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its

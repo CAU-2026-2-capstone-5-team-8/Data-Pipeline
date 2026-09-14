@@ -60,9 +60,7 @@ PublicBookSourceOption = Annotated[
 PublisherDocumentSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition public publisher document slug.")
 ]
-OpenTextbookSourceOption = Annotated[
-    str, typer.Option(help="Reviewed author-hosted open textbook slug.")
-]
+OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public open textbook slug.")]
 
 
 def _ensure_topic(topic: str) -> None:
