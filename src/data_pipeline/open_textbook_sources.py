@@ -11,6 +11,9 @@ class OpenTextbookDocumentSpec:
     external_id: str
     url: str
     expected_text_markers: tuple[str, ...]
+    identity_text_markers: tuple[str, ...] = ()
+    preface_text_markers: tuple[str, ...] = ()
+    sample_text_markers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -98,11 +101,22 @@ OPEN_TEXTBOOK_SOURCES = {
                 document_type="full_text",
                 external_id="hefferon-linear-algebra-fourth-edition",
                 url="https://jheffero.w3.uvm.edu/linearalgebra/book.pdf",
-                expected_text_markers=(
+                expected_text_markers=(),
+                identity_text_markers=(
                     "Linear Algebra",
                     "Jim Hefferon",
                     "Fourth edition",
+                ),
+                preface_text_markers=(
+                    "Preface",
+                    "standard US undergraduate first course",
+                    "2020-Apr-26",
+                ),
+                sample_text_markers=(
                     "Chapter One",
+                    "Linear Systems",
+                    "Gauss's Method",
+                    "Analyzing Networks",
                 ),
             ),
         ),

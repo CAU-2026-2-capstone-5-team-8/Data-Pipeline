@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from io import BytesIO
 from typing import Any
+from urllib.parse import urljoin
 
 from pydantic import ValidationError
 from pypdf import PdfReader
@@ -1002,12 +1003,15 @@ def _normalize_hefferon_response(
         or not isinstance(raw_documents, list)
     ):
         raise InvalidProviderResponse("Hefferon response has invalid content fields")
-    if source_spec.license_url.rsplit("/", 1)[-1] not in home_html:
-        raise InvalidProviderResponse("Hefferon license page is not linked from the home page")
     if len(raw_documents) != 1 or len(source_spec.documents) != 1:
         raise InvalidProviderResponse("Hefferon response must contain one reviewed PDF")
 
     tree = HTMLParser(home_html)
+    license_links = {
+        urljoin(source_spec.home_url, link.attributes["href"]) for link in tree.css("a[href]")
+    }
+    if source_spec.license_url not in license_links:
+        raise InvalidProviderResponse("Hefferon license page is not linked from the home page")
     home_text = tree.root.text(separator=" ", strip=True)
     normalized_home = normalize_bibliographic_text(home_text)
     if any(
@@ -1044,6 +1048,8 @@ def _normalize_hefferon_response(
         raise InvalidProviderResponse("Hefferon PDF contains invalid base64") from exc
     if not content.startswith(b"%PDF-"):
         raise InvalidProviderResponse("Hefferon document content is not a PDF")
+    if len(content) > source_spec.max_resource_bytes:
+        raise InvalidProviderResponse("Hefferon PDF exceeds its reviewed size limit")
 
     try:
         reader = PdfReader(BytesIO(content))
@@ -1056,7 +1062,7 @@ def _normalize_hefferon_response(
         normalized_first_page = normalize_bibliographic_text(first_page)
         if any(
             normalize_bibliographic_text(marker) not in normalized_first_page
-            for marker in document_spec.expected_text_markers[:3]
+            for marker in document_spec.identity_text_markers
         ):
             raise InvalidProviderResponse("Hefferon PDF identity does not match the reviewed book")
         metadata = reader.metadata or {}
@@ -1080,7 +1086,13 @@ def _normalize_hefferon_response(
             "Similarity",
             "Appendix",
         ]
-        if len(toc) != 96 or [entry.title for entry in roots] != expected_roots:
+        level_counts = {level: sum(entry.level == level for entry in toc) for level in (1, 2, 3)}
+        if (
+            len(toc) != 96
+            or [entry.title for entry in roots] != expected_roots
+            or level_counts != {1: 6, 2: 46, 3: 44}
+            or any(entry.level > 3 for entry in toc)
+        ):
             raise InvalidProviderResponse("Hefferon PDF outline does not match review")
         root_destinations = [item for item in reader.outline if not isinstance(item, list)]
         first_chapter_start = reader.get_destination_page_number(root_destinations[0])
@@ -1095,14 +1107,14 @@ def _normalize_hefferon_response(
         sample = _reader_page_text(
             reader, first_chapter_start, second_chapter_start, "sample chapter"
         )
+    except InvalidProviderResponse:
+        raise
     except (PdfReadError, ValueError) as exc:
         raise InvalidProviderResponse(f"Hefferon PDF could not be parsed: {exc}") from exc
 
-    preface_markers = ("Preface", "standard US undergraduate first course", "2020-Apr-26")
-    sample_markers = ("Chapter One", "Linear Systems", "Gauss's Method", "Analyzing Networks")
     for document_name, text, markers in (
-        ("preface", preface, preface_markers),
-        ("sample chapter", sample, sample_markers),
+        ("preface", preface, document_spec.preface_text_markers),
+        ("sample chapter", sample, document_spec.sample_text_markers),
     ):
         normalized_text = normalize_bibliographic_text(text)
         if any(normalize_bibliographic_text(marker) not in normalized_text for marker in markers):
@@ -1317,6 +1329,8 @@ def normalize_open_textbook_response(
             raise InvalidProviderResponse("open textbook document contains invalid base64") from exc
         if not content.startswith(b"%PDF-"):
             raise InvalidProviderResponse("open textbook document content is not a PDF")
+        if len(content) > source_spec.max_resource_bytes:
+            raise InvalidProviderResponse("open textbook PDF exceeds its reviewed size limit")
 
         document_spec = expected_documents[url]
         text = _extract_pdf_text(content)

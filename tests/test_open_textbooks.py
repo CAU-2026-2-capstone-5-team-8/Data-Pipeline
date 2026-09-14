@@ -1,4 +1,5 @@
 import base64
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
@@ -34,7 +35,7 @@ class _FakeDestination:
 
 
 class _FakeHefferonReader:
-    def __init__(self, _stream, page_count: int = 525) -> None:
+    def __init__(self, _stream, page_count: int = 525, deep_outline: bool = False) -> None:
         self.pages = [_FakePage() for _ in range(page_count)]
         if page_count >= 93:
             self.pages[0] = _FakePage("LINEAR ALGEBRA Jim Hefferon Fourth edition")
@@ -55,15 +56,22 @@ class _FakeHefferonReader:
         ]
         root_pages = [10, 92, 182, 334, 406, 496]
         self.outline = []
+        level_two_counts = (8, 8, 9, 7, 8, 6)
         for root_index, (title, page_index) in enumerate(zip(root_titles, root_pages, strict=True)):
             self.outline.append(_FakeDestination(title, page_index))
-            child_count = 14 if root_index == 0 else 15
             children = [
                 _FakeDestination(f"{title} child {index + 1}", page_index)
-                for index in range(child_count)
+                for index in range(level_two_counts[root_index])
             ]
             if root_index == 0:
-                children.insert(1, [_FakeDestination("Nested subsection", page_index)])
+                level_three_count = 43 if deep_outline else 44
+                nested = [
+                    _FakeDestination(f"Nested subsection {index + 1}", page_index)
+                    for index in range(level_three_count)
+                ]
+                if deep_outline:
+                    nested.insert(1, [_FakeDestination("Unexpected deep section", page_index)])
+                children.insert(1, nested)
             self.outline.append(children)
 
     @staticmethod
@@ -276,7 +284,8 @@ def test_hefferon_normalizes_pdf_outline_and_selected_text(monkeypatch) -> None:
         "Similarity",
         "Appendix",
     ]
-    assert sum(entry.level == 3 for entry in dataset.toc) == 1
+    assert sum(entry.level == 2 for entry in dataset.toc) == 46
+    assert sum(entry.level == 3 for entry in dataset.toc) == 44
     assert len(dataset.sources) == 3
     assert {item.source_type for item in dataset.sources} == {"author_page", "open_textbook"}
     assert all(item.license == source.license for item in dataset.sources)
@@ -291,7 +300,65 @@ def test_hefferon_rejects_changed_pdf_page_count(monkeypatch) -> None:
         lambda stream: _FakeHefferonReader(stream, page_count=524),
     )
 
-    with pytest.raises(InvalidProviderResponse, match="page count"):
+    with pytest.raises(InvalidProviderResponse) as exc_info:
+        normalize_open_textbook_response(
+            _hefferon_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+        )
+    assert str(exc_info.value) == "Hefferon PDF page count does not match review"
+
+
+def test_hefferon_rejects_license_filename_without_reviewed_link(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    payload = _hefferon_payload()
+    payload["home_html"] = (
+        "<html><body><p>Linear Algebra by Jim Hefferon is a text for a first "
+        "undergraduate course. It is Free. See source.html.</p>"
+        "<a href='https://example.test/source.html'>Unrelated license</a></body></html>"
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeHefferonReader)
+
+    with pytest.raises(InvalidProviderResponse, match="not linked"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_hefferon_rejects_raw_pdf_above_reviewed_size(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    payload = _hefferon_payload()
+    reviewed_source = replace(source, max_resource_bytes=8)
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.open_textbook_source", lambda _slug: reviewed_source
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="size limit"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_hefferon_rejects_unreviewed_outline_depth(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.PdfReader",
+        lambda stream: _FakeHefferonReader(stream, deep_outline=True),
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="outline does not match review"):
+        normalize_open_textbook_response(
+            _hefferon_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+        )
+
+
+def test_hefferon_validates_every_configured_sample_marker(monkeypatch) -> None:
+    source = open_textbook_source("hefferon-linear-algebra-4")
+    document = replace(
+        source.documents[0],
+        sample_text_markers=(*source.documents[0].sample_text_markers, "Missing marker"),
+    )
+    reviewed_source = replace(source, documents=(document,))
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.open_textbook_source", lambda _slug: reviewed_source
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeHefferonReader)
+
+    with pytest.raises(InvalidProviderResponse, match="sample chapter text"):
         normalize_open_textbook_response(
             _hefferon_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
         )
