@@ -58,6 +58,66 @@ def make_dataset() -> CanonicalDataset:
     return CanonicalDataset(books=[book], documents=[document], toc=[toc], sources=[source])
 
 
+@pytest.mark.parametrize("cycle_length", [1, 2, 3])
+def test_rejects_cyclic_toc_parent_links(cycle_length) -> None:
+    dataset = make_dataset()
+    template = dataset.toc[0]
+    dataset.toc = [
+        template.model_copy(
+            update={
+                "toc_entry_id": f"entry_{i}",
+                "parent_entry_id": f"entry_{(i + 1) % cycle_length}",
+                "level": i + 1,
+            }
+        )
+        for i in range(cycle_length)
+    ]
+    assert any("cycle" in error for error in validate_dataset(dataset))
+
+
+def test_rejects_root_with_non_root_level() -> None:
+    dataset = make_dataset()
+    dataset.toc[0].level = 3
+    assert any("level" in error for error in validate_dataset(dataset))
+
+
+@pytest.mark.parametrize("child_level", [1, 3])
+def test_rejects_child_level_not_one_above_parent(child_level) -> None:
+    dataset = make_dataset()
+    parent = dataset.toc[0]
+    dataset.toc.append(
+        parent.model_copy(
+            update={
+                "toc_entry_id": "child",
+                "parent_entry_id": parent.toc_entry_id,
+                "level": child_level,
+            }
+        )
+    )
+    assert any("level" in error for error in validate_dataset(dataset))
+
+
+def test_accepts_valid_toc_tree_in_any_record_order() -> None:
+    dataset = make_dataset()
+    root = dataset.toc[0]
+    child = root.model_copy(
+        update={
+            "toc_entry_id": "child",
+            "parent_entry_id": root.toc_entry_id,
+            "level": 2,
+        }
+    )
+    leaf = root.model_copy(
+        update={
+            "toc_entry_id": "leaf",
+            "parent_entry_id": "child",
+            "level": 3,
+        }
+    )
+    dataset.toc = [leaf, root, child]
+    assert validate_dataset(dataset) == []
+
+
 def test_jsonl_round_trip_writes_all_four_files(tmp_path) -> None:
     dataset = make_dataset()
 
