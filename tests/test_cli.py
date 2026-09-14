@@ -1,3 +1,4 @@
+import base64
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,9 +8,11 @@ from typer.testing import CliRunner
 from data_pipeline.cli import _collect_payload, app
 from data_pipeline.collectors.open_library import OpenLibraryCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
+from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
 from data_pipeline.models import Book, CanonicalDataset, Source
 from data_pipeline.public_book_sources import public_book_source
+from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
 from data_pipeline.validation import validate_dataset
@@ -238,3 +241,75 @@ def test_collect_public_page_merges_description_and_toc(tmp_path, monkeypatch) -
     assert len(dataset.sources) == 2
     assert validate_dataset(dataset) == []
     assert len(list((tmp_path / "raw" / "public_book_page").rglob("*.json"))) == 1
+
+
+def test_collect_publisher_document_merges_extracted_text(tmp_path, monkeypatch) -> None:
+    source_spec = publisher_document_source("wiley-osc7-appendix-b")
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=source_spec.isbn_10,
+        isbn_13="9780471694663",
+        title=source_spec.title,
+        authors=["Abraham Silberschatz"],
+        publisher="Wiley",
+        published_year=2005,
+        language="en",
+        topics=["computer-science", "operating-systems"],
+    )
+    metadata_source = Source(
+        source_id="source_metadata",
+        book_id=book.book_id,
+        provider="fixture",
+        source_type="metadata_api",
+        url="https://example.test/book",
+        retrieved_at=datetime(2026, 9, 12, tzinfo=UTC),
+        content_hash="sha256:" + "a" * 64,
+    )
+    write_dataset(
+        CanonicalDataset(books=[book], documents=[], toc=[], sources=[metadata_source]),
+        tmp_path / "processed",
+    )
+    payload = {
+        "source_slug": source_spec.slug,
+        "home_url": source_spec.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "referrer_url": source_spec.referrer_url,
+        "referrer_html": (
+            f"<h3>{source_spec.referrer_heading}</h3>"
+            f'<a href="{source_spec.document_url}">Appendix</a>'
+        ),
+        "document_url": source_spec.document_url,
+        "document_media_type": "application/pdf",
+        "document_base64": base64.b64encode(b"%PDF-1.3 synthetic").decode("ascii"),
+    }
+    monkeypatch.setattr(
+        "data_pipeline.cli._collect_publisher_document_payload",
+        lambda _source: (
+            payload,
+            PublisherDocumentCollector.request_parameters(source_spec.slug),
+        ),
+    )
+    extracted = "The Mach System History of the Mach System Programmer Interface"
+    monkeypatch.setattr("data_pipeline.normalizers._extract_pdf_text", lambda _pdf: extracted)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "collect-publisher-document",
+            "--source",
+            source_spec.slug,
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+
+    dataset = read_dataset(tmp_path / "processed")
+    assert result.exit_code == 0
+    assert "Publisher documents collected: 1" in result.output
+    assert "Other document:           1" in result.output
+    assert len(dataset.books) == 1
+    assert len(dataset.documents) == 1
+    assert dataset.documents[0].text == extracted
+    assert len(dataset.sources) == 2
+    assert validate_dataset(dataset) == []
+    assert len(list((tmp_path / "raw" / "publisher_document").rglob("*.json"))) == 1

@@ -1,3 +1,4 @@
+import base64
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -7,16 +8,23 @@ import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.datasets import DatasetMergeError, merge_datasets
-from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json, sha256_text
+from data_pipeline.identifiers import (
+    normalize_bibliographic_text,
+    sha256_bytes,
+    sha256_json,
+    sha256_text,
+)
 from data_pipeline.models import Book, CanonicalDataset
 from data_pipeline.normalizers import (
     normalize_google_books_response,
     normalize_isbn,
     normalize_open_library_response,
     normalize_public_book_page_response,
+    normalize_publisher_document_response,
     normalize_publisher_page_response,
 )
 from data_pipeline.public_book_sources import public_book_source
+from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.validation import validate_dataset
 
@@ -821,3 +829,64 @@ def test_open_library_skips_polluted_author_aggregation_and_uses_next_candidate(
     assert dataset.books[0].title == "Linear Algebra Done Right"
     assert dataset.books[0].authors == ["Sheldon Axler"]
     assert dataset.books[0].published_year == 2014
+
+
+def test_publisher_pdf_normalizes_as_other_document_with_binary_provenance(monkeypatch) -> None:
+    source = publisher_document_source("wiley-osc7-appendix-b")
+    pdf = b"%PDF-1.3 synthetic fixture"
+    extracted = (
+        "The Mach System\n\nHistory of the Mach System\n\n"
+        "Public text about memory management and the Programmer Interface."
+    )
+    monkeypatch.setattr("data_pipeline.normalizers._extract_pdf_text", lambda _pdf: extracted)
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "referrer_url": source.referrer_url,
+        "referrer_html": (
+            f'<h3>{source.referrer_heading}</h3><a href="{source.document_url}">Appendix</a>'
+        ),
+        "document_url": source.document_url,
+        "document_media_type": "application/pdf",
+        "document_base64": base64.b64encode(pdf).decode("ascii"),
+    }
+
+    dataset = normalize_publisher_document_response(
+        payload, topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books == []
+    assert dataset.toc == []
+    assert len(dataset.documents) == 1
+    assert dataset.documents[0].document_type == "other"
+    assert dataset.documents[0].text == extracted
+    assert dataset.documents[0].content_hash == sha256_text(extracted)
+    assert len(dataset.sources) == 1
+    assert dataset.sources[0].source_type == "publisher_page"
+    assert dataset.sources[0].url == source.document_url
+    assert dataset.sources[0].content_hash == sha256_bytes(pdf)
+    assert dataset.documents[0].source_id == dataset.sources[0].source_id
+
+
+def test_publisher_pdf_requires_link_from_exact_edition_page(monkeypatch) -> None:
+    source = publisher_document_source("wiley-osc7-appendix-b")
+    monkeypatch.setattr(
+        "data_pipeline.normalizers._extract_pdf_text",
+        lambda _pdf: "The Mach System History of the Mach System Programmer Interface",
+    )
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "referrer_url": source.referrer_url,
+        "referrer_html": f"<h3>{source.referrer_heading}</h3>",
+        "document_url": source.document_url,
+        "document_media_type": "application/pdf",
+        "document_base64": base64.b64encode(b"%PDF-1.3 synthetic").decode("ascii"),
+    }
+
+    with pytest.raises(InvalidProviderResponse, match="not linked"):
+        normalize_publisher_document_response(
+            payload, topic=source.topic, retrieved_at=RETRIEVED_AT
+        )

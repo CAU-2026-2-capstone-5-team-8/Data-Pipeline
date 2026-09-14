@@ -1,11 +1,16 @@
 """Normalization of provider responses into canonical evidence records."""
 
+import base64
+import binascii
 import logging
 import re
 from datetime import datetime
+from io import BytesIO
 from typing import Any
 
 from pydantic import ValidationError
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 from selectolax.parser import HTMLParser
 
 from data_pipeline.collectors.base import InvalidProviderResponse
@@ -13,15 +18,18 @@ from data_pipeline.identifiers import (
     is_valid_isbn_10,
     is_valid_isbn_13,
     normalize_bibliographic_text,
+    sha256_bytes,
     sha256_json,
     sha256_text,
     stable_id,
 )
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
 from data_pipeline.public_book_sources import public_book_source
+from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 
 logger = logging.getLogger(__name__)
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 TOPICS: dict[str, list[str]] = {
     "operating-systems": ["computer-science", "operating-systems"],
@@ -695,6 +703,116 @@ def normalize_publisher_page_response(
         content_hash=toc_hash,
     )
     return CanonicalDataset(books=[], documents=[], toc=toc, sources=[home_source, toc_source])
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    """Extract page text deterministically while retaining visible page boundaries."""
+    try:
+        reader = PdfReader(BytesIO(content))
+        pages = [text.strip() for page in reader.pages if (text := page.extract_text())]
+    except (PdfReadError, ValueError) as exc:
+        raise InvalidProviderResponse(f"publisher PDF could not be parsed: {exc}") from exc
+    text = "\n\n".join(page for page in pages if page)
+    if not text:
+        raise InvalidProviderResponse("publisher PDF contained no extractable text")
+    return text
+
+
+def normalize_publisher_document_response(
+    response: dict[str, Any], *, topic: str, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize one allowlisted public publisher PDF into textual evidence."""
+    source_slug = response.get("source_slug")
+    if not isinstance(source_slug, str):
+        raise InvalidProviderResponse("publisher document response is missing source_slug")
+    try:
+        source_spec = publisher_document_source(source_slug)
+    except ValueError as exc:
+        raise InvalidProviderResponse(str(exc)) from exc
+    if topic != source_spec.topic:
+        raise InvalidProviderResponse(
+            "publisher document response topic does not match its allowlist entry"
+        )
+
+    expected_urls = {
+        "home_url": source_spec.home_url,
+        "referrer_url": source_spec.referrer_url,
+        "document_url": source_spec.document_url,
+    }
+    for field, expected in expected_urls.items():
+        if response.get(field) != expected:
+            raise InvalidProviderResponse(
+                f"publisher document response {field} does not match allowlist"
+            )
+    if response.get("document_media_type") != "application/pdf":
+        raise InvalidProviderResponse("publisher document response has an invalid media type")
+    home_html = response.get("home_html")
+    referrer_html = response.get("referrer_html")
+    encoded_document = response.get("document_base64")
+    if not all(isinstance(value, str) for value in (home_html, referrer_html, encoded_document)):
+        raise InvalidProviderResponse("publisher document response is missing string content")
+
+    home_text = HTMLParser(home_html).root.text(separator=" ", strip=True)
+    normalized_home = normalize_bibliographic_text(home_text)
+    if (
+        normalize_bibliographic_text(source_spec.title) not in normalized_home
+        or source_spec.isbn_10 not in home_html
+    ):
+        raise InvalidProviderResponse("publisher document identity page does not match the book")
+    if source_spec.edition not in _edition_numbers(home_text):
+        raise InvalidProviderResponse(
+            "publisher document identity page does not match the expected edition"
+        )
+    referrer_text = HTMLParser(referrer_html).root.text(separator=" ", strip=True)
+    if (
+        source_spec.document_url not in referrer_html
+        or source_spec.referrer_heading not in referrer_text
+    ):
+        raise InvalidProviderResponse(
+            "publisher document is not linked from its reviewed exact-edition page"
+        )
+    try:
+        document_bytes = base64.b64decode(encoded_document, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidProviderResponse("publisher document contains invalid base64") from exc
+    if not document_bytes.startswith(b"%PDF-"):
+        raise InvalidProviderResponse("publisher document content is not a PDF")
+
+    text = _extract_pdf_text(document_bytes)
+    normalized_text = normalize_bibliographic_text(text)
+    if any(
+        normalize_bibliographic_text(marker) not in normalized_text
+        for marker in source_spec.expected_text_markers
+    ):
+        raise InvalidProviderResponse("publisher PDF text does not match the reviewed document")
+
+    source_id = stable_id(
+        "source", source_spec.provider, source_spec.document_url, source_spec.book_id
+    )
+    source = Source(
+        source_id=source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="publisher_page",
+        url=source_spec.document_url,
+        external_id=source_spec.external_id,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=(
+            "Public supplemental appendix linked from the exact-edition publisher "
+            "companion page; no license statement found."
+        ),
+        content_hash=sha256_bytes(document_bytes),
+    )
+    document = Document(
+        document_id=stable_id("doc", source_spec.book_id, source_spec.document_type, source_id),
+        book_id=source_spec.book_id,
+        document_type=source_spec.document_type,
+        text=text,
+        source_id=source_id,
+        content_hash=sha256_text(text),
+    )
+    return CanonicalDataset(books=[], documents=[document], toc=[], sources=[source])
 
 
 def _public_page_section(tree: HTMLParser, heading: str) -> Any:

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28,<1",
+    "pypdf>=6.0,<7",
     "pydantic>=2.11,<3",
     "selectolax>=0.3.33,<1",
     "tenacity>=9.1,<10",

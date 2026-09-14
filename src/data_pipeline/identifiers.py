@@ -10,6 +10,11 @@ def sha256_text(value: str) -> str:
     return f"sha256:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
 
 
+def sha256_bytes(value: bytes) -> str:
+    """Hash raw binary evidence without a lossy text conversion."""
+    return f"sha256:{hashlib.sha256(value).hexdigest()}"
+
+
 def sha256_json(value: Any) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return sha256_text(encoded)
