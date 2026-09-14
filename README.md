@@ -36,6 +36,14 @@ identity page, linking TOC page, and Base64-encoded PDF in one raw artifact, the
 28-page appendix as an `other` document. It is not classified as a preview or sample chapter, and
 no license is inferred. Arbitrary PDF URLs and documents larger than 5 MiB are rejected.
 
+The first open-textbook slice collects *Operating Systems: Three Easy Pieces*, version 1.10,
+from its University of Wisconsin author page. It replaces the evidence-empty 1974 Operating
+Systems candidate while keeping the milestone at five books per topic. The allowlisted collector
+preserves the home-page HTML and three public PDFs, then emits the official description, a
+five-part/57-chapter hierarchical TOC, the preface, the introduction, and one public sample
+chapter. The page states that the chapters are free online but does not identify a reuse license,
+so canonical `license` values remain `null` and that distinction is recorded in `rights_note`.
+
 Reviewed public catalog sources are available for *Operating Systems: Internals and Design
 Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
 pages expose each exact ISBN and edition, a description, and complete TOCs in ordinary HTML. The
@@ -51,22 +59,27 @@ restricted scans or infer unavailable preface, introduction, preview, or sample 
 
 ## Real-data evidence experiment
 
-The 2026-09-14 Open Library plus Wiley experiment produced the following coverage for the current
-ten books:
+The combined public-source experiment on 2026-09-14 produced the following coverage for the
+current ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 3/5 | 3/5 | 0/5 | 0/5 | 1/5 |
+| Operating Systems | 5/5 | 4/5 | 4/5 | 1/5 | 1/5 | 1/5 |
 | Linear Algebra | 5/5 | 3/5 | 4/5 | 0/5 | 0/5 | 0/5 |
 
-The six TOCs contain 400 canonical entries. The two Open Library TOCs and two eCampus TOCs retain
-their available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only,
-so their 35 entries are represented truthfully as top-level items. TOC coverage now forms a useful
-majority, but this is not yet the full MVP definition of done: no public preface/introduction or
-preview/sample text has been collected.
+The seven TOCs contain 462 canonical entries. The Open Library and eCampus TOCs retain their
+available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only, so
+their 35 entries are represented truthfully as top-level items. OSTEP contributes five thematic
+roots and 57 numbered child chapters.
 The canonical dataset also contains one 72,711-character public supplemental appendix for one
 Operating Systems book. It is useful real book-text evidence for downstream feasibility testing,
 but it intentionally does not increase the preview/sample coverage count.
+OSTEP adds a 27,155-character preface, a 47,725-character introduction, and a 25,160-character
+sample chapter. This demonstrates that the schema and raw-to-canonical path can carry usable public
+book text without source-specific logic downstream. Coverage remains incomplete, especially for
+Linear Algebra, so the full MVP definition of done has not yet been reached.
+The complete canonical result contains 10 books, 13 documents, 462 TOC entries, and 27 source
+records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -84,6 +97,7 @@ uv run data-pipeline collect-publisher --source wiley-ela10
 uv run data-pipeline collect-publisher-document --source wiley-osc7-appendix-b
 uv run data-pipeline collect-public-page --source ecampus-stallings-os4
 uv run data-pipeline collect-public-page --source ecampus-singhal-os1
+uv run data-pipeline collect-open-textbook --source ostep-1.10
 uv run data-pipeline report
 ```
 
@@ -99,6 +113,11 @@ still retained for audit and offline rebuilding.
 `collect-public-page` applies the same exact-book and allowlist boundary to a reviewed ordinary
 public HTML source. It additionally rejects a response unless the ISBN, edition, complete reviewed
 entry count, and top-level TOC structure all match.
+`collect-open-textbook` verifies the title, authors, publisher, version, year, ISBN, complete
+numbered TOC, public document links, PDF media types and signatures, and reviewed text markers. It
+removes the configured weak candidate and all records scoped to that book before merging the new
+book. Repeated runs retain five Operating Systems books and update only the selected source
+snapshots.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
@@ -112,7 +131,8 @@ uv run data-pipeline build \
   --raw data/raw/publisher_page/operating-systems/<artifact>.json \
   --raw data/raw/publisher_page/linear-algebra/<artifact>.json \
   --raw data/raw/publisher_document/operating-systems/<artifact>.json \
-  --raw data/raw/public_book_page/operating-systems/<artifact>.json
+  --raw data/raw/public_book_page/operating-systems/<artifact>.json \
+  --raw data/raw/open_textbook/operating-systems/<artifact>.json
 ```
 
 Repeat `--raw` for multiple artifacts when rebuilding the combined two-topic dataset. Sequential

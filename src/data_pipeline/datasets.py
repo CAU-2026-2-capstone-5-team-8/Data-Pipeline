@@ -96,3 +96,13 @@ def merge_datasets(datasets: Iterable[CanonicalDataset]) -> CanonicalDataset:
         ),
         sources=sources,
     )
+
+
+def without_books(dataset: CanonicalDataset, book_ids: set[str]) -> CanonicalDataset:
+    """Remove books and every canonical record scoped to them."""
+    return CanonicalDataset(
+        books=[book for book in dataset.books if book.book_id not in book_ids],
+        documents=[document for document in dataset.documents if document.book_id not in book_ids],
+        toc=[entry for entry in dataset.toc if entry.book_id not in book_ids],
+        sources=[source for source in dataset.sources if source.book_id not in book_ids],
+    )
