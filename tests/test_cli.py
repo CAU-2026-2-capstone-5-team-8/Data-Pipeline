@@ -1,10 +1,18 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from data_pipeline.cli import _collect_payload, app
 from data_pipeline.collectors.open_library import OpenLibraryCollector
-from data_pipeline.storage import RawArtifact, write_raw_response
+from data_pipeline.collectors.publisher_pages import PublisherPageCollector
+from data_pipeline.models import Book, CanonicalDataset, Source
+from data_pipeline.publisher_sources import publisher_source
+from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
+from data_pipeline.validation import validate_dataset
+
+WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
+WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
 
 
 def test_build_rejects_topic_query_mismatch(tmp_path) -> None:
@@ -48,6 +56,26 @@ def test_build_reports_invalid_provider_collection_without_traceback(tmp_path) -
     assert "Traceback" not in result.output
 
 
+def test_build_rejects_publisher_limit_other_than_one(tmp_path) -> None:
+    raw_path = tmp_path / "publisher.json"
+    artifact = RawArtifact(
+        provider="publisher-page",
+        topic="operating-systems",
+        requested_limit=2,
+        retrieved_at=datetime(2026, 9, 12, 12, 34, tzinfo=UTC),
+        request_parameters=PublisherPageCollector.request_parameters("wiley-osc7"),
+        response={},
+    )
+    write_raw_response(artifact, raw_path)
+
+    result = CliRunner().invoke(
+        app, ["build", "--raw", str(raw_path), "--output", str(tmp_path / "processed")]
+    )
+
+    assert result.exit_code != 0
+    assert "requested_limit must be 1" in result.output
+
+
 def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None:
     class FakeOpenLibraryCollector:
         def __enter__(self):
@@ -79,3 +107,62 @@ def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None
     )
 
     assert payload["work_details"]["/works/OL1W"]["description"] == "Public description"
+
+
+def test_collect_publisher_merges_exact_book_evidence(tmp_path, monkeypatch) -> None:
+    source_spec = publisher_source("wiley-osc7")
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=source_spec.isbn_10,
+        isbn_13="9780471694663",
+        title="Operating system concepts",
+        subtitle=None,
+        authors=["Abraham Silberschatz"],
+        publisher="Wiley",
+        published_year=2005,
+        language="en",
+        topics=["computer-science", "operating-systems"],
+    )
+    metadata_source = Source(
+        source_id="source_metadata",
+        book_id=book.book_id,
+        provider="fixture",
+        source_type="metadata_api",
+        url="https://example.test/book",
+        retrieved_at=datetime(2026, 9, 12, tzinfo=UTC),
+        content_hash="sha256:" + "a" * 64,
+    )
+    write_dataset(
+        CanonicalDataset(books=[book], documents=[], toc=[], sources=[metadata_source]),
+        tmp_path / "processed",
+    )
+    payload = {
+        "source_slug": source_spec.slug,
+        "home_url": source_spec.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source_spec.toc_url,
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+    parameters = {
+        "source": source_spec.slug,
+        "home_url": source_spec.home_url,
+        "toc_url": source_spec.toc_url,
+    }
+    monkeypatch.setattr(
+        "data_pipeline.cli._collect_publisher_payload",
+        lambda _source: (payload, parameters),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["collect-publisher", "--source", source_spec.slug, "--data-dir", str(tmp_path)],
+    )
+
+    dataset = read_dataset(tmp_path / "processed")
+    assert result.exit_code == 0
+    assert "Publisher TOC entries collected: 26" in result.output
+    assert len(dataset.books) == 1
+    assert len(dataset.toc) == 26
+    assert len(dataset.sources) == 3
+    assert validate_dataset(dataset) == []
+    assert len(list((tmp_path / "raw" / "publisher_page").rglob("*.json"))) == 1

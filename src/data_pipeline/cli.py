@@ -11,13 +11,16 @@ import typer
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
 from data_pipeline.collectors.open_library import OpenLibraryCollector
+from data_pipeline.collectors.publisher_pages import PublisherPageCollector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets
 from data_pipeline.models import CanonicalDataset
 from data_pipeline.normalizers import (
     TOPICS,
     normalize_google_books_response,
     normalize_open_library_response,
+    normalize_publisher_page_response,
 )
+from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
 from data_pipeline.reporting import format_coverage
 from data_pipeline.storage import (
     RawArtifact,
@@ -35,6 +38,9 @@ TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
 LimitOption = Annotated[int, typer.Option(min=1, max=10, help="Books to normalize.")]
 ProviderOption = Annotated[
     str, typer.Option(help="Metadata provider: open-library or google-books.")
+]
+PublisherSourceOption = Annotated[
+    str, typer.Option(help="Reviewed exact-edition publisher source slug.")
 ]
 
 
@@ -84,7 +90,39 @@ def _collect_payload(
         raise typer.BadParameter(f"{exc}; no data was written") from exc
 
 
-def _expected_request_parameters(provider: str, topic: str, limit: int) -> dict:
+def _collect_publisher_payload(source_slug: str) -> tuple[dict, dict]:
+    try:
+        with PublisherPageCollector() as collector:
+            parameters = collector.request_parameters(source_slug)
+            return collector.fetch(source_slug), parameters
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        raise typer.BadParameter(
+            f"publisher page returned HTTP {exc.response.status_code}; no data was written"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise typer.BadParameter(
+            f"publisher page network failure; no data was written: {exc}"
+        ) from exc
+
+
+def _expected_request_parameters(artifact: RawArtifact) -> dict:
+    provider = artifact.provider
+    topic = artifact.topic
+    limit = artifact.requested_limit
+    if provider == "publisher-page":
+        if limit != 1:
+            raise typer.BadParameter("publisher raw artifact requested_limit must be 1")
+        source_slug = artifact.request_parameters.get("source")
+        if not isinstance(source_slug, str):
+            raise typer.BadParameter("publisher raw artifact is missing its source slug")
+        try:
+            return PublisherPageCollector.request_parameters(source_slug)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
     collectors = {
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
@@ -108,7 +146,11 @@ def _normalize(
             return normalize_open_library_response(
                 payload, topic=topic, limit=limit, retrieved_at=retrieved_at
             )
-        raise typer.BadParameter("provider must be open-library or google-books")
+        if provider == "publisher-page":
+            return normalize_publisher_page_response(
+                payload, topic=topic, retrieved_at=retrieved_at
+            )
+        raise typer.BadParameter("provider must be open-library, google-books, or publisher-page")
     except InvalidProviderResponse as exc:
         raise typer.BadParameter(str(exc)) from exc
 
@@ -194,6 +236,65 @@ def collect(
     typer.echo(format_coverage(dataset))
 
 
+@app.command("collect-publisher")
+def collect_publisher(
+    source: PublisherSourceOption = "wiley-osc7",
+    data_dir: Annotated[Path, typer.Option(help="Raw and processed data root.")] = Path("data"),
+) -> None:
+    """Collect one reviewed publisher page and merge its evidence into existing books."""
+    try:
+        source_spec = publisher_source(source)
+    except ValueError as exc:
+        choices = ", ".join(sorted(PUBLISHER_SOURCES))
+        raise typer.BadParameter(f"source must be one of: {choices}") from exc
+
+    retrieved_at = datetime.now(UTC)
+    payload, request_parameters = _collect_publisher_payload(source)
+    artifact = RawArtifact(
+        provider="publisher-page",
+        topic=source_spec.topic,
+        requested_limit=1,
+        retrieved_at=retrieved_at,
+        request_parameters=request_parameters,
+        response=payload,
+    )
+    raw_path = raw_artifact_path(data_dir, artifact)
+    write_raw_response(artifact, raw_path)
+    evidence = _normalize(
+        payload, artifact.provider, artifact.topic, artifact.requested_limit, retrieved_at
+    )
+    processed_directory = data_dir / "processed"
+    try:
+        if not dataset_exists(processed_directory):
+            raise DatasetMergeError(
+                "publisher evidence requires an existing canonical metadata dataset"
+            )
+        existing = read_dataset(processed_directory)
+        existing_errors = validate_dataset(existing)
+        if existing_errors:
+            raise DatasetMergeError("existing dataset is invalid: " + "; ".join(existing_errors))
+        if source_spec.book_id not in {book.book_id for book in existing.books}:
+            raise DatasetMergeError(
+                f"publisher source target is absent from canonical books: {source_spec.book_id}"
+            )
+        dataset = merge_datasets([existing, evidence])
+    except (DatasetMergeError, ValueError) as exc:
+        typer.echo(f"ERROR canonical merge failed: {exc}", err=True)
+        typer.echo(f"Raw response was preserved at: {raw_path}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    errors = validate_dataset(dataset)
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR {error}", err=True)
+        raise typer.Exit(code=1)
+    write_dataset(dataset, processed_directory)
+    typer.echo(f"Raw response: {raw_path}")
+    typer.echo(f"Canonical output: {processed_directory}")
+    typer.echo(f"Publisher TOC entries collected: {len(evidence.toc)}")
+    typer.echo(format_coverage(dataset))
+
+
 @app.command()
 def build(
     raw: Annotated[
@@ -212,9 +313,7 @@ def build(
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
         _ensure_topic(artifact.topic)
-        expected_parameters = _expected_request_parameters(
-            artifact.provider, artifact.topic, artifact.requested_limit
-        )
+        expected_parameters = _expected_request_parameters(artifact)
         if artifact.request_parameters != expected_parameters:
             raise typer.BadParameter(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"

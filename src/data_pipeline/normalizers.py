@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
+from selectolax.parser import HTMLParser
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.identifiers import (
@@ -17,6 +18,7 @@ from data_pipeline.identifiers import (
     stable_id,
 )
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
+from data_pipeline.publisher_sources import publisher_source
 
 logger = logging.getLogger(__name__)
 
@@ -571,3 +573,124 @@ def normalize_open_library_response(
             break
 
     return CanonicalDataset(books=books, documents=documents, toc=toc, sources=sources)
+
+
+def _wiley_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Extract the visible chapter and appendix headings from one Wiley TOC page."""
+    tree = HTMLParser(html)
+    entries: list[TocEntry] = []
+    seen: set[tuple[str, str]] = set()
+    for heading in tree.css("div.chapterTitle h3"):
+        text = heading.text(separator=" ", strip=True)
+        match = re.fullmatch(r"(Chapter|Appendix)\s+([^:]+):\s*(.+)", text, re.IGNORECASE)
+        if match is None:
+            raise InvalidProviderResponse(
+                f"Wiley TOC contained an unsupported heading for {book_id}: {text!r}"
+            )
+        label = match.group(2).strip()
+        title = match.group(3).strip()
+        identity = (label.casefold(), title.casefold())
+        if identity in seen:
+            raise InvalidProviderResponse(
+                f"Wiley TOC contained a duplicate heading for {book_id}: {text!r}"
+            )
+        seen.add(identity)
+        order_index = len(entries)
+        entries.append(
+            TocEntry(
+                toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), label, title),
+                book_id=book_id,
+                parent_entry_id=None,
+                level=1,
+                order_index=order_index,
+                label=label,
+                title=title,
+                source_id=source_id,
+            )
+        )
+    return entries
+
+
+def normalize_publisher_page_response(
+    response: dict[str, Any], *, topic: str, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize one allowlisted exact-edition publisher TOC response."""
+    source_slug = response.get("source_slug")
+    if not isinstance(source_slug, str):
+        raise InvalidProviderResponse("publisher response is missing source_slug")
+    try:
+        source_spec = publisher_source(source_slug)
+    except ValueError as exc:
+        raise InvalidProviderResponse(str(exc)) from exc
+    if topic != source_spec.topic:
+        raise InvalidProviderResponse("publisher response topic does not match its allowlist entry")
+
+    expected_urls = {
+        "home_url": source_spec.home_url,
+        "toc_url": source_spec.toc_url,
+    }
+    for field, expected in expected_urls.items():
+        if response.get(field) != expected:
+            raise InvalidProviderResponse(f"publisher response {field} does not match allowlist")
+    home_html = response.get("home_html")
+    toc_html = response.get("toc_html")
+    if not isinstance(home_html, str) or not isinstance(toc_html, str):
+        raise InvalidProviderResponse("publisher response must contain HTML strings")
+
+    home_text = HTMLParser(home_html).root.text(separator=" ", strip=True)
+    normalized_home = normalize_bibliographic_text(home_text)
+    normalized_title = normalize_bibliographic_text(source_spec.title)
+    if normalized_title not in normalized_home or source_spec.isbn_10 not in home_html:
+        raise InvalidProviderResponse("publisher identity page does not match the expected book")
+    if source_spec.edition not in _edition_numbers(home_text):
+        raise InvalidProviderResponse("publisher identity page does not match the expected edition")
+
+    home_hash = sha256_text(home_html)
+    toc_hash = sha256_text(toc_html)
+    home_source_id = stable_id(
+        "source",
+        source_spec.provider,
+        source_spec.home_url,
+        source_spec.book_id,
+    )
+    toc_source_id = stable_id(
+        "source",
+        source_spec.provider,
+        source_spec.toc_url,
+        source_spec.book_id,
+    )
+    toc = _wiley_toc_entries(toc_html, source_spec.book_id, toc_source_id)
+    if not toc:
+        raise InvalidProviderResponse("publisher TOC page contained no supported headings")
+    labels = tuple(entry.label for entry in toc)
+    if labels != source_spec.expected_toc_labels:
+        raise InvalidProviderResponse(
+            "publisher TOC page is incomplete or does not match the reviewed structure"
+        )
+
+    rights_note = "Public publisher companion page; no license statement found."
+    home_source = Source(
+        source_id=home_source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="publisher_page",
+        url=source_spec.home_url,
+        external_id=source_spec.isbn_10,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=home_hash,
+    )
+    toc_source = Source(
+        source_id=toc_source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="publisher_page",
+        url=source_spec.toc_url,
+        external_id=source_spec.isbn_10,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=toc_hash,
+    )
+    return CanonicalDataset(books=[], documents=[], toc=toc, sources=[home_source, toc_source])

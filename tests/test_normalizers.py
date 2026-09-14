@@ -5,16 +5,21 @@ from pathlib import Path
 import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
-from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json
+from data_pipeline.datasets import DatasetMergeError, merge_datasets
+from data_pipeline.identifiers import normalize_bibliographic_text, sha256_json, sha256_text
 from data_pipeline.normalizers import (
     normalize_google_books_response,
     normalize_isbn,
     normalize_open_library_response,
+    normalize_publisher_page_response,
 )
+from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.validation import validate_dataset
 
 FIXTURE = Path(__file__).parent / "fixtures" / "google_books_operating_systems.json"
 OPEN_LIBRARY_FIXTURE = Path(__file__).parent / "fixtures" / "open_library_operating_systems.json"
+WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
+WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
 RETRIEVED_AT = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
 
@@ -251,6 +256,160 @@ def test_open_library_rejects_work_description_for_a_different_edition() -> None
 
     assert dataset.documents == []
     assert len(dataset.sources) == 1
+
+
+def test_wiley_page_normalizes_exact_edition_toc() -> None:
+    source = publisher_source("wiley-osc7")
+    home_html = WILEY_HOME_FIXTURE.read_text(encoding="utf-8")
+    toc_html = WILEY_TOC_FIXTURE.read_text(encoding="utf-8")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": home_html,
+        "toc_url": source.toc_url,
+        "toc_html": toc_html,
+    }
+
+    dataset = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books == []
+    assert dataset.documents == []
+    assert len(dataset.toc) == 26
+    assert [entry.label for entry in dataset.toc] == list(source.expected_toc_labels)
+    assert dataset.toc[0].title == "Introduction"
+    assert dataset.toc[-1].title == "Windows 2000"
+    assert [entry.order_index for entry in dataset.toc] == list(range(26))
+    assert all(entry.level == 1 for entry in dataset.toc)
+    assert len(dataset.sources) == 2
+    assert all(item.book_id == source.book_id for item in dataset.sources)
+    assert all(item.source_type == "publisher_page" for item in dataset.sources)
+    assert dataset.sources[0].url == source.home_url
+    assert dataset.sources[0].content_hash == sha256_text(home_html)
+    assert dataset.sources[1].url == source.toc_url
+    assert dataset.sources[1].content_hash == sha256_text(toc_html)
+    assert all(entry.source_id == dataset.sources[1].source_id for entry in dataset.toc)
+
+
+def test_wiley_page_rejects_wrong_edition() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": "Operating System Concepts, Eighth Edition 0471694665",
+        "toc_url": source.toc_url,
+        "toc_html": '<div class="chapterTitle"><h3>Chapter 1: Introduction</h3></div>',
+    }
+
+    with pytest.raises(InvalidProviderResponse, match="expected edition"):
+        normalize_publisher_page_response(
+            payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+        )
+
+
+def test_wiley_page_rejects_incomplete_toc() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": '<div class="chapterTitle"><h3>Chapter 1: Introduction</h3></div>',
+    }
+
+    with pytest.raises(InvalidProviderResponse, match="incomplete"):
+        normalize_publisher_page_response(
+            payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+        )
+
+
+def test_unchanged_wiley_evidence_merges_without_duplicate_toc() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+    first = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+    later_payload = {
+        **payload,
+        "home_html": payload["home_html"] + "\n",
+        "toc_html": payload["toc_html"] + "\n",
+    }
+    later = normalize_publisher_page_response(
+        later_payload,
+        topic="operating-systems",
+        retrieved_at=datetime(2026, 9, 13, 12, 0, tzinfo=UTC),
+    )
+
+    merged = merge_datasets([later, first])
+
+    assert len(merged.toc) == 26
+    assert len(merged.sources) == 2
+    assert all(
+        item.retrieved_at == datetime(2026, 9, 13, 12, 0, tzinfo=UTC) for item in merged.sources
+    )
+    assert merged.sources[0].content_hash == sha256_text(later_payload["home_html"])
+    assert merged.sources[1].content_hash == sha256_text(later_payload["toc_html"])
+
+
+def test_newer_wiley_snapshot_replaces_changed_toc_heading() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+    first = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+    later_payload = {
+        **payload,
+        "toc_html": payload["toc_html"].replace(
+            "Chapter 2: Operating-System Structures",
+            "Chapter 2: Operating System Structures Revised",
+        ),
+    }
+    later = normalize_publisher_page_response(
+        later_payload,
+        topic="operating-systems",
+        retrieved_at=datetime(2026, 9, 13, 12, 0, tzinfo=UTC),
+    )
+
+    merged = merge_datasets([first, later])
+
+    assert len(merged.toc) == 26
+    assert merged.toc[1].title == "Operating System Structures Revised"
+    assert all(entry.title != "Operating-System Structures" for entry in merged.toc)
+
+
+def test_same_time_different_source_snapshots_are_rejected() -> None:
+    source = publisher_source("wiley-osc7")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": WILEY_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+    first = normalize_publisher_page_response(
+        payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
+    )
+    conflicting = normalize_publisher_page_response(
+        {**payload, "toc_html": payload["toc_html"] + "\n"},
+        topic="operating-systems",
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    with pytest.raises(DatasetMergeError, match="same retrieval time"):
+        merge_datasets([first, conflicting])
 
 
 def test_malformed_toc_item_does_not_change_valid_base_level(caplog) -> None:
