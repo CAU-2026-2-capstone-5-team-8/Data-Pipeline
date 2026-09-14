@@ -24,6 +24,7 @@ from data_pipeline.identifiers import (
     stable_id,
 )
 from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
+from data_pipeline.open_textbook_sources import open_textbook_source
 from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
@@ -813,6 +814,248 @@ def normalize_publisher_document_response(
         content_hash=sha256_text(text),
     )
     return CanonicalDataset(books=[], documents=[document], toc=[], sources=[source])
+
+
+def _ostep_description(tree: HTMLParser) -> str:
+    """Extract the official introductory paragraph without unrelated page navigation."""
+    for paragraph in tree.css("p"):
+        text = paragraph.text(separator=" ", strip=True)
+        if text.startswith("Welcome to Operating Systems: Three Easy Pieces"):
+            return " ".join(text.split())
+    raise InvalidProviderResponse("open textbook page is missing its reviewed description")
+
+
+def _ostep_toc(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Convert OSTEP's numbered chapter table into five explicit topic hierarchies."""
+    tree = HTMLParser(html)
+    chapters: dict[int, str] = {}
+    heading_titles: list[str] = []
+    for cell in tree.css("td[bgcolor]"):
+        number_node = cell.css_first("small")
+        if number_node is None:
+            heading_node = cell.css_first("b")
+            heading = (
+                heading_node.text(separator=" ", strip=True) if heading_node is not None else ""
+            )
+            if heading and heading not in heading_titles:
+                heading_titles.append(heading)
+            continue
+        number_text = number_node.text(strip=True)
+        if not number_text.isdigit():
+            continue
+        number = int(number_text)
+        pdf_links = [
+            link
+            for link in cell.css("a")
+            if link.attributes.get("href", "").casefold().endswith(".pdf")
+        ]
+        if len(pdf_links) != 1:
+            raise InvalidProviderResponse(
+                f"open textbook chapter {number} must have exactly one PDF link"
+            )
+        title = pdf_links[0].text(separator=" ", strip=True)
+        if number in chapters or not title:
+            raise InvalidProviderResponse("open textbook TOC contains duplicate or empty chapters")
+        chapters[number] = title
+    if sorted(chapters) != list(range(1, 58)):
+        raise InvalidProviderResponse(
+            "open textbook TOC must contain numbered chapters 1 through 57"
+        )
+
+    groups = (
+        ("Intro", 1, 2),
+        ("Virtualization", 3, 24),
+        ("Concurrency", 25, 34),
+        ("Persistence", 35, 51),
+        ("Security", 52, 57),
+    )
+    expected_headings = [title for title, _first, _last in groups]
+    if heading_titles[: len(expected_headings)] != expected_headings:
+        raise InvalidProviderResponse("open textbook TOC thematic headings do not match review")
+    entries: list[TocEntry] = []
+    for root_order, (group_title, first, last) in enumerate(groups):
+        root_id = stable_id("toc", book_id, source_id, "root", group_title)
+        entries.append(
+            TocEntry(
+                toc_entry_id=root_id,
+                book_id=book_id,
+                parent_entry_id=None,
+                level=1,
+                order_index=root_order,
+                label=None,
+                title=group_title,
+                source_id=source_id,
+            )
+        )
+        for child_order, chapter_number in enumerate(range(first, last + 1)):
+            title = chapters[chapter_number]
+            entries.append(
+                TocEntry(
+                    toc_entry_id=stable_id("toc", book_id, source_id, str(chapter_number), title),
+                    book_id=book_id,
+                    parent_entry_id=root_id,
+                    level=2,
+                    order_index=child_order,
+                    label=str(chapter_number),
+                    title=title,
+                    source_id=source_id,
+                )
+            )
+    return entries
+
+
+def normalize_open_textbook_response(
+    response: dict[str, Any], *, topic: str, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize one reviewed open textbook page and its public PDF evidence."""
+    source_slug = response.get("source_slug")
+    if not isinstance(source_slug, str):
+        raise InvalidProviderResponse("open textbook response is missing source_slug")
+    try:
+        source_spec = open_textbook_source(source_slug)
+    except ValueError as exc:
+        raise InvalidProviderResponse(str(exc)) from exc
+    if topic != source_spec.topic:
+        raise InvalidProviderResponse("open textbook response topic does not match its allowlist")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("open textbook home URL does not match allowlist")
+    home_html = response.get("home_html")
+    raw_documents = response.get("documents")
+    if not isinstance(home_html, str) or not isinstance(raw_documents, list):
+        raise InvalidProviderResponse("open textbook response has invalid content fields")
+
+    tree = HTMLParser(home_html)
+    home_text = tree.root.text(separator=" ", strip=True)
+    normalized_home = normalize_bibliographic_text(home_text)
+    identity_markers = (
+        source_spec.title,
+        *source_spec.authors,
+        source_spec.publisher,
+        source_spec.version,
+    )
+    if (
+        any(
+            normalize_bibliographic_text(marker) not in normalized_home
+            for marker in identity_markers
+        )
+        or source_spec.isbn_10 not in home_html
+    ):
+        raise InvalidProviderResponse("open textbook page does not match the reviewed book")
+    if str(source_spec.published_year) not in home_text:
+        raise InvalidProviderResponse("open textbook page does not match the reviewed publication")
+
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    home_source = Source(
+        source_id=home_source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="open_textbook",
+        url=source_spec.home_url,
+        external_id=source_spec.slug,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=(
+            "Author-hosted page states that the book chapters are free online; "
+            "no reuse license was identified."
+        ),
+        content_hash=sha256_text(home_html),
+    )
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=source_spec.isbn_10,
+        isbn_13=source_spec.isbn_13,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=source_spec.publisher,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[topic],
+    )
+    description = _ostep_description(tree)
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", home_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=home_source_id,
+            content_hash=sha256_text(description),
+        )
+    ]
+    toc = _ostep_toc(home_html, source_spec.book_id, home_source_id)
+    sources = [home_source]
+
+    expected_documents = {document.url: document for document in source_spec.documents}
+    if any(document.url.rsplit("/", 1)[-1] not in home_html for document in source_spec.documents):
+        raise InvalidProviderResponse(
+            "open textbook document is not linked from its reviewed home page"
+        )
+    if len(raw_documents) != len(expected_documents):
+        raise InvalidProviderResponse("open textbook response has an unexpected document count")
+    seen_urls: set[str] = set()
+    for raw_document in raw_documents:
+        if not isinstance(raw_document, dict):
+            raise InvalidProviderResponse("open textbook response contains an invalid document")
+        url = raw_document.get("url")
+        if not isinstance(url, str) or url not in expected_documents or url in seen_urls:
+            raise InvalidProviderResponse("open textbook document URL does not match allowlist")
+        seen_urls.add(url)
+        if raw_document.get("media_type") != "application/pdf":
+            raise InvalidProviderResponse("open textbook document has an invalid media type")
+        encoded_content = raw_document.get("content_base64")
+        if not isinstance(encoded_content, str):
+            raise InvalidProviderResponse("open textbook document is missing base64 content")
+        try:
+            content = base64.b64decode(encoded_content, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise InvalidProviderResponse("open textbook document contains invalid base64") from exc
+        if not content.startswith(b"%PDF-"):
+            raise InvalidProviderResponse("open textbook document content is not a PDF")
+
+        document_spec = expected_documents[url]
+        text = _extract_pdf_text(content)
+        normalized_text = normalize_bibliographic_text(text)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_text
+            for marker in document_spec.expected_text_markers
+        ):
+            raise InvalidProviderResponse(
+                f"open textbook PDF does not match reviewed document: {document_spec.document_type}"
+            )
+        source_id = stable_id("source", source_spec.provider, url, source_spec.book_id)
+        sources.append(
+            Source(
+                source_id=source_id,
+                book_id=source_spec.book_id,
+                provider=source_spec.provider,
+                source_type="open_textbook",
+                url=url,
+                external_id=document_spec.external_id,
+                retrieved_at=retrieved_at,
+                license=None,
+                rights_note=(
+                    "Public PDF linked as a free book chapter from the author-hosted page; "
+                    "no reuse license was identified."
+                ),
+                content_hash=sha256_bytes(content),
+            )
+        )
+        documents.append(
+            Document(
+                document_id=stable_id(
+                    "doc", source_spec.book_id, document_spec.document_type, source_id
+                ),
+                book_id=source_spec.book_id,
+                document_type=document_spec.document_type,
+                text=text,
+                source_id=source_id,
+                content_hash=sha256_text(text),
+            )
+        )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
 
 
 def _public_page_section(tree: HTMLParser, heading: str) -> Any:

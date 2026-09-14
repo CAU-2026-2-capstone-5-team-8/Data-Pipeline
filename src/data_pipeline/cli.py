@@ -11,19 +11,22 @@ import typer
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
 from data_pipeline.collectors.open_library import OpenLibraryCollector
+from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
-from data_pipeline.datasets import DatasetMergeError, merge_datasets
+from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
 from data_pipeline.models import CanonicalDataset
 from data_pipeline.normalizers import (
     TOPICS,
     normalize_google_books_response,
     normalize_open_library_response,
+    normalize_open_textbook_response,
     normalize_public_book_page_response,
     normalize_publisher_document_response,
     normalize_publisher_page_response,
 )
+from data_pipeline.open_textbook_sources import OPEN_TEXTBOOK_SOURCES, open_textbook_source
 from data_pipeline.public_book_sources import PUBLIC_BOOK_SOURCES, public_book_source
 from data_pipeline.publisher_document_sources import (
     PUBLISHER_DOCUMENT_SOURCES,
@@ -56,6 +59,9 @@ PublicBookSourceOption = Annotated[
 ]
 PublisherDocumentSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition public publisher document slug.")
+]
+OpenTextbookSourceOption = Annotated[
+    str, typer.Option(help="Reviewed author-hosted open textbook slug.")
 ]
 
 
@@ -162,10 +168,39 @@ def _collect_publisher_document_payload(source_slug: str) -> tuple[dict, dict]:
         ) from exc
 
 
+def _collect_open_textbook_payload(source_slug: str) -> tuple[dict, dict]:
+    try:
+        with OpenTextbookCollector() as collector:
+            parameters = collector.request_parameters(source_slug)
+            return collector.fetch(source_slug), parameters
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        raise typer.BadParameter(
+            f"open textbook source returned HTTP {exc.response.status_code}; no data was written"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise typer.BadParameter(
+            f"open textbook source network failure; no data was written: {exc}"
+        ) from exc
+
+
 def _expected_request_parameters(artifact: RawArtifact) -> dict:
     provider = artifact.provider
     topic = artifact.topic
     limit = artifact.requested_limit
+    if provider == "open-textbook":
+        if limit != 1:
+            raise typer.BadParameter("open textbook raw artifact requested_limit must be 1")
+        source_slug = artifact.request_parameters.get("source")
+        if not isinstance(source_slug, str):
+            raise typer.BadParameter("open textbook raw artifact is missing its source slug")
+        try:
+            return OpenTextbookCollector.request_parameters(source_slug)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
     if provider == "publisher-document":
         if limit != 1:
             raise typer.BadParameter("publisher document raw artifact requested_limit must be 1")
@@ -231,9 +266,11 @@ def _normalize(
             return normalize_publisher_document_response(
                 payload, topic=topic, retrieved_at=retrieved_at
             )
+        if provider == "open-textbook":
+            return normalize_open_textbook_response(payload, topic=topic, retrieved_at=retrieved_at)
         raise typer.BadParameter(
             "provider must be open-library, google-books, publisher-page, public-book-page, "
-            "or publisher-document"
+            "publisher-document, or open-textbook"
         )
     except InvalidProviderResponse as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -498,6 +535,70 @@ def collect_publisher_document(
     typer.echo(format_coverage(dataset))
 
 
+@app.command("collect-open-textbook")
+def collect_open_textbook(
+    source: OpenTextbookSourceOption = "ostep-1.10",
+    data_dir: Annotated[Path, typer.Option(help="Raw and processed data root.")] = Path("data"),
+) -> None:
+    """Collect one reviewed open textbook and replace one weak MVP candidate."""
+    try:
+        source_spec = open_textbook_source(source)
+    except ValueError as exc:
+        choices = ", ".join(sorted(OPEN_TEXTBOOK_SOURCES))
+        raise typer.BadParameter(f"source must be one of: {choices}") from exc
+
+    retrieved_at = datetime.now(UTC)
+    payload, request_parameters = _collect_open_textbook_payload(source)
+    artifact = RawArtifact(
+        provider="open-textbook",
+        topic=source_spec.topic,
+        requested_limit=1,
+        retrieved_at=retrieved_at,
+        request_parameters=request_parameters,
+        response=payload,
+    )
+    raw_path = raw_artifact_path(data_dir, artifact)
+    write_raw_response(artifact, raw_path)
+    evidence = _normalize(
+        payload, artifact.provider, artifact.topic, artifact.requested_limit, retrieved_at
+    )
+    processed_directory = data_dir / "processed"
+    try:
+        if not dataset_exists(processed_directory):
+            raise DatasetMergeError(
+                "open textbook collection requires an existing canonical metadata dataset"
+            )
+        existing = read_dataset(processed_directory)
+        existing_errors = validate_dataset(existing)
+        if existing_errors:
+            raise DatasetMergeError("existing dataset is invalid: " + "; ".join(existing_errors))
+        existing_book_ids = {book.book_id for book in existing.books}
+        if not {source_spec.replaces_book_id, source_spec.book_id} & existing_book_ids:
+            raise DatasetMergeError(
+                "open textbook replacement target is absent from canonical books: "
+                f"{source_spec.replaces_book_id}"
+            )
+        existing = without_books(existing, {source_spec.replaces_book_id})
+        dataset = merge_datasets([existing, evidence])
+    except (DatasetMergeError, ValueError) as exc:
+        typer.echo(f"ERROR canonical merge failed: {exc}", err=True)
+        typer.echo(f"Raw response was preserved at: {raw_path}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    errors = validate_dataset(dataset)
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR {error}", err=True)
+        raise typer.Exit(code=1)
+    write_dataset(dataset, processed_directory)
+    typer.echo(f"Raw response: {raw_path}")
+    typer.echo(f"Canonical output: {processed_directory}")
+    typer.echo(f"Replaced MVP book: {source_spec.replaces_book_id}")
+    typer.echo(f"Open-textbook documents collected: {len(evidence.documents)}")
+    typer.echo(f"Open-textbook TOC entries collected: {len(evidence.toc)}")
+    typer.echo(format_coverage(dataset))
+
+
 @app.command()
 def build(
     raw: Annotated[
@@ -509,6 +610,7 @@ def build(
 ) -> None:
     """Rebuild canonical JSONL solely from preserved raw artifact metadata."""
     datasets = []
+    replacement_book_ids: set[str] = set()
     requested_by_topic: dict[str, int] = {}
     for raw_path in raw:
         try:
@@ -530,11 +632,14 @@ def build(
                 retrieved_at=artifact.retrieved_at,
             )
         )
+        if artifact.provider == "open-textbook":
+            source_slug = artifact.request_parameters["source"]
+            replacement_book_ids.add(open_textbook_source(source_slug).replaces_book_id)
         requested_by_topic[artifact.topic] = max(
             requested_by_topic.get(artifact.topic, 0), artifact.requested_limit
         )
     try:
-        dataset = merge_datasets(datasets)
+        dataset = without_books(merge_datasets(datasets), replacement_book_ids)
     except DatasetMergeError as exc:
         raise typer.BadParameter(str(exc)) from exc
     errors = validate_dataset(dataset)
