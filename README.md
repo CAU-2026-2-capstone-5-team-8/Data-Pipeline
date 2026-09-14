@@ -53,6 +53,16 @@ Documentation License or Creative Commons Attribution-ShareAlike 3.0 United Stat
 textbook, and that page is preserved alongside the home page and PDF. No ISBN is asserted because
 none was verified in those official materials; the book uses a deterministic title-and-author ID.
 
+The second Linear Algebra OER slice collects David Austin's *Understanding Linear Algebra*. It
+replaces the evidence-poor 1979 Friedberg candidate and keeps the milestone at five books per
+topic. The author's official page links the online PreTeXt book and the Grand Valley State
+University repository record; the latter supplies the reviewed 2022 publication date. The
+collector preserves those pages plus the preface and complete first-chapter page set. It emits the
+full 222-entry, three-level chapter TOC, one preface, and five independently sourced preview
+documents. The author's page explicitly applies the Creative Commons Attribution 4.0 International
+License, which is retained on every source record. No ISBN is asserted because none is stated in
+the collected official pages.
+
 Reviewed public catalog sources are available for *Operating Systems: Internals and Design
 Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
 pages expose each exact ISBN and edition, a description, and complete TOCs in ordinary HTML. The
@@ -74,9 +84,9 @@ current ten books:
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Operating Systems | 5/5 | 4/5 | 4/5 | 1/5 | 1/5 | 1/5 |
-| Linear Algebra | 5/5 | 4/5 | 4/5 | 1/5 | 1/5 | 0/5 |
+| Linear Algebra | 5/5 | 5/5 | 4/5 | 2/5 | 2/5 | 0/5 |
 
-The eight TOCs contain 558 canonical entries. The Open Library and eCampus TOCs retain their
+The nine TOCs contain 780 canonical entries. The Open Library and eCampus TOCs retain their
 available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only, so
 their 35 entries are represented truthfully as top-level items. OSTEP contributes five thematic
 roots and 57 numbered child chapters.
@@ -88,8 +98,10 @@ sample chapter. This demonstrates that the schema and raw-to-canonical path can 
 book text without source-specific logic downstream. Coverage remains incomplete for most of the
 commercial titles, so the full MVP definition of done has not yet been reached.
 Hefferon adds an 8,106-character preface and a 140,910-character first chapter, demonstrating the
-same public-text path for Linear Algebra. The complete canonical result contains 10 books, 15
-documents, 558 TOC entries, and 28 source records.
+same public-text path for Linear Algebra. *Understanding Linear Algebra* adds an 8,902-character
+preface and five first-chapter preview pages containing 106,307 characters in total. Its PreTeXt
+navigation contributes 7 chapters, 38 second-level entries, and 177 third-level entries. The
+complete canonical result contains 10 books, 21 documents, 780 TOC entries, and 35 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -109,6 +121,7 @@ uv run data-pipeline collect-public-page --source ecampus-stallings-os4
 uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline collect-open-textbook --source ostep-1.10
 uv run data-pipeline collect-open-textbook --source hefferon-linear-algebra-4
+uv run data-pipeline collect-open-textbook --source understanding-linear-algebra-2022
 uv run data-pipeline report
 ```
 
@@ -125,11 +138,11 @@ still retained for audit and offline rebuilding.
 public HTML source. It additionally rejects a response unless the ISBN, edition, complete reviewed
 entry count, and top-level TOC structure all match.
 `collect-open-textbook` verifies the title, authors, publisher, version, year, ISBN, complete
-TOC or PDF outline, public document identity, PDF media types and signatures, and reviewed text
-markers. Source-specific size limits are enforced: 5 MiB for OSTEP resources and 10 MiB for the
-reviewed 7.63 MB Hefferon PDF. It removes the configured weak candidate and all records scoped to
-that book before merging the new book. Repeated runs retain five books per topic and update only
-the selected source snapshots.
+TOC or PDF outline, public document identity, resource media types, and reviewed text markers.
+Source-specific size limits are enforced: 5 MiB for OSTEP resources, 10 MiB for the reviewed 7.63
+MB Hefferon PDF, and 1 MiB per reviewed PreTeXt HTML page. It removes the configured weak candidate
+and all records scoped to that book before merging the new book. Repeated runs retain five books
+per topic and update only the selected source snapshots.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
