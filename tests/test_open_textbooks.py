@@ -158,6 +158,127 @@ def _hefferon_payload() -> dict:
     }
 
 
+def _ula_home_html() -> str:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    return (
+        "<html><body>"
+        "<div id='about'><p><em>Understanding Linear Algebra</em> is a freely available "
+        "linear algebra textbook suitable for use in a first undergraduate linear algebra "
+        "course.</p></div>"
+        "<div id='contact'>David Austin</div>"
+        "<div id='license'>This work is licensed under a Creative Commons Attribution 4.0 "
+        "International License. © David Austin 2017 - 2025 "
+        f"<a href='{source.license_reference_url}'>License</a></div>"
+        "<a href='https://scholarworks.gvsu.edu/books/26/'>Repository metadata</a>"
+        "<a href='ula.html'>Read online</a>"
+        "</body></html>"
+    )
+
+
+def _ula_book_html(*, omit_last_entry: bool = False) -> str:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    root_titles = (
+        "Systems of equations",
+        "Vectors, matrices, and linear combinations",
+        "Invertibility, bases, and coordinate systems",
+        "Eigenvalues and eigenvectors",
+        "Linear algebra and computing",
+        "Orthogonality and Least Squares",
+        "Singular value decompositions",
+    )
+    level_two_counts = (6, 6, 6, 5, 5, 5, 5)
+    level_two_index = 0
+    chapters = []
+    for chapter_index, (root_title, level_two_count) in enumerate(
+        zip(root_titles, level_two_counts, strict=True), start=1
+    ):
+        sections = []
+        for section_index in range(1, level_two_count + 1):
+            child_count = 5 if level_two_index < 25 else 4
+            subsections = []
+            for child_index in range(1, child_count + 1):
+                if omit_last_entry and level_two_index == 37 and child_index == child_count:
+                    continue
+                subsections.append(
+                    "<li class='toc-item toc-subsection'><div class='toc-title-box'>"
+                    f"<a href='chapter-{chapter_index}.html#section-{section_index}-{child_index}'>"
+                    f"<span class='codenumber'>{chapter_index}.{section_index}.{child_index}</span>"
+                    "<span class='title'>"
+                    f"Topic {chapter_index}.{section_index}.{child_index}"
+                    "</span>"
+                    "</a></div></li>"
+                )
+            sections.append(
+                "<li class='toc-item toc-section'><div class='toc-title-box'>"
+                f"<a href='section-{chapter_index}-{section_index}.html'>"
+                f"<span class='codenumber'>{chapter_index}.{section_index}</span>"
+                f"<span class='title'>Section {chapter_index}.{section_index}</span>"
+                "</a></div><ul>" + "".join(subsections) + "</ul></li>"
+            )
+            level_two_index += 1
+        chapters.append(
+            "<li class='toc-item toc-chapter'><div class='toc-title-box'>"
+            f"<a href='chapter-{chapter_index}.html'>"
+            f"<span class='codenumber'>{chapter_index}</span>"
+            f"<span class='title'>{root_title}</span>"
+            "</a></div><ul>" + "".join(sections) + "</ul></li>"
+        )
+    evidence_links = "".join(
+        f"<a href='{document.url.rsplit('/', 1)[-1]}'>Evidence</a>"
+        for document in source.documents
+        if document.document_type not in {"metadata", "toc"}
+    )
+    return (
+        "<html><body><div>Understanding Linear Algebra David Austin</div>"
+        f"{evidence_links}<nav id='ptx-toc'><ul>"
+        "<li class='toc-item toc-frontmatter'>Front matter</li>"
+        + "".join(chapters)
+        + "</ul></nav><main><div id='ptx-content'>Book landing page</div></main>"
+        "</body></html>"
+    )
+
+
+def _ula_document_html(document_type: str, markers: tuple[str, ...]) -> str:
+    metadata = (
+        '<meta name="bepress_citation_date" content="2022">'
+        '<meta name="bepress_citation_title" content="Understanding Linear Algebra">'
+        '<meta name="bepress_citation_author" content="Austin, David">'
+        if document_type == "metadata"
+        else ""
+    )
+    return (
+        f"<html><head>{metadata}</head><body><nav>Repeated navigation</nav><main>"
+        f"<div id='ptx-content'><section class='{document_type}'>"
+        f"<h1>{document_type}</h1><p>{' '.join(markers)}</p>"
+        "<p>Reviewed public textbook evidence.</p></section></div>"
+        "</main></body></html>"
+    )
+
+
+def _ula_payload(*, omit_last_toc_entry: bool = False) -> dict:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    documents = []
+    for document in source.documents:
+        html = (
+            _ula_book_html(omit_last_entry=omit_last_toc_entry)
+            if document.document_type == "toc"
+            else _ula_document_html(document.document_type, document.expected_text_markers)
+        )
+        documents.append(
+            {
+                "url": document.url,
+                "media_type": document.media_type,
+                "content_base64": base64.b64encode(html.encode()).decode(),
+            }
+        )
+    return {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": _ula_home_html(),
+        "documents": documents,
+    }
+
+
 def test_open_textbook_collector_fetches_only_allowlisted_resources() -> None:
     source = open_textbook_source("ostep-1.10")
     requested_urls = []
@@ -220,6 +341,28 @@ def test_hefferon_collector_preserves_home_license_and_pdf() -> None:
     assert payload["license_url"] == source.license_url
     assert payload["license_html"].startswith("<html>")
     assert len(payload["documents"]) == 1
+
+
+def test_pretext_collector_preserves_only_allowlisted_html_pages() -> None:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            200,
+            text=_ula_home_html(),
+            headers={"content-type": "text/html; charset=utf-8"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = OpenTextbookCollector(client=client).fetch(source.slug)
+
+    assert requested_urls == [source.home_url, *(document.url for document in source.documents)]
+    assert payload["source_slug"] == source.slug
+    assert {document["media_type"] for document in payload["documents"]} == {"text/html"}
+    assert len(payload["documents"]) == 8
 
 
 def test_open_textbook_normalizes_book_documents_toc_and_provenance(monkeypatch) -> None:
@@ -291,6 +434,87 @@ def test_hefferon_normalizes_pdf_outline_and_selected_text(monkeypatch) -> None:
     assert all(item.license == source.license for item in dataset.sources)
     assert dataset.sources[-1].content_hash == sha256_bytes(b"%PDF-hefferon")
     assert validate_dataset(dataset) == []
+
+
+def test_pretext_normalizes_description_preface_previews_toc_and_provenance() -> None:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+
+    dataset = normalize_open_textbook_response(
+        _ula_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].book_id == source.book_id
+    assert dataset.books[0].isbn_10 is None
+    assert dataset.books[0].isbn_13 is None
+    assert dataset.books[0].authors == ["David Austin"]
+    assert [document.document_type for document in dataset.documents] == [
+        "description",
+        "preface",
+        "preview",
+        "preview",
+        "preview",
+        "preview",
+        "preview",
+    ]
+    assert len(dataset.toc) == 222
+    assert {level: sum(entry.level == level for entry in dataset.toc) for level in (1, 2, 3)} == {
+        1: 7,
+        2: 38,
+        3: 177,
+    }
+    assert len(dataset.sources) == 9
+    assert dataset.sources[0].source_type == "author_page"
+    assert all(item.license == source.license for item in dataset.sources)
+    assert validate_dataset(dataset) == []
+
+
+def test_pretext_rejects_incomplete_toc() -> None:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+
+    with pytest.raises(InvalidProviderResponse, match="TOC does not match review"):
+        normalize_open_textbook_response(
+            _ula_payload(omit_last_toc_entry=True),
+            topic=source.topic,
+            retrieved_at=RETRIEVED_AT,
+        )
+
+
+def test_pretext_rejects_repository_publication_mismatch() -> None:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    payload = _ula_payload()
+    metadata = next(item for item in payload["documents"] if item["url"] == source.documents[0].url)
+    html = base64.b64decode(metadata["content_base64"]).decode()
+    html = html.replace(
+        'bepress_citation_date" content="2022', 'bepress_citation_date" content="2021'
+    )
+    metadata["content_base64"] = base64.b64encode(html.encode()).decode()
+
+    with pytest.raises(InvalidProviderResponse, match="repository metadata"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_pretext_rejects_license_text_without_reviewed_link() -> None:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    payload = _ula_payload()
+    payload["home_html"] = payload["home_html"].replace(
+        source.license_reference_url, "https://example.test/licenses/by/4.0/"
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="license link"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
+
+
+def test_pretext_rejects_evidence_page_not_linked_from_toc() -> None:
+    source = open_textbook_source("understanding-linear-algebra-2022")
+    payload = _ula_payload()
+    toc_spec = next(item for item in source.documents if item.document_type == "toc")
+    toc_document = next(item for item in payload["documents"] if item["url"] == toc_spec.url)
+    html = base64.b64decode(toc_document["content_base64"]).decode()
+    html = html.replace("href='sec-pivots.html'", "href='unreviewed.html'")
+    toc_document["content_base64"] = base64.b64encode(html.encode()).decode()
+
+    with pytest.raises(InvalidProviderResponse, match="not linked"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
 
 
 def test_hefferon_rejects_changed_pdf_page_count(monkeypatch) -> None:

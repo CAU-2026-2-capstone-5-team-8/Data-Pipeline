@@ -11,6 +11,7 @@ class OpenTextbookDocumentSpec:
     external_id: str
     url: str
     expected_text_markers: tuple[str, ...]
+    media_type: str = "application/pdf"
     identity_text_markers: tuple[str, ...] = ()
     preface_text_markers: tuple[str, ...] = ()
     sample_text_markers: tuple[str, ...] = ()
@@ -36,6 +37,7 @@ class OpenTextbookSourceSpec:
     documents: tuple[OpenTextbookDocumentSpec, ...]
     source_format: str = "ostep_chapter_pdfs"
     license_url: str | None = None
+    license_reference_url: str | None = None
     license: str | None = None
     max_resource_bytes: int = 5 * 1024 * 1024
     expected_page_count: int | None = None
@@ -129,6 +131,106 @@ OPEN_TEXTBOOK_SOURCES = {
         max_resource_bytes=10 * 1024 * 1024,
         expected_page_count=525,
         preface_page_range=(2, 6),
+    ),
+    "understanding-linear-algebra-2022": OpenTextbookSourceSpec(
+        slug="understanding-linear-algebra-2022",
+        provider="understanding_linear_algebra",
+        topic="linear-algebra",
+        replaces_book_id="isbn13:9780135370193",
+        book_id="book_a1364d52179f6fca0403",
+        isbn_10=None,
+        isbn_13=None,
+        title="Understanding Linear Algebra",
+        authors=("David Austin",),
+        publisher=None,
+        published_year=2022,
+        version=None,
+        home_url="https://understandinglinearalgebra.org/home.html",
+        documents=(
+            OpenTextbookDocumentSpec(
+                document_type="metadata",
+                external_id="gvsu-open-textbooks:26",
+                url="https://scholarworks.gvsu.edu/books/26/",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Understanding Linear Algebra",
+                    "David Austin",
+                    "2022",
+                    "Creative Commons Attribution 4.0 International License",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="toc",
+                external_id="understanding-linear-algebra:toc",
+                url="https://understandinglinearalgebra.org/ula.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Systems of equations",
+                    "Singular value decompositions",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preface",
+                external_id="understanding-linear-algebra:preface",
+                url="https://understandinglinearalgebra.org/frontmatter-7.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "This is a textbook for a first-year course in linear algebra",
+                    "reason mathematically",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preview",
+                external_id="understanding-linear-algebra:chapter-1",
+                url="https://understandinglinearalgebra.org/chap1.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Chapter 1 Systems of equations",
+                    "Pivots and their influence on solution spaces",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preview",
+                external_id="understanding-linear-algebra:section-1.1",
+                url="https://understandinglinearalgebra.org/sec-expect.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "sets of two or more linear equations",
+                    "Some simple examples",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preview",
+                external_id="understanding-linear-algebra:section-1.2",
+                url="https://understandinglinearalgebra.org/sec-finding-solutions.html",
+                media_type="text/html",
+                expected_text_markers=("Gaussian elimination", "reduced row echelon"),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preview",
+                external_id="understanding-linear-algebra:section-1.3",
+                url="https://understandinglinearalgebra.org/sec-sage-introduction.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Computation with Sage",
+                    "No serious application of linear algebra",
+                ),
+            ),
+            OpenTextbookDocumentSpec(
+                document_type="preview",
+                external_id="understanding-linear-algebra:section-1.4",
+                url="https://understandinglinearalgebra.org/sec-pivots.html",
+                media_type="text/html",
+                expected_text_markers=(
+                    "Pivots and their influence on solution spaces",
+                    "leading entry",
+                ),
+            ),
+        ),
+        source_format="pretext_html",
+        license_reference_url="https://creativecommons.org/licenses/by/4.0/",
+        license="Creative Commons Attribution 4.0 International License",
+        max_resource_bytes=1024 * 1024,
     ),
 }
 

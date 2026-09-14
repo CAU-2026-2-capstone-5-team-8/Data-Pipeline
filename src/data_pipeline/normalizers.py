@@ -975,6 +975,318 @@ def _pdf_outline_toc(reader: PdfReader, book_id: str, source_id: str) -> list[To
     return entries
 
 
+def _direct_elements(node: Any, tag: str) -> list[Any]:
+    """Return direct element children with one tag, excluding nested descendants."""
+    elements = []
+    child = node.child
+    while child is not None:
+        if child.tag == tag:
+            elements.append(child)
+        child = child.next
+    return elements
+
+
+def _resolved_links(tree: HTMLParser, base_url: str, *, strip_fragment: bool = False) -> set[str]:
+    """Resolve non-empty HTML links while tolerating malformed optional href values."""
+    links = set()
+    for link in tree.css("a[href]"):
+        href = link.attributes.get("href")
+        if not isinstance(href, str) or not href:
+            continue
+        if strip_fragment:
+            href = href.split("#", 1)[0]
+        links.add(urljoin(base_url, href))
+    return links
+
+
+def _pretext_toc(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse the reviewed PreTeXt chapter tree without flattening its hierarchy."""
+    tree = HTMLParser(html)
+    navigation = tree.css_first("#ptx-toc")
+    if navigation is None:
+        raise InvalidProviderResponse("PreTeXt book page is missing its TOC navigation")
+    top_lists = _direct_elements(navigation, "ul")
+    if len(top_lists) != 1:
+        raise InvalidProviderResponse("PreTeXt book page has an unexpected TOC root")
+
+    entries: list[TocEntry] = []
+
+    def visit(item: Any, parent_id: str | None, level: int, path: tuple[int, ...]) -> None:
+        title_node = item.css_first(".toc-title-box > a > .title")
+        label_node = item.css_first(".toc-title-box > a > .codenumber")
+        if title_node is None:
+            raise InvalidProviderResponse("PreTeXt TOC entry is missing its title")
+        title = " ".join(title_node.text(separator=" ", strip=True).split())
+        label = (
+            " ".join(label_node.text(separator=" ", strip=True).split())
+            if label_node is not None
+            else None
+        )
+        if not title:
+            raise InvalidProviderResponse("PreTeXt TOC entry has an empty title")
+        order_index = path[-1]
+        entry = TocEntry(
+            toc_entry_id=stable_id(
+                "toc", book_id, source_id, *(str(index) for index in path), title
+            ),
+            book_id=book_id,
+            parent_entry_id=parent_id,
+            level=level,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        child_lists = _direct_elements(item, "ul")
+        if len(child_lists) > 1:
+            raise InvalidProviderResponse("PreTeXt TOC entry has multiple child lists")
+        if child_lists:
+            for child_index, child_item in enumerate(_direct_elements(child_lists[0], "li")):
+                visit(child_item, entry.toc_entry_id, level + 1, (*path, child_index))
+
+    root_index = 0
+    for item in _direct_elements(top_lists[0], "li"):
+        if "toc-chapter" not in item.attributes.get("class", "").split():
+            continue
+        visit(item, None, 1, (root_index,))
+        root_index += 1
+    return entries
+
+
+def _pretext_document_text(html: str, name: str) -> str:
+    """Extract only the visible book content from one reviewed PreTeXt page."""
+    content = HTMLParser(html).css_first("#ptx-content")
+    if content is None:
+        raise InvalidProviderResponse(f"PreTeXt {name} page is missing its book content")
+    text = " ".join(content.text(separator=" ", strip=True).split())
+    if not text:
+        raise InvalidProviderResponse(f"PreTeXt {name} page contains no text")
+    return text
+
+
+def _normalize_understanding_linear_algebra_response(
+    response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize the reviewed Understanding Linear Algebra PreTeXt pages."""
+    if source_spec.license is None or source_spec.license_reference_url is None:
+        raise InvalidProviderResponse("PreTeXt allowlist license metadata is incomplete")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("PreTeXt home URL does not match allowlist")
+    home_html = response.get("home_html")
+    raw_documents = response.get("documents")
+    if not isinstance(home_html, str) or not isinstance(raw_documents, list):
+        raise InvalidProviderResponse("PreTeXt response has invalid content fields")
+    if len(home_html.encode("utf-8")) > source_spec.max_resource_bytes:
+        raise InvalidProviderResponse("PreTeXt home page exceeds its reviewed size limit")
+
+    home_tree = HTMLParser(home_html)
+    home_text = home_tree.root.text(separator=" ", strip=True)
+    normalized_home = normalize_bibliographic_text(home_text)
+    home_markers = (
+        source_spec.title,
+        *source_spec.authors,
+        "first undergraduate linear algebra course",
+        source_spec.license,
+    )
+    if any(normalize_bibliographic_text(marker) not in normalized_home for marker in home_markers):
+        raise InvalidProviderResponse("PreTeXt home page does not match the reviewed book")
+    home_links = _resolved_links(home_tree, source_spec.home_url)
+    if source_spec.license_reference_url not in home_links:
+        raise InvalidProviderResponse("PreTeXt home page is missing its reviewed license link")
+
+    expected_documents = {document.url: document for document in source_spec.documents}
+    if len(raw_documents) != len(expected_documents):
+        raise InvalidProviderResponse("PreTeXt response has an unexpected document count")
+    html_by_url: dict[str, str] = {}
+    for raw_document in raw_documents:
+        if not isinstance(raw_document, dict):
+            raise InvalidProviderResponse("PreTeXt response contains an invalid document")
+        url = raw_document.get("url")
+        if not isinstance(url, str) or url not in expected_documents or url in html_by_url:
+            raise InvalidProviderResponse("PreTeXt document URL does not match allowlist")
+        document_spec = expected_documents[url]
+        if raw_document.get("media_type") != document_spec.media_type:
+            raise InvalidProviderResponse("PreTeXt document has an invalid media type")
+        encoded_content = raw_document.get("content_base64")
+        if not isinstance(encoded_content, str):
+            raise InvalidProviderResponse("PreTeXt document is missing base64 content")
+        try:
+            content = base64.b64decode(encoded_content, validate=True)
+            html = content.decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+            raise InvalidProviderResponse("PreTeXt document has invalid encoded HTML") from exc
+        if len(content) > source_spec.max_resource_bytes:
+            raise InvalidProviderResponse("PreTeXt document exceeds its reviewed size limit")
+        reviewed_text = (
+            HTMLParser(html).root.text(separator=" ", strip=True)
+            if document_spec.document_type in {"metadata", "toc"}
+            else _pretext_document_text(html, document_spec.document_type)
+        )
+        normalized_text = normalize_bibliographic_text(reviewed_text)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_text
+            for marker in document_spec.expected_text_markers
+        ):
+            raise InvalidProviderResponse(
+                f"PreTeXt page does not match reviewed document: {document_spec.document_type}"
+            )
+        html_by_url[url] = html
+
+    metadata_spec = next(
+        (document for document in source_spec.documents if document.document_type == "metadata"),
+        None,
+    )
+    toc_spec = next(
+        (document for document in source_spec.documents if document.document_type == "toc"), None
+    )
+    if metadata_spec is None or toc_spec is None:
+        raise InvalidProviderResponse("PreTeXt allowlist is missing metadata or TOC pages")
+    if metadata_spec.url not in home_links or toc_spec.url not in home_links:
+        raise InvalidProviderResponse(
+            "PreTeXt metadata or TOC page is not linked from its reviewed home page"
+        )
+    metadata_tree = HTMLParser(html_by_url[metadata_spec.url])
+    publication_meta = metadata_tree.css_first('meta[name="bepress_citation_date"]')
+    title_meta = metadata_tree.css_first('meta[name="bepress_citation_title"]')
+    author_meta = metadata_tree.css_first('meta[name="bepress_citation_author"]')
+    if (
+        publication_meta is None
+        or publication_meta.attributes.get("content") != str(source_spec.published_year)
+        or title_meta is None
+        or title_meta.attributes.get("content") != source_spec.title
+        or author_meta is None
+        or author_meta.attributes.get("content") != "Austin, David"
+    ):
+        raise InvalidProviderResponse("PreTeXt repository metadata does not match review")
+    toc_html = html_by_url[toc_spec.url]
+    toc_links = _resolved_links(HTMLParser(toc_html), toc_spec.url, strip_fragment=True)
+    if any(
+        document.url not in toc_links
+        for document in source_spec.documents
+        if document.document_type not in {"metadata", "toc"}
+    ):
+        raise InvalidProviderResponse("PreTeXt evidence page is not linked from the book TOC")
+
+    expected_book_id = stable_id(
+        "book",
+        normalize_bibliographic_text(source_spec.title),
+        normalize_bibliographic_text(source_spec.authors[0]),
+    )
+    if source_spec.book_id != expected_book_id:
+        raise InvalidProviderResponse("PreTeXt fallback book ID is not deterministic")
+
+    rights_note = (
+        "The author's official textbook home page explicitly applies the CC BY 4.0 "
+        "International license to this work."
+    )
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    source_ids = {
+        document.url: stable_id("source", source_spec.provider, document.url, source_spec.book_id)
+        for document in source_spec.documents
+    }
+    toc = _pretext_toc(toc_html, source_spec.book_id, source_ids[toc_spec.url])
+    roots = [entry.title for entry in toc if entry.parent_entry_id is None]
+    level_counts = {level: sum(entry.level == level for entry in toc) for level in (1, 2, 3)}
+    expected_roots = [
+        "Systems of equations",
+        "Vectors, matrices, and linear combinations",
+        "Invertibility, bases, and coordinate systems",
+        "Eigenvalues and eigenvectors",
+        "Linear algebra and computing",
+        "Orthogonality and Least Squares",
+        "Singular value decompositions",
+    ]
+    if (
+        len(toc) != 222
+        or roots != expected_roots
+        or level_counts != {1: 7, 2: 38, 3: 177}
+        or any(entry.level > 3 for entry in toc)
+    ):
+        raise InvalidProviderResponse("PreTeXt TOC does not match review")
+
+    about = home_tree.css_first("#about p")
+    if about is None:
+        raise InvalidProviderResponse("PreTeXt home page is missing its description")
+    description = " ".join(about.text(separator=" ", strip=True).split())
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", home_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=home_source_id,
+            content_hash=sha256_text(description),
+        )
+    ]
+    for document_spec in source_spec.documents:
+        if document_spec.document_type in {"metadata", "toc"}:
+            continue
+        text = _pretext_document_text(html_by_url[document_spec.url], document_spec.document_type)
+        source_id = source_ids[document_spec.url]
+        documents.append(
+            Document(
+                document_id=stable_id(
+                    "doc",
+                    source_spec.book_id,
+                    document_spec.document_type,
+                    document_spec.external_id,
+                    source_id,
+                ),
+                book_id=source_spec.book_id,
+                document_type=document_spec.document_type,
+                text=text,
+                source_id=source_id,
+                content_hash=sha256_text(text),
+            )
+        )
+
+    sources = [
+        Source(
+            source_id=home_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="author_page",
+            url=source_spec.home_url,
+            external_id=f"{source_spec.slug}:home",
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=rights_note,
+            content_hash=sha256_text(home_html),
+        )
+    ]
+    sources.extend(
+        Source(
+            source_id=source_ids[document.url],
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="open_textbook",
+            url=document.url,
+            external_id=document.external_id,
+            retrieved_at=retrieved_at,
+            license=source_spec.license,
+            rights_note=rights_note,
+            content_hash=sha256_text(html_by_url[document.url]),
+        )
+        for document in source_spec.documents
+    )
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=None,
+        isbn_13=None,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=None,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[source_spec.topic],
+    )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
+
+
 def _hefferon_description(tree: HTMLParser) -> str:
     """Extract the concise author-written description from the textbook home page."""
     for paragraph in tree.css("p"):
@@ -1007,9 +1319,7 @@ def _normalize_hefferon_response(
         raise InvalidProviderResponse("Hefferon response must contain one reviewed PDF")
 
     tree = HTMLParser(home_html)
-    license_links = {
-        urljoin(source_spec.home_url, link.attributes["href"]) for link in tree.css("a[href]")
-    }
+    license_links = _resolved_links(tree, source_spec.home_url)
     if source_spec.license_url not in license_links:
         raise InvalidProviderResponse("Hefferon license page is not linked from the home page")
     home_text = tree.root.text(separator=" ", strip=True)
@@ -1226,6 +1536,8 @@ def normalize_open_textbook_response(
         raise InvalidProviderResponse(str(exc)) from exc
     if topic != source_spec.topic:
         raise InvalidProviderResponse("open textbook response topic does not match its allowlist")
+    if source_spec.source_format == "pretext_html":
+        return _normalize_understanding_linear_algebra_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "hefferon_pdf_outline":
         return _normalize_hefferon_response(response, source_spec, retrieved_at)
     if source_spec.source_format != "ostep_chapter_pdfs":

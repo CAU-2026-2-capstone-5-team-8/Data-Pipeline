@@ -11,7 +11,7 @@ from data_pipeline.open_textbook_sources import open_textbook_source
 
 
 class OpenTextbookCollector:
-    """Fetch one allowlisted textbook home page and its reviewed public PDFs."""
+    """Fetch one allowlisted textbook home page and its reviewed public resources."""
 
     def __init__(self, client: httpx.Client | None = None) -> None:
         self._owns_client = client is None
@@ -60,7 +60,7 @@ class OpenTextbookCollector:
         return content
 
     def fetch(self, source_slug: str) -> dict[str, Any]:
-        """Fetch only the allowlisted home, license, and reviewed PDF resources."""
+        """Fetch only the allowlisted home, license, and reviewed resources."""
         source = open_textbook_source(source_slug)
         home = self._fetch(source.home_url, "text/html", 1024 * 1024).decode(
             "utf-8", errors="replace"
@@ -72,13 +72,13 @@ class OpenTextbookCollector:
             )
         documents = []
         for document in source.documents:
-            content = self._fetch(document.url, "application/pdf", source.max_resource_bytes)
-            if not content.startswith(b"%PDF-"):
+            content = self._fetch(document.url, document.media_type, source.max_resource_bytes)
+            if document.media_type == "application/pdf" and not content.startswith(b"%PDF-"):
                 raise InvalidProviderResponse("open textbook document response is not a PDF")
             documents.append(
                 {
                     "url": document.url,
-                    "media_type": "application/pdf",
+                    "media_type": document.media_type,
                     "content_base64": base64.b64encode(content).decode("ascii"),
                 }
             )
