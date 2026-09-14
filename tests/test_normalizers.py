@@ -18,6 +18,8 @@ from data_pipeline.validation import validate_dataset
 
 FIXTURE = Path(__file__).parent / "fixtures" / "google_books_operating_systems.json"
 OPEN_LIBRARY_FIXTURE = Path(__file__).parent / "fixtures" / "open_library_operating_systems.json"
+WILEY_ELA_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_ela10_home.html"
+WILEY_ELA_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_ela10_toc.html"
 WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
 WILEY_TOC_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_toc.html"
 RETRIEVED_AT = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -306,6 +308,28 @@ def test_wiley_page_rejects_wrong_edition() -> None:
         normalize_publisher_page_response(
             payload, topic="operating-systems", retrieved_at=RETRIEVED_AT
         )
+
+
+def test_wiley_elementary_linear_algebra_toc_matches_exact_tenth_edition() -> None:
+    source = publisher_source("wiley-ela10")
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_ELA_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "toc_url": source.toc_url,
+        "toc_html": WILEY_ELA_TOC_FIXTURE.read_text(encoding="utf-8"),
+    }
+
+    dataset = normalize_publisher_page_response(
+        payload, topic="linear-algebra", retrieved_at=RETRIEVED_AT
+    )
+
+    assert len(dataset.toc) == 9
+    assert [entry.label for entry in dataset.toc] == list(source.expected_toc_labels)
+    assert dataset.toc[0].title == "SYSTEMS OF LINEAR EQUATIONS AND MATRICES."
+    assert dataset.toc[-1].title == "NUMERICAL METHODS."
+    assert all(entry.book_id == source.book_id for entry in dataset.toc)
+    assert {item.url for item in dataset.sources} == {source.home_url, source.toc_url}
 
 
 def test_wiley_page_rejects_incomplete_toc() -> None:

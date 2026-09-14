@@ -34,7 +34,19 @@ PUBLISHER_SOURCES = {
         ),
         toc_url=("https://bcs.wiley.com/he-bcs/Books?action=contents&itemId=0471694665&bcsId=2217"),
         expected_toc_labels=tuple(str(number) for number in range(1, 24)) + ("A", "B", "C"),
-    )
+    ),
+    "wiley-ela10": PublisherSourceSpec(
+        slug="wiley-ela10",
+        provider="wiley",
+        topic="linear-algebra",
+        book_id="isbn13:9780470458211",
+        isbn_10="0470458216",
+        title="Elementary Linear Algebra",
+        edition=10,
+        home_url=("https://bcs.wiley.com/he-bcs/Books?action=index&bcsId=5557&itemId=0470458216"),
+        toc_url=("https://bcs.wiley.com/he-bcs/Books?action=contents&bcsId=5557&itemId=0470458216"),
+        expected_toc_labels=tuple(str(number) for number in range(1, 10)),
+    ),
 }
 
 
