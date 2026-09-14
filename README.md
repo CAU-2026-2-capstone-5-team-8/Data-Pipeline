@@ -28,8 +28,13 @@ Exact-edition publisher evidence slices are also available for the public Wiley 
 for *Operating System Concepts, 7th Edition* and *Elementary Linear Algebra, 10th Edition*. Each
 allowlist entry binds its publisher pages to the canonical book by ISBN, title, and edition. The
 collector fetches only the identity page and TOC page, preserves both HTML responses in one
-immutable raw artifact, and extracts the complete reviewed top-level heading sequence. It does not
-follow resource links or collect textbook body content.
+immutable raw artifact, and extracts the complete reviewed top-level heading sequence.
+
+One separate, reviewed document slice follows the official companion page's direct link to
+*Operating System Concepts, 7th Edition*, Appendix B, “The Mach System.” It preserves the exact
+identity page, linking TOC page, and Base64-encoded PDF in one raw artifact, then extracts the
+28-page appendix as an `other` document. It is not classified as a preview or sample chapter, and
+no license is inferred. Arbitrary PDF URLs and documents larger than 5 MiB are rejected.
 
 Reviewed public catalog sources are available for *Operating Systems: Internals and Design
 Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
@@ -49,16 +54,19 @@ restricted scans or infer unavailable preface, introduction, preview, or sample 
 The 2026-09-14 Open Library plus Wiley experiment produced the following coverage for the current
 ten books:
 
-| Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 3/5 | 3/5 | 0/5 | 0/5 |
-| Linear Algebra | 5/5 | 3/5 | 4/5 | 0/5 | 0/5 |
+| Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Operating Systems | 5/5 | 3/5 | 3/5 | 0/5 | 0/5 | 1/5 |
+| Linear Algebra | 5/5 | 3/5 | 4/5 | 0/5 | 0/5 | 0/5 |
 
 The six TOCs contain 400 canonical entries. The two Open Library TOCs and two eCampus TOCs retain
 their available parent-child hierarchy; the Wiley pages expose chapter and appendix headings only,
 so their 35 entries are represented truthfully as top-level items. TOC coverage now forms a useful
 majority, but this is not yet the full MVP definition of done: no public preface/introduction or
 preview/sample text has been collected.
+The canonical dataset also contains one 72,711-character public supplemental appendix for one
+Operating Systems book. It is useful real book-text evidence for downstream feasibility testing,
+but it intentionally does not increase the preview/sample coverage count.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -73,6 +81,7 @@ uv run data-pipeline collect --topic operating-systems --limit 5
 uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline collect-publisher --source wiley-osc7
 uv run data-pipeline collect-publisher --source wiley-ela10
+uv run data-pipeline collect-publisher-document --source wiley-osc7-appendix-b
 uv run data-pipeline collect-public-page --source ecampus-stallings-os4
 uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline report
@@ -81,6 +90,9 @@ uv run data-pipeline report
 `collect-publisher` requires the matching metadata book to exist in `data/processed` and stops if
 the exact canonical `book_id` is absent. Unknown publisher URLs cannot be supplied at the CLI; a
 new source must first be reviewed and added to the small version-controlled allowlist.
+`collect-publisher-document` applies the same allowlist and exact-book requirement. It verifies the
+title, edition, ISBN-bearing publisher page, direct link from the companion TOC page, PDF media
+type, PDF signature, and reviewed text markers before emitting canonical evidence.
 Repeated retrievals of the same allowlisted URL update its canonical source snapshot. Documents
 and TOC entries owned by an older snapshot are replaced, while every immutable raw response is
 still retained for audit and offline rebuilding.
@@ -99,6 +111,7 @@ uv run data-pipeline build \
   --raw data/raw/open_library/linear-algebra/<artifact>.json \
   --raw data/raw/publisher_page/operating-systems/<artifact>.json \
   --raw data/raw/publisher_page/linear-algebra/<artifact>.json \
+  --raw data/raw/publisher_document/operating-systems/<artifact>.json \
   --raw data/raw/public_book_page/operating-systems/<artifact>.json
 ```
 

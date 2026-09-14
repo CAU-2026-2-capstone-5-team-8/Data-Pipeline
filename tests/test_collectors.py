@@ -5,8 +5,10 @@ from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
 from data_pipeline.collectors.open_library import OpenLibraryCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
+from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
 from data_pipeline.public_book_sources import public_book_source
+from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 
 
@@ -126,6 +128,61 @@ def test_publisher_collector_does_not_follow_redirects() -> None:
             collector.fetch("wiley-osc7")
 
     assert len(requested_urls) == 1
+
+
+def test_publisher_document_collector_preserves_identity_link_and_pdf() -> None:
+    source = publisher_document_source("wiley-osc7-appendix-b")
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == source.document_url:
+            return httpx.Response(
+                200,
+                content=b"%PDF-1.3 synthetic fixture",
+                headers={"content-type": "application/pdf"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            text="<html><body>Publisher evidence</body></html>",
+            headers={"content-type": "text/html; charset=utf-8"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = PublisherDocumentCollector(client=client)
+        payload = collector.fetch(source.slug)
+
+    assert requested_urls == [source.home_url, source.referrer_url, source.document_url]
+    assert payload["source_slug"] == source.slug
+    assert payload["document_media_type"] == "application/pdf"
+    assert payload["document_base64"] == "JVBERi0xLjMgc3ludGhldGljIGZpeHR1cmU="
+
+
+def test_publisher_document_collector_rejects_non_pdf_content() -> None:
+    source = publisher_document_source("wiley-osc7-appendix-b")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == source.document_url:
+            return httpx.Response(
+                200,
+                content=b"not a PDF",
+                headers={"content-type": "application/pdf"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            text="<html></html>",
+            headers={"content-type": "text/html"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = PublisherDocumentCollector(client=client)
+
+        with pytest.raises(InvalidProviderResponse, match="not a PDF"):
+            collector.fetch(source.slug)
 
 
 def test_public_book_collector_fetches_only_allowlisted_page() -> None:

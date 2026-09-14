@@ -32,6 +32,9 @@ def coverage_rows(dataset: CanonicalDataset) -> list[dict[str, int | str]]:
                     bool({"preview", "sample_chapter"} & documents_by_book[book_id])
                     for book_id in book_ids
                 ),
+                "other_document": sum(
+                    "other" in documents_by_book[book_id] for book_id in book_ids
+                ),
             }
         )
     return rows
@@ -49,6 +52,7 @@ def format_coverage(dataset: CanonicalDataset) -> str:
                     f"Description:              {row['description']}",
                     f"Preface/Introduction:     {row['preface_or_introduction']}",
                     f"Preview/Sample text:      {row['preview_or_sample']}",
+                    f"Other document:           {row['other_document']}",
                 ]
             )
         )
