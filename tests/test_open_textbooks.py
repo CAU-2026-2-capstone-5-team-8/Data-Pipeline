@@ -739,7 +739,7 @@ def test_hailperin_collector_preserves_approved_archive_redirect() -> None:
 def test_hailperin_collector_rejects_unapproved_archive_redirect() -> None:
     source = open_textbook_source("hailperin-os-middleware-1.2")
     document = source.documents[0]
-    unapproved_url = "https://downloads.example.test/osm-rev1.2.pdf"
+    unapproved_url = "http://archive.org/download/osm-rev1.2/osm-rev1.2.pdf"
     requested_urls = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -921,7 +921,7 @@ def test_hailperin_rejects_unreviewed_resolved_pdf() -> None:
     source = open_textbook_source("hailperin-os-middleware-1.2")
     payload = _hailperin_payload()
     payload["documents"][0]["resolved_url"] = (
-        "https://dn721903.ca.archive.org/0/items/other/other.pdf"
+        "http://dn721903.ca.archive.org/0/items/osm-rev1.2/osm-rev1.2.pdf"
     )
 
     with pytest.raises(InvalidProviderResponse, match="unreviewed resource"):

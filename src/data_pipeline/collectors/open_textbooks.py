@@ -51,7 +51,9 @@ class OpenTextbookCollector:
         while response.is_redirect:
             location = response.headers.get("location")
             redirect_url = urljoin(str(response.url), location) if location else ""
-            if not self._redirect_host_allowed(redirect_url, allowed_redirect_hosts):
+            if urlsplit(redirect_url).scheme != "https" or not self._redirect_host_allowed(
+                redirect_url, allowed_redirect_hosts
+            ):
                 raise InvalidProviderResponse(
                     "open textbook source redirected to an unapproved host"
                 )

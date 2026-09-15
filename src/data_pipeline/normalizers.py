@@ -1929,6 +1929,7 @@ def _normalize_hailperin_response(
     expected_path_suffix = f"/items/{requested_path.removeprefix('/download/')}"
     if (
         resolved is None
+        or resolved.scheme != "https"
         or resolved.hostname is None
         or not any(
             resolved.hostname == host or resolved.hostname.endswith(f".{host}")
