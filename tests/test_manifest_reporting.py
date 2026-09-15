@@ -69,7 +69,7 @@ def test_versioned_mvp_manifest_declares_ten_books_and_reviewed_inputs() -> None
     manifest = load_manifest(Path("configs/mvp.json"))
 
     assert len(manifest.expected_book_ids) == 10
-    assert len(manifest.raw_artifacts) == 11
+    assert len(manifest.raw_artifacts) == 12
     assert {selector.topic for selector in manifest.raw_artifacts} == {
         "linear-algebra",
         "operating-systems",

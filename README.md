@@ -38,6 +38,14 @@ no license is inferred. Arbitrary PDF URLs and documents larger than 5 MiB are r
 optional slice is no longer present in the current ten-book result because the Hailperin slice
 below replaces that commercial-book candidate and all evidence scoped to it.
 
+The current Linear Algebra document slice collects Wiley's public 92-page Chapter 1 excerpt for
+*Elementary Linear Algebra, 10th Edition*. The allowlist binds the PDF to the existing canonical
+book using the exact ISBN in Wiley's catalog URL, the ISBN/title/edition on the companion page,
+the matching Chapter 1 heading on its TOC page, and three text markers spanning sections 1.1–1.9.
+The PDF is emitted as `sample_chapter` evidence. Wiley does not state a reuse license on the
+collected pages, so `license` remains `null` and the access/identity facts are kept in
+`rights_note` rather than interpreted as permission to redistribute it.
+
 The first open-textbook slice collects *Operating Systems: Three Easy Pieces*, version 1.10,
 from its University of Wisconsin author page. It replaces the evidence-empty 1974 Operating
 Systems candidate while keeping the milestone at five books per topic. The allowlisted collector
@@ -119,7 +127,7 @@ current ten books:
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Operating Systems | 5/5 | 5/5 | 5/5 | 3/5 | 3/5 | 0/5 |
-| Linear Algebra | 5/5 | 5/5 | 5/5 | 3/5 | 3/5 | 0/5 |
+| Linear Algebra | 5/5 | 5/5 | 5/5 | 3/5 | 4/5 | 0/5 |
 
 All ten books now have TOCs, containing 1,091 canonical entries. The Open Library and eCampus TOCs
 retain their available parent-child hierarchy; the remaining Wiley page exposes headings only, so
@@ -139,8 +147,9 @@ preface and five first-chapter preview pages containing 106,307 characters in to
 navigation contributes 7 chapters, 38 second-level entries, and 177 third-level entries. The
 Nicholson slice adds a 725-character description, a 19,955-character preface, and a
 16,526-character first-section preview. Its twelve chapter pages contribute 12 chapter roots,
-88 second-level entries, and 67 exercise children. The complete canonical result contains 10
-books, 28 documents, 1,091 TOC entries, and 50 source records.
+88 second-level entries, and 67 exercise children. The Wiley Anton slice adds a 195,549-character
+Chapter 1 sample spanning all nine sections shown by the exact-edition TOC. The complete canonical
+result contains 10 books, 29 documents, 1,091 TOC entries, and 51 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -154,6 +163,7 @@ uv run data-pipeline search --topic operating-systems --limit 5
 uv run data-pipeline collect --topic operating-systems --limit 5
 uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline collect-publisher --source wiley-ela10
+uv run data-pipeline collect-publisher-document --source wiley-ela10-chapter-1
 uv run data-pipeline collect-public-page --source ecampus-stallings-os4
 uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline collect-open-textbook --source ostep-1.10
@@ -174,8 +184,10 @@ all book-scoped evidence in the final ten-book set.
 the exact canonical `book_id` is absent. Unknown publisher URLs cannot be supplied at the CLI; a
 new source must first be reviewed and added to the small version-controlled allowlist.
 `collect-publisher-document` applies the same allowlist and exact-book requirement. It verifies the
-title, edition, ISBN-bearing publisher page, direct link from the companion TOC page, PDF media
-type, PDF signature, and reviewed text markers before emitting canonical evidence.
+title, edition, ISBN-bearing publisher page, reviewed companion TOC heading, PDF media type, PDF
+signature, and reviewed text markers before emitting canonical evidence. A direct companion-page
+link is additionally mandatory for sources that declare one. The Anton excerpt instead uses
+Wiley's ISBN-bearing catalog URL because the retired title-home redirect no longer resolves.
 Repeated retrievals of the same allowlisted URL update its canonical source snapshot. Documents
 and TOC entries owned by an older snapshot are replaced, while every immutable raw response is
 still retained for audit and offline rebuilding.
@@ -191,7 +203,7 @@ Internet Archive host boundary. The command removes the configured weak candidat
 scoped to that book before merging the new book. Repeated runs retain five books per topic and
 update only the selected source snapshots.
 
-[`configs/mvp.json`](configs/mvp.json) declares the eleven raw request identities used by the
+[`configs/mvp.json`](configs/mvp.json) declares the twelve raw request identities used by the
 current milestone and the exact ten canonical book IDs expected after replacements. The
 `build-manifest` command selects the latest immutable artifact matching each provider, topic,
 source slug, and request limit, rebuilds without network access, and refuses to publish output if
@@ -212,6 +224,7 @@ uv run data-pipeline build \
   --raw data/raw/publisher_page/operating-systems/<artifact>.json \
   --raw data/raw/publisher_page/linear-algebra/<artifact>.json \
   --raw data/raw/publisher_document/operating-systems/<artifact>.json \
+  --raw data/raw/publisher_document/linear-algebra/<artifact>.json \
   --raw data/raw/public_book_page/operating-systems/<artifact>.json \
   --raw data/raw/open_textbook/operating-systems/<artifact>.json \
   --raw data/raw/open_textbook/linear-algebra/<artifact>.json
@@ -223,9 +236,9 @@ with the same deterministic ID stop the build instead of being silently selected
 
 `report` and `build-manifest` print both aggregate topic coverage and one row per book. The
 per-book section explicitly lists missing TOC, description, preface/introduction, and
-preview/sample evidence. In the current result it identifies the four remaining commercial books
-whose public preface/introduction and preview/sample evidence has not been collected, without
-treating those optional gaps as invalid metadata.
+preview/sample evidence. In the current result, three commercial books still lack both
+preface/introduction and preview/sample evidence, while the Anton book now has a sample chapter
+but no public preface/introduction. Optional gaps do not invalidate otherwise sound metadata.
 
 Supported MVP topics are `operating-systems` and `linear-algebra`. Generated raw and processed
 data are intentionally ignored by Git; only small test fixtures should be committed.
