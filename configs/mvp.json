@@ -18,6 +18,12 @@
       "source": "wiley-ela10"
     },
     {
+      "provider": "publisher-document",
+      "topic": "linear-algebra",
+      "requested_limit": 1,
+      "source": "wiley-ela10-chapter-1"
+    },
+    {
       "provider": "public-book-page",
       "topic": "operating-systems",
       "requested_limit": 1,

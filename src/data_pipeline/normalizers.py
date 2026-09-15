@@ -767,10 +767,9 @@ def normalize_publisher_document_response(
             "publisher document identity page does not match the expected edition"
         )
     referrer_text = HTMLParser(referrer_html).root.text(separator=" ", strip=True)
-    if (
-        source_spec.document_url not in referrer_html
-        or source_spec.referrer_heading not in referrer_text
-    ):
+    if source_spec.referrer_heading.casefold() not in referrer_text.casefold():
+        raise InvalidProviderResponse("publisher document referrer is missing its reviewed heading")
+    if source_spec.require_document_link and source_spec.document_url not in referrer_html:
         raise InvalidProviderResponse(
             "publisher document is not linked from its reviewed exact-edition page"
         )
@@ -796,15 +795,12 @@ def normalize_publisher_document_response(
         source_id=source_id,
         book_id=source_spec.book_id,
         provider=source_spec.provider,
-        source_type="publisher_page",
+        source_type=source_spec.source_type,
         url=source_spec.document_url,
         external_id=source_spec.external_id,
         retrieved_at=retrieved_at,
         license=None,
-        rights_note=(
-            "Public supplemental appendix linked from the exact-edition publisher "
-            "companion page; no license statement found."
-        ),
+        rights_note=source_spec.rights_note,
         content_hash=sha256_bytes(document_bytes),
     )
     document = Document(

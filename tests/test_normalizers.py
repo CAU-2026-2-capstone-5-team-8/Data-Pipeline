@@ -890,3 +890,35 @@ def test_publisher_pdf_requires_link_from_exact_edition_page(monkeypatch) -> Non
         normalize_publisher_document_response(
             payload, topic=source.topic, retrieved_at=RETRIEVED_AT
         )
+
+
+def test_publisher_pdf_accepts_allowlisted_isbn_bound_sample_without_direct_link(
+    monkeypatch,
+) -> None:
+    source = publisher_document_source("wiley-ela10-chapter-1")
+    extracted = (
+        "Systems of Linear Equations and Matrices\n"
+        "Introduction to Systems of Linear Equations\n"
+        "Leontief Input-Output Models"
+    )
+    monkeypatch.setattr("data_pipeline.normalizers._extract_pdf_text", lambda _pdf: extracted)
+    payload = {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": WILEY_ELA_HOME_FIXTURE.read_text(encoding="utf-8"),
+        "referrer_url": source.referrer_url,
+        "referrer_html": WILEY_ELA_TOC_FIXTURE.read_text(encoding="utf-8"),
+        "document_url": source.document_url,
+        "document_media_type": "application/pdf",
+        "document_base64": base64.b64encode(b"%PDF-1.3 synthetic").decode("ascii"),
+    }
+
+    dataset = normalize_publisher_document_response(
+        payload, topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert len(dataset.documents) == 1
+    assert dataset.documents[0].document_type == "sample_chapter"
+    assert dataset.sources[0].source_type == "sample_page"
+    assert dataset.sources[0].license is None
+    assert "ISBN-bearing URL" in dataset.sources[0].rights_note
