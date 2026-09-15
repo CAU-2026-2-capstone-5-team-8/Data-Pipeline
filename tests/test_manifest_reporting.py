@@ -70,6 +70,10 @@ def test_versioned_mvp_manifest_declares_ten_books_and_reviewed_inputs() -> None
 
     assert len(manifest.expected_book_ids) == 10
     assert len(manifest.raw_artifacts) == 12
+    assert "book_21ac29d979effd89fad2" in manifest.expected_book_ids
+    assert "isbn13:9780070575721" not in manifest.expected_book_ids
+    assert any(selector.source == "xv6-riscv-rev5" for selector in manifest.raw_artifacts)
+    assert all(selector.source != "ecampus-singhal-os1" for selector in manifest.raw_artifacts)
     assert {selector.topic for selector in manifest.raw_artifacts} == {
         "linear-algebra",
         "operating-systems",

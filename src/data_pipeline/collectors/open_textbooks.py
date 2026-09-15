@@ -93,7 +93,9 @@ class OpenTextbookCollector:
         home = home_content.decode("utf-8", errors="replace")
         license_html = None
         if source.license_url is not None:
-            license_content, _ = self._fetch(source.license_url, "text/html", 1024 * 1024)
+            license_content, _ = self._fetch(
+                source.license_url, source.license_media_type, 1024 * 1024
+            )
             license_html = license_content.decode("utf-8", errors="replace")
         documents = []
         for document in source.documents:
