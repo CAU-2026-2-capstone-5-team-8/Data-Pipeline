@@ -16,6 +16,11 @@ from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
+from data_pipeline.manifest import (
+    load_manifest,
+    select_manifest_raw_paths,
+    validate_manifest_books,
+)
 from data_pipeline.models import CanonicalDataset
 from data_pipeline.normalizers import (
     TOPICS,
@@ -33,7 +38,7 @@ from data_pipeline.publisher_document_sources import (
     publisher_document_source,
 )
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
-from data_pipeline.reporting import format_coverage
+from data_pipeline.reporting import format_book_coverage, format_coverage
 from data_pipeline.storage import (
     RawArtifact,
     dataset_exists,
@@ -61,6 +66,9 @@ PublisherDocumentSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition public publisher document slug.")
 ]
 OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public open textbook slug.")]
+ManifestOption = Annotated[
+    Path, typer.Option(exists=True, dir_okay=False, help="Versioned MVP JSON manifest.")
+]
 
 
 def _ensure_topic(topic: str) -> None:
@@ -272,6 +280,46 @@ def _normalize(
         )
     except InvalidProviderResponse as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+
+def _dataset_from_raw_paths(
+    raw_paths: list[Path],
+) -> tuple[CanonicalDataset, dict[str, int]]:
+    """Normalize and merge preserved raw artifacts without publishing files."""
+    datasets = []
+    replacement_book_ids: set[str] = set()
+    requested_by_topic: dict[str, int] = {}
+    for raw_path in raw_paths:
+        try:
+            artifact = read_raw_response(raw_path)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        _ensure_topic(artifact.topic)
+        expected_parameters = _expected_request_parameters(artifact)
+        if artifact.request_parameters != expected_parameters:
+            raise typer.BadParameter(
+                f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
+            )
+        datasets.append(
+            _normalize(
+                artifact.response,
+                artifact.provider,
+                artifact.topic,
+                artifact.requested_limit,
+                retrieved_at=artifact.retrieved_at,
+            )
+        )
+        if artifact.provider == "open-textbook":
+            source_slug = artifact.request_parameters["source"]
+            replacement_book_ids.add(open_textbook_source(source_slug).replaces_book_id)
+        requested_by_topic[artifact.topic] = max(
+            requested_by_topic.get(artifact.topic, 0), artifact.requested_limit
+        )
+    try:
+        dataset = without_books(merge_datasets(datasets), replacement_book_ids)
+    except DatasetMergeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    return dataset, requested_by_topic
 
 
 @app.command()
@@ -607,39 +655,7 @@ def build(
     ),
 ) -> None:
     """Rebuild canonical JSONL solely from preserved raw artifact metadata."""
-    datasets = []
-    replacement_book_ids: set[str] = set()
-    requested_by_topic: dict[str, int] = {}
-    for raw_path in raw:
-        try:
-            artifact = read_raw_response(raw_path)
-        except ValueError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        _ensure_topic(artifact.topic)
-        expected_parameters = _expected_request_parameters(artifact)
-        if artifact.request_parameters != expected_parameters:
-            raise typer.BadParameter(
-                f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
-            )
-        datasets.append(
-            _normalize(
-                artifact.response,
-                artifact.provider,
-                artifact.topic,
-                artifact.requested_limit,
-                retrieved_at=artifact.retrieved_at,
-            )
-        )
-        if artifact.provider == "open-textbook":
-            source_slug = artifact.request_parameters["source"]
-            replacement_book_ids.add(open_textbook_source(source_slug).replaces_book_id)
-        requested_by_topic[artifact.topic] = max(
-            requested_by_topic.get(artifact.topic, 0), artifact.requested_limit
-        )
-    try:
-        dataset = without_books(merge_datasets(datasets), replacement_book_ids)
-    except DatasetMergeError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+    dataset, requested_by_topic = _dataset_from_raw_paths(raw)
     errors = validate_dataset(dataset)
     if errors:
         raise typer.BadParameter("; ".join(errors))
@@ -647,6 +663,37 @@ def build(
     for topic, requested in sorted(requested_by_topic.items()):
         typer.echo(f"Books requested for {topic}: {requested}")
     typer.echo(format_coverage(dataset))
+
+
+@app.command("build-manifest")
+def build_manifest(
+    manifest: ManifestOption = Path("configs/mvp.json"),
+    data_dir: Annotated[Path, typer.Option(file_okay=False, help="Raw data root.")] = Path("data"),
+    output: Annotated[
+        Path | None, typer.Option(file_okay=False, help="Canonical output directory.")
+    ] = None,
+) -> None:
+    """Rebuild and verify the exact MVP book set from the latest matching raw artifacts."""
+    try:
+        manifest_spec = load_manifest(manifest)
+        raw_paths = select_manifest_raw_paths(manifest_spec, data_dir / "raw")
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    dataset, requested_by_topic = _dataset_from_raw_paths(raw_paths)
+    errors = [*validate_dataset(dataset), *validate_manifest_books(manifest_spec, dataset)]
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+
+    output_directory = output or data_dir / "processed"
+    write_dataset(dataset, output_directory)
+    typer.echo(f"Manifest: {manifest}")
+    for raw_path in raw_paths:
+        typer.echo(f"Selected raw artifact: {raw_path}")
+    typer.echo(f"Canonical output: {output_directory}")
+    for topic, requested in sorted(requested_by_topic.items()):
+        typer.echo(f"Books requested for {topic}: {requested}")
+    typer.echo(format_coverage(dataset))
+    typer.echo("\nPer-book evidence\n" + format_book_coverage(dataset))
 
 
 @app.command()
@@ -661,6 +708,7 @@ def report(
             typer.echo(f"ERROR {error}", err=True)
         raise typer.Exit(code=1)
     typer.echo(format_coverage(dataset))
+    typer.echo("\nPer-book evidence\n" + format_book_coverage(dataset))
 
 
 if __name__ == "__main__":

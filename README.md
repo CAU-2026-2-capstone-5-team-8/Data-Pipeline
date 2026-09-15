@@ -153,9 +153,7 @@ uv sync
 uv run data-pipeline search --topic operating-systems --limit 5
 uv run data-pipeline collect --topic operating-systems --limit 5
 uv run data-pipeline collect --topic linear-algebra --limit 5
-uv run data-pipeline collect-publisher --source wiley-osc7
 uv run data-pipeline collect-publisher --source wiley-ela10
-uv run data-pipeline collect-publisher-document --source wiley-osc7-appendix-b
 uv run data-pipeline collect-public-page --source ecampus-stallings-os4
 uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline collect-open-textbook --source ostep-1.10
@@ -164,8 +162,13 @@ uv run data-pipeline collect-open-textbook --source understanding-linear-algebra
 uv run data-pipeline collect-open-textbook --source think-os-0.7.4
 uv run data-pipeline collect-open-textbook --source nicholson-linear-algebra-2023
 uv run data-pipeline collect-open-textbook --source hailperin-os-middleware-1.2
+uv run data-pipeline build-manifest --manifest configs/mvp.json --data-dir data
 uv run data-pipeline report
 ```
+
+The Wiley OSC7 publisher and appendix collectors remain available as reviewed experiments, but
+they are not part of `configs/mvp.json` because the current Hailperin source replaces that book and
+all book-scoped evidence in the final ten-book set.
 
 `collect-publisher` requires the matching metadata book to exist in `data/processed` and stops if
 the exact canonical `book_id` is absent. Unknown publisher URLs cannot be supplied at the CLI; a
@@ -188,6 +191,15 @@ Internet Archive host boundary. The command removes the configured weak candidat
 scoped to that book before merging the new book. Repeated runs retain five books per topic and
 update only the selected source snapshots.
 
+[`configs/mvp.json`](configs/mvp.json) declares the eleven raw request identities used by the
+current milestone and the exact ten canonical book IDs expected after replacements. The
+`build-manifest` command selects the latest immutable artifact matching each provider, topic,
+source slug, and request limit, rebuilds without network access, and refuses to publish output if
+an input is missing or the final book set differs. This keeps local raw snapshots out of Git while
+making the selected source set and replacement result version controlled. Use the lower-level
+`build --raw ...` command when reproducing one specifically timestamped set of artifacts rather
+than the latest local set.
+
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its
 provider, topic, request limit, query parameters, retrieval time, and all bounded detail responses.
@@ -208,6 +220,12 @@ uv run data-pipeline build \
 Repeat `--raw` for multiple artifacts when rebuilding the combined two-topic dataset. Sequential
 `collect` commands safely merge new books into the existing canonical dataset. Conflicting records
 with the same deterministic ID stop the build instead of being silently selected.
+
+`report` and `build-manifest` print both aggregate topic coverage and one row per book. The
+per-book section explicitly lists missing TOC, description, preface/introduction, and
+preview/sample evidence. In the current result it identifies the four remaining commercial books
+whose public preface/introduction and preview/sample evidence has not been collected, without
+treating those optional gaps as invalid metadata.
 
 Supported MVP topics are `operating-systems` and `linear-algebra`. Generated raw and processed
 data are intentionally ignored by Git; only small test fixtures should be committed.
