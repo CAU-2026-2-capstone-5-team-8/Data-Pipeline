@@ -80,6 +80,76 @@ class _FakeHefferonReader:
         return destination.page_index
 
 
+class _FakeHailperinReader:
+    def __init__(
+        self,
+        _stream,
+        page_count: int = 559,
+        incomplete_outline: bool = False,
+    ) -> None:
+        self.pages = [_FakePage() for _ in range(page_count)]
+        if page_count >= 41:
+            self.pages[0] = _FakePage(
+                "Operating Systems and Middleware: Supporting Controlled Interaction "
+                "Max Hailperin Gustavus Adolphus College Revised Edition 1.2 July 11, 2015"
+            )
+            self.pages[1] = _FakePage(
+                "Creative Commons Attribution-ShareAlike 3.0 Unported License "
+                "http://creativecommons.org/licenses/by-sa/3.0/"
+            )
+            self.pages[10] = _FakePage(
+                "Suppose you sit down at your computer Audience Features of the Text "
+                "Acknowledgments"
+            )
+            self.pages[20] = _FakePage(
+                "Chapter 1 Introduction What Is an Operating System? What Is Middleware? Security"
+            )
+        self.metadata = {
+            "/Title": "Operating Systems and Middleware: Supporting Controlled Interaction",
+            "/Author": "Max Hailperin",
+        }
+        root_titles = (
+            "Preface",
+            "Introduction",
+            "Threads",
+            "Scheduling",
+            "Synchronization and Deadlocks",
+            "Atomic Transactions",
+            "Virtual Memory",
+            "Processes and Protection",
+            "Files and Other Persistent Storage",
+            "Networking",
+            "Messaging, RPC, and Web Services",
+            "Security",
+            "Stacks",
+            "Bibliography",
+            "Index",
+        )
+        root_pages = (10, 20, 40, 64, 112, 180, 228, 292, 352, 414, 466, 486, 524, 530, 530)
+        self.outline = []
+        for root_index, (title, page_index) in enumerate(zip(root_titles, root_pages, strict=True)):
+            self.outline.append(_FakeDestination(title, page_index))
+            child_count = 6 if root_index < 5 else 5
+            children = [
+                _FakeDestination(f"{title} section {index + 1}", page_index)
+                for index in range(child_count)
+            ]
+            if root_index == 0:
+                level_three_count = 83 if incomplete_outline else 84
+                children.insert(
+                    1,
+                    [
+                        _FakeDestination(f"Preface detail {index + 1}", page_index)
+                        for index in range(level_three_count)
+                    ],
+                )
+            self.outline.append(children)
+
+    @staticmethod
+    def get_destination_page_number(destination: _FakeDestination) -> int:
+        return destination.page_index
+
+
 def _home_html() -> str:
     source = open_textbook_source("ostep-1.10")
     heading_cells = "".join(
@@ -154,6 +224,45 @@ def _hefferon_payload() -> dict:
                 "url": source.documents[0].url,
                 "media_type": "application/pdf",
                 "content_base64": base64.b64encode(b"%PDF-hefferon").decode(),
+            }
+        ],
+    }
+
+
+def _hailperin_payload() -> dict:
+    source = open_textbook_source("hailperin-os-middleware-1.2")
+    metadata = {
+        "@context": "https://schema.org",
+        "@type": "Book",
+        "@id": "161",
+        "name": source.title,
+        "description": "Public operating systems and middleware textbook description.",
+        "inLanguage": "English",
+        "license": source.home_license,
+        "copyrightYear": source.published_year,
+        "author": [{"@type": "Person", "name": source.authors[0]}],
+        "publisher": [{"@type": "Organization", "name": source.publisher}],
+        "isAccessibleForFree": True,
+    }
+    home_html = (
+        '<html><body><script type="application/ld+json">'
+        f"{json.dumps(metadata)}</script>"
+        f'<a href="{source.document_reference_url}">PDF</a>'
+        "</body></html>"
+    )
+    document = source.documents[0]
+    return {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": home_html,
+        "documents": [
+            {
+                "url": document.url,
+                "resolved_url": (
+                    "https://dn721903.ca.archive.org/0/items/osm-rev1.2/osm-rev1.2.pdf"
+                ),
+                "media_type": document.media_type,
+                "content_base64": base64.b64encode(b"%PDF-hailperin").decode(),
             }
         ],
     }
@@ -591,6 +700,79 @@ def test_hefferon_collector_preserves_home_license_and_pdf() -> None:
     assert len(payload["documents"]) == 1
 
 
+def test_hailperin_collector_preserves_approved_archive_redirect() -> None:
+    source = open_textbook_source("hailperin-os-middleware-1.2")
+    document = source.documents[0]
+    resolved_url = "https://dn721903.ca.archive.org/0/items/osm-rev1.2/osm-rev1.2.pdf"
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == source.home_url:
+            return httpx.Response(
+                200,
+                text=_hailperin_payload()["home_html"],
+                headers={"content-type": "text/html; charset=utf-8"},
+                request=request,
+            )
+        if str(request.url) == document.url:
+            return httpx.Response(
+                302,
+                headers={"location": resolved_url},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            content=b"%PDF-hailperin",
+            headers={"content-type": "application/pdf"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = OpenTextbookCollector(client=client).fetch(source.slug)
+
+    assert requested_urls == [source.home_url, document.url, resolved_url]
+    assert payload["documents"][0]["url"] == document.url
+    assert payload["documents"][0]["resolved_url"] == resolved_url
+
+
+def test_hailperin_collector_rejects_unapproved_archive_redirect() -> None:
+    source = open_textbook_source("hailperin-os-middleware-1.2")
+    document = source.documents[0]
+    unapproved_url = "https://downloads.example.test/osm-rev1.2.pdf"
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == source.home_url:
+            return httpx.Response(
+                200,
+                text=_hailperin_payload()["home_html"],
+                headers={"content-type": "text/html; charset=utf-8"},
+                request=request,
+            )
+        if str(request.url) == document.url:
+            return httpx.Response(
+                302,
+                headers={"location": unapproved_url},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            content=b"%PDF-hailperin",
+            headers={"content-type": "application/pdf"},
+            request=request,
+        )
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(InvalidProviderResponse, match="unapproved host"),
+    ):
+        OpenTextbookCollector(client=client).fetch(source.slug)
+
+    assert requested_urls == [source.home_url, document.url]
+
+
 def test_pretext_collector_preserves_only_allowlisted_html_pages() -> None:
     source = open_textbook_source("understanding-linear-algebra-2022")
     requested_urls = []
@@ -682,6 +864,68 @@ def test_hefferon_normalizes_pdf_outline_and_selected_text(monkeypatch) -> None:
     assert all(item.license == source.license for item in dataset.sources)
     assert dataset.sources[-1].content_hash == sha256_bytes(b"%PDF-hefferon")
     assert validate_dataset(dataset) == []
+
+
+def test_hailperin_normalizes_metadata_pdf_outline_and_selected_text(monkeypatch) -> None:
+    source = open_textbook_source("hailperin-os-middleware-1.2")
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeHailperinReader)
+
+    dataset = normalize_open_textbook_response(
+        _hailperin_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].book_id == source.book_id
+    assert dataset.books[0].isbn_10 is None
+    assert dataset.books[0].isbn_13 is None
+    assert dataset.books[0].authors == ["Max Hailperin"]
+    assert [document.document_type for document in dataset.documents] == [
+        "description",
+        "preface",
+        "sample_chapter",
+    ]
+    assert len(dataset.toc) == 179
+    assert {level: sum(entry.level == level for entry in dataset.toc) for level in (1, 2, 3)} == {
+        1: 15,
+        2: 80,
+        3: 84,
+    }
+    assert [entry.title for entry in dataset.toc if entry.level == 1][:3] == [
+        "Preface",
+        "Introduction",
+        "Threads",
+    ]
+    assert [source_record.provider for source_record in dataset.sources] == [
+        "open_textbook_library",
+        "internet_archive",
+    ]
+    assert dataset.sources[0].license == "Attribution-ShareAlike"
+    assert dataset.sources[1].license == source.license
+    assert dataset.sources[1].content_hash == sha256_bytes(b"%PDF-hailperin")
+    assert validate_dataset(dataset) == []
+
+
+def test_hailperin_rejects_incomplete_pdf_outline(monkeypatch) -> None:
+    source = open_textbook_source("hailperin-os-middleware-1.2")
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.PdfReader",
+        lambda stream: _FakeHailperinReader(stream, incomplete_outline=True),
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="outline does not match review"):
+        normalize_open_textbook_response(
+            _hailperin_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+        )
+
+
+def test_hailperin_rejects_unreviewed_resolved_pdf() -> None:
+    source = open_textbook_source("hailperin-os-middleware-1.2")
+    payload = _hailperin_payload()
+    payload["documents"][0]["resolved_url"] = (
+        "https://dn721903.ca.archive.org/0/items/other/other.pdf"
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="unreviewed resource"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
 
 
 def test_pretext_normalizes_description_preface_previews_toc_and_provenance() -> None:

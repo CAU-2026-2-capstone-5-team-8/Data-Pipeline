@@ -34,7 +34,9 @@ One separate, reviewed document slice follows the official companion page's dire
 *Operating System Concepts, 7th Edition*, Appendix B, “The Mach System.” It preserves the exact
 identity page, linking TOC page, and Base64-encoded PDF in one raw artifact, then extracts the
 28-page appendix as an `other` document. It is not classified as a preview or sample chapter, and
-no license is inferred. Arbitrary PDF URLs and documents larger than 5 MiB are rejected.
+no license is inferred. Arbitrary PDF URLs and documents larger than 5 MiB are rejected. This
+optional slice is no longer present in the current ten-book result because the Hailperin slice
+below replaces that commercial-book candidate and all evidence scoped to it.
 
 The first open-textbook slice collects *Operating Systems: Three Easy Pieces*, version 1.10,
 from its University of Wisconsin author page. It replaces the evidence-empty 1974 Operating
@@ -83,6 +85,19 @@ author-written description, while the linked public HTML book supplies a complet
 states CC BY-NC 3.0 and the versioned online book states CC BY-NC-SA 4.0; those differing terms are
 preserved on their respective source records instead of being collapsed into one license.
 
+The following Operating Systems OER slice collects Max Hailperin's *Operating Systems and
+Middleware: Supporting Controlled Interaction*, Revised Edition 1.2. It replaces the remaining
+commercial candidate that had a TOC and supplemental appendix but no matching description,
+preface, introduction, or sample. A structured
+[Open Textbook Library record](https://open.umn.edu/opentextbooks/textbooks/operating-systems-and-middleware-supporting-controlled-interaction)
+supplies the reviewed identity and description and links the public complete PDF preserved by
+Internet Archive. The PDF supplies a 179-entry, three-level bookmark TOC, its preface, and chapter
+1 as sample text. The catalog's generic `Attribution-ShareAlike` value is retained on the catalog
+source, while the PDF's explicit Creative Commons Attribution-ShareAlike 3.0 Unported statement is
+retained separately. Redirects are limited to `archive.org` and its subdomains, and the final
+archive path, PDF identity, page count, license page, outline shape, and evidence ranges are
+validated before canonical output is written.
+
 Reviewed public catalog sources are available for *Operating Systems: Internals and Design
 Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
 pages expose each exact ISBN and edition, a description, and complete TOCs in ordinary HTML. The
@@ -103,30 +118,29 @@ current ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 5/5 | 4/5 | 2/5 | 2/5 | 1/5 |
+| Operating Systems | 5/5 | 5/5 | 5/5 | 3/5 | 3/5 | 0/5 |
 | Linear Algebra | 5/5 | 5/5 | 5/5 | 3/5 | 3/5 | 0/5 |
 
-All ten books now have TOCs, containing 938 canonical entries. The Open Library and eCampus TOCs
-retain their available parent-child hierarchy; the Wiley pages expose chapter and appendix
-headings only, so their 35 entries are represented truthfully as top-level items. OSTEP contributes
-five thematic roots and 57 numbered child chapters.
-The canonical dataset also contains one 72,711-character public supplemental appendix for one
-Operating Systems book. It is useful real book-text evidence for downstream feasibility testing,
-but it intentionally does not increase the preview/sample coverage count.
+All ten books now have TOCs, containing 1,091 canonical entries. The Open Library and eCampus TOCs
+retain their available parent-child hierarchy; the remaining Wiley page exposes headings only, so
+its nine entries are represented truthfully as top-level items. OSTEP contributes five thematic
+roots and 57 numbered child chapters.
 OSTEP adds a 27,155-character preface, a 47,725-character introduction, and a 25,160-character
 sample chapter. This demonstrates that the schema and raw-to-canonical path can carry usable public
 book text without source-specific logic downstream. Coverage remains incomplete for most of the
 commercial titles, so the full MVP definition of done has not yet been reached.
 Think OS adds a 1,694-character description, a 4,843-character preface, and a 10,538-character
-first chapter. Its HTML index contributes 11 chapter roots and 54 child sections. Hefferon adds an
-8,106-character preface and a 140,910-character first chapter, demonstrating the
+first chapter. Its HTML index contributes 11 chapter roots and 54 child sections. Hailperin adds a
+4,984-character description, a 19,244-character preface, and a 47,845-character first chapter. Its
+PDF bookmarks contribute 15 top-level, 80 second-level, and 84 third-level entries. Hefferon adds
+an 8,106-character preface and a 140,910-character first chapter, demonstrating the
 same public-text path for Linear Algebra. *Understanding Linear Algebra* adds an 8,902-character
 preface and five first-chapter preview pages containing 106,307 characters in total. Its PreTeXt
 navigation contributes 7 chapters, 38 second-level entries, and 177 third-level entries. The
 Nicholson slice adds a 725-character description, a 19,955-character preface, and a
 16,526-character first-section preview. Its twelve chapter pages contribute 12 chapter roots,
 88 second-level entries, and 67 exercise children. The complete canonical result contains 10
-books, 26 documents, 938 TOC entries, and 52 source records.
+books, 28 documents, 1,091 TOC entries, and 50 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -149,6 +163,7 @@ uv run data-pipeline collect-open-textbook --source hefferon-linear-algebra-4
 uv run data-pipeline collect-open-textbook --source understanding-linear-algebra-2022
 uv run data-pipeline collect-open-textbook --source think-os-0.7.4
 uv run data-pipeline collect-open-textbook --source nicholson-linear-algebra-2023
+uv run data-pipeline collect-open-textbook --source hailperin-os-middleware-1.2
 uv run data-pipeline report
 ```
 
@@ -168,9 +183,10 @@ entry count, and top-level TOC structure all match.
 TOC or PDF outline, public document identity, resource media types, and reviewed text markers.
 Source-specific size limits are enforced: 5 MiB for OSTEP resources, 10 MiB for the reviewed 7.63
 MB Hefferon PDF, 1 MiB per reviewed PreTeXt or Think OS HTML page, and 512 KiB per Nicholson HTML
-page. It removes the configured weak candidate and all records scoped to that book before merging
-the new book. Repeated runs retain five books per topic and update only the selected source
-snapshots.
+page. The Hailperin PDF is limited to 8 MiB and may follow redirects only within the reviewed
+Internet Archive host boundary. The command removes the configured weak candidate and all records
+scoped to that book before merging the new book. Repeated runs retain five books per topic and
+update only the selected source snapshots.
 
 Each raw artifact is immutable and saved under a timestamped, content-addressed path such as
 `data/raw/open_library/operating-systems/<timestamp>_<hash>.json`. The artifact records its

@@ -16,6 +16,7 @@ class OpenTextbookDocumentSpec:
     preface_text_markers: tuple[str, ...] = ()
     sample_text_markers: tuple[str, ...] = ()
     license: str | None = None
+    allowed_redirect_hosts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,8 @@ class OpenTextbookSourceSpec:
     preface_page_range: tuple[int, int] | None = None
     home_license_reference_url: str | None = None
     home_license: str | None = None
+    document_reference_url: str | None = None
+    sample_page_range: tuple[int, int] | None = None
 
 
 OPEN_TEXTBOOK_SOURCES = {
@@ -545,6 +548,61 @@ OPEN_TEXTBOOK_SOURCES = {
         license_reference_url="https://creativecommons.org/licenses/by-nc-sa/4.0",
         license=("Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License"),
         max_resource_bytes=512 * 1024,
+    ),
+    "hailperin-os-middleware-1.2": OpenTextbookSourceSpec(
+        slug="hailperin-os-middleware-1.2",
+        provider="open_textbook_library",
+        topic="operating-systems",
+        replaces_book_id="isbn13:9780471694663",
+        book_id="book_28fad378fb6e900626f2",
+        isbn_10=None,
+        isbn_13=None,
+        title="Operating Systems and Middleware: Supporting Controlled Interaction",
+        authors=("Max Hailperin",),
+        publisher="Max Hailperin",
+        published_year=2015,
+        version="Revised Edition 1.2",
+        home_url=(
+            "https://open.umn.edu/opentextbooks/textbooks/"
+            "operating-systems-and-middleware-supporting-controlled-interaction.html"
+        ),
+        documents=(
+            OpenTextbookDocumentSpec(
+                document_type="full_text",
+                external_id="internet-archive:osm-rev1.2",
+                url="https://archive.org/download/osm-rev1.2/osm-rev1.2.pdf",
+                expected_text_markers=(),
+                identity_text_markers=(
+                    "Operating Systems and Middleware: Supporting Controlled Interaction",
+                    "Max Hailperin",
+                    "Revised Edition 1.2",
+                    "July 11, 2015",
+                ),
+                preface_text_markers=(
+                    "Suppose you sit down at your computer",
+                    "Audience",
+                    "Features of the Text",
+                    "Acknowledgments",
+                ),
+                sample_text_markers=(
+                    "Chapter 1",
+                    "What Is an Operating System?",
+                    "What Is Middleware?",
+                    "Security",
+                ),
+                license=("Creative Commons Attribution-ShareAlike 3.0 Unported License"),
+                allowed_redirect_hosts=("archive.org",),
+            ),
+        ),
+        source_format="hailperin_pdf_outline",
+        license_reference_url="http://creativecommons.org/licenses/by-sa/3.0/",
+        license="Creative Commons Attribution-ShareAlike 3.0 Unported License",
+        max_resource_bytes=8 * 1024 * 1024,
+        expected_page_count=559,
+        preface_page_range=(10, 20),
+        home_license="Attribution-ShareAlike",
+        document_reference_url="https://open.umn.edu/opentextbooks/formats/33",
+        sample_page_range=(20, 40),
     ),
 }
 
