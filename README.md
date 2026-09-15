@@ -106,6 +106,17 @@ retained separately. Redirects are limited to `archive.org` and its subdomains, 
 archive path, PDF identity, page count, license page, outline shape, and evidence ranges are
 validated before canonical output is written.
 
+The next Operating Systems slice collects MIT PDOS's
+[xv6 teaching-operating-system text](https://pdos.csail.mit.edu/6.1810/2025/xv6.html), RISC-V
+rev5. It replaces the evidence-poor *Advanced Concepts in Operating Systems* candidate. The
+official MIT page directly links the versioned 116-page PDF and the authors' source repository.
+The PDF supplies a 99-entry, two-level bookmark TOC, the foreword, and Chapter 1 as sample text.
+The linked source repository's LICENSE permission notice is preserved verbatim in the raw
+artifact and summarized in `rights_note`; because it does not name a standard license identifier,
+the book PDF's canonical `license` remains `null`. The separate CC BY 3.0 US link in the MIT
+course-page footer is recorded only on that HTML source instead of being silently applied to the
+book.
+
 Reviewed public catalog sources are available for *Operating Systems: Internals and Design
 Principles, 4th Edition* and *Advanced Concepts in Operating Systems, 1st Edition*. The eCampus
 pages expose each exact ISBN and edition, a description, and complete TOCs in ordinary HTML. The
@@ -126,17 +137,17 @@ current ten books:
 
 | Topic | Metadata | TOC | Description | Preface / Introduction | Preview / Sample | Other document |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Operating Systems | 5/5 | 5/5 | 5/5 | 3/5 | 3/5 | 0/5 |
+| Operating Systems | 5/5 | 5/5 | 5/5 | 4/5 | 4/5 | 0/5 |
 | Linear Algebra | 5/5 | 5/5 | 5/5 | 3/5 | 4/5 | 0/5 |
 
-All ten books now have TOCs, containing 1,091 canonical entries. The Open Library and eCampus TOCs
+All ten books now have TOCs, containing 1,163 canonical entries. The Open Library and eCampus TOCs
 retain their available parent-child hierarchy; the remaining Wiley page exposes headings only, so
 its nine entries are represented truthfully as top-level items. OSTEP contributes five thematic
 roots and 57 numbered child chapters.
 OSTEP adds a 27,155-character preface, a 47,725-character introduction, and a 25,160-character
 sample chapter. This demonstrates that the schema and raw-to-canonical path can carry usable public
-book text without source-specific logic downstream. Coverage remains incomplete for most of the
-commercial titles, so the full MVP definition of done has not yet been reached.
+book text without source-specific logic downstream. The core MVP definition of done is met, while
+optional evidence coverage remains incomplete for two commercial titles.
 Think OS adds a 1,694-character description, a 4,843-character preface, and a 10,538-character
 first chapter. Its HTML index contributes 11 chapter roots and 54 child sections. Hailperin adds a
 4,984-character description, a 19,244-character preface, and a 47,845-character first chapter. Its
@@ -148,8 +159,10 @@ navigation contributes 7 chapters, 38 second-level entries, and 177 third-level 
 Nicholson slice adds a 725-character description, a 19,955-character preface, and a
 16,526-character first-section preview. Its twelve chapter pages contribute 12 chapter roots,
 88 second-level entries, and 67 exercise children. The Wiley Anton slice adds a 195,549-character
-Chapter 1 sample spanning all nine sections shown by the exact-edition TOC. The complete canonical
-result contains 10 books, 29 documents, 1,091 TOC entries, and 51 source records.
+Chapter 1 sample spanning all nine sections shown by the exact-edition TOC. The xv6 slice adds a
+135-character description, a 2,066-character foreword, a 28,562-character Chapter 1 sample, and
+99 bookmark TOC entries. The complete canonical result contains 10 books, 31 documents, 1,163 TOC
+entries, and 52 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
@@ -165,13 +178,13 @@ uv run data-pipeline collect --topic linear-algebra --limit 5
 uv run data-pipeline collect-publisher --source wiley-ela10
 uv run data-pipeline collect-publisher-document --source wiley-ela10-chapter-1
 uv run data-pipeline collect-public-page --source ecampus-stallings-os4
-uv run data-pipeline collect-public-page --source ecampus-singhal-os1
 uv run data-pipeline collect-open-textbook --source ostep-1.10
 uv run data-pipeline collect-open-textbook --source hefferon-linear-algebra-4
 uv run data-pipeline collect-open-textbook --source understanding-linear-algebra-2022
 uv run data-pipeline collect-open-textbook --source think-os-0.7.4
 uv run data-pipeline collect-open-textbook --source nicholson-linear-algebra-2023
 uv run data-pipeline collect-open-textbook --source hailperin-os-middleware-1.2
+uv run data-pipeline collect-open-textbook --source xv6-riscv-rev5
 uv run data-pipeline build-manifest --manifest configs/mvp.json --data-dir data
 uv run data-pipeline report
 ```
@@ -199,9 +212,10 @@ TOC or PDF outline, public document identity, resource media types, and reviewed
 Source-specific size limits are enforced: 5 MiB for OSTEP resources, 10 MiB for the reviewed 7.63
 MB Hefferon PDF, 1 MiB per reviewed PreTeXt or Think OS HTML page, and 512 KiB per Nicholson HTML
 page. The Hailperin PDF is limited to 8 MiB and may follow redirects only within the reviewed
-Internet Archive host boundary. The command removes the configured weak candidate and all records
-scoped to that book before merging the new book. Repeated runs retain five books per topic and
-update only the selected source snapshots.
+Internet Archive host boundary. The xv6 PDF is limited to 2 MiB and must not redirect away from
+its reviewed MIT URL. The command removes the configured weak candidate and all records scoped to
+that book before merging the new book. Repeated runs retain five books per topic and update only
+the selected source snapshots.
 
 [`configs/mvp.json`](configs/mvp.json) declares the twelve raw request identities used by the
 current milestone and the exact ten canonical book IDs expected after replacements. The
@@ -236,8 +250,8 @@ with the same deterministic ID stop the build instead of being silently selected
 
 `report` and `build-manifest` print both aggregate topic coverage and one row per book. The
 per-book section explicitly lists missing TOC, description, preface/introduction, and
-preview/sample evidence. In the current result, three commercial books still lack both
-preface/introduction and preview/sample evidence, while the Anton book now has a sample chapter
+preview/sample evidence. In the current result, two commercial books still lack both
+preface/introduction and preview/sample evidence, while the Anton book has a sample chapter
 but no public preface/introduction. Optional gaps do not invalidate otherwise sound metadata.
 
 Supported MVP topics are `operating-systems` and `linear-algebra`. Generated raw and processed

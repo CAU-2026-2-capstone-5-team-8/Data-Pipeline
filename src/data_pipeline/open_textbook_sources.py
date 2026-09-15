@@ -39,6 +39,7 @@ class OpenTextbookSourceSpec:
     documents: tuple[OpenTextbookDocumentSpec, ...]
     source_format: str = "ostep_chapter_pdfs"
     license_url: str | None = None
+    license_media_type: str = "text/html"
     license_reference_url: str | None = None
     license: str | None = None
     max_resource_bytes: int = 5 * 1024 * 1024
@@ -89,6 +90,57 @@ OPEN_TEXTBOOK_SOURCES = {
                 expected_text_markers=("The Abstraction", "The Process", "virtualizing the CPU"),
             ),
         ),
+    ),
+    "xv6-riscv-rev5": OpenTextbookSourceSpec(
+        slug="xv6-riscv-rev5",
+        provider="mit_pdos",
+        topic="operating-systems",
+        replaces_book_id="isbn13:9780070575721",
+        book_id="book_21ac29d979effd89fad2",
+        isbn_10=None,
+        isbn_13=None,
+        title="xv6: a simple, Unix-like teaching operating system",
+        authors=("Russ Cox", "Frans Kaashoek", "Robert Morris"),
+        publisher=None,
+        published_year=2025,
+        version="RISC-V rev5",
+        home_url="https://pdos.csail.mit.edu/6.1810/2025/xv6.html",
+        documents=(
+            OpenTextbookDocumentSpec(
+                document_type="full_text",
+                external_id="mit-pdos:xv6-riscv-rev5",
+                url=("https://pdos.csail.mit.edu/6.1810/2025/xv6/book-riscv-rev5.pdf"),
+                expected_text_markers=(),
+                identity_text_markers=(
+                    "xv6: a simple, Unix-like teaching operating system",
+                    "Russ Cox",
+                    "Frans Kaashoek",
+                    "Robert Morris",
+                    "September 2, 2025",
+                ),
+                preface_text_markers=(
+                    "Foreword and acknowledgments",
+                    "draft text intended for a class on operating systems",
+                    "multi-core RISC-V",
+                ),
+                sample_text_markers=(
+                    "Chapter 1",
+                    "Operating system interfaces",
+                    "processes, memory, file descriptors, pipes",
+                ),
+            ),
+        ),
+        source_format="xv6_pdf_outline",
+        license_url=("https://raw.githubusercontent.com/mit-pdos/xv6-riscv-book/xv6-riscv/LICENSE"),
+        license_media_type="text/plain",
+        license_reference_url="https://github.com/mit-pdos/xv6-riscv-book",
+        license=None,
+        max_resource_bytes=2 * 1024 * 1024,
+        expected_page_count=116,
+        preface_page_range=(6, 8),
+        home_license_reference_url="https://creativecommons.org/licenses/by/3.0/us/",
+        home_license="Creative Commons Attribution 3.0 United States License",
+        sample_page_range=(8, 20),
     ),
     "hefferon-linear-algebra-4": OpenTextbookSourceSpec(
         slug="hefferon-linear-algebra-4",

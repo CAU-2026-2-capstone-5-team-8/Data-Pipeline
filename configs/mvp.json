@@ -30,12 +30,6 @@
       "source": "ecampus-stallings-os4"
     },
     {
-      "provider": "public-book-page",
-      "topic": "operating-systems",
-      "requested_limit": 1,
-      "source": "ecampus-singhal-os1"
-    },
-    {
       "provider": "open-textbook",
       "topic": "operating-systems",
       "requested_limit": 1,
@@ -70,11 +64,16 @@
       "topic": "operating-systems",
       "requested_limit": 1,
       "source": "hailperin-os-middleware-1.2"
+    },
+    {
+      "provider": "open-textbook",
+      "topic": "operating-systems",
+      "requested_limit": 1,
+      "source": "xv6-riscv-rev5"
     }
   ],
   "expected_book_ids": [
     "isbn13:9780130319999",
-    "isbn13:9780070575721",
     "isbn13:9780470458211",
     "isbn13:9780980232714",
     "isbn13:9781985086593",
@@ -82,6 +81,7 @@
     "book_a1364d52179f6fca0403",
     "book_7d22aef622717f0ad24b",
     "book_d061d898abc6ada0c56b",
-    "book_28fad378fb6e900626f2"
+    "book_28fad378fb6e900626f2",
+    "book_21ac29d979effd89fad2"
   ]
 }

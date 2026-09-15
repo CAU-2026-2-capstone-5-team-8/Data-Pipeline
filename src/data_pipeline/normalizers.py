@@ -2346,6 +2346,281 @@ def _hefferon_description(tree: HTMLParser) -> str:
     raise InvalidProviderResponse("Hefferon home page is missing its reviewed description")
 
 
+def _xv6_description(home_html: str) -> str:
+    """Extract only the official introduction block from the MIT xv6 page."""
+    start_marker = "<h2>Introduction</h2>"
+    end_marker = "<h2>Xv6 sources and text</h2>"
+    start = home_html.find(start_marker)
+    end = home_html.find(end_marker, start + len(start_marker))
+    if start < 0 or end < 0:
+        raise InvalidProviderResponse("xv6 home page is missing its reviewed introduction")
+    fragment = home_html[start + len(start_marker) : end]
+    description = " ".join(HTMLParser(fragment).root.text(separator=" ", strip=True).split())
+    if not description:
+        raise InvalidProviderResponse("xv6 home page introduction is empty")
+    return description
+
+
+def _normalize_xv6_response(
+    response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize MIT's reviewed rev5 xv6 page, source license, and public PDF."""
+    if (
+        source_spec.license_url is None
+        or source_spec.license_reference_url is None
+        or source_spec.home_license_reference_url is None
+        or source_spec.home_license is None
+        or source_spec.version is None
+        or source_spec.expected_page_count is None
+        or source_spec.preface_page_range is None
+        or source_spec.sample_page_range is None
+    ):
+        raise InvalidProviderResponse("xv6 allowlist provenance is incomplete")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("xv6 home URL does not match allowlist")
+    if response.get("license_url") != source_spec.license_url:
+        raise InvalidProviderResponse("xv6 license URL does not match allowlist")
+    home_html = response.get("home_html")
+    license_text = response.get("license_html")
+    raw_documents = response.get("documents")
+    if (
+        not isinstance(home_html, str)
+        or not isinstance(license_text, str)
+        or not isinstance(raw_documents, list)
+    ):
+        raise InvalidProviderResponse("xv6 response has invalid content fields")
+    if len(raw_documents) != 1 or len(source_spec.documents) != 1:
+        raise InvalidProviderResponse("xv6 response must contain one reviewed PDF")
+
+    home_tree = HTMLParser(home_html)
+    normalized_home = normalize_bibliographic_text(home_tree.root.text(separator=" ", strip=True))
+    home_markers = (source_spec.title, "teaching operating system", "RISC-V")
+    if any(normalize_bibliographic_text(marker) not in normalized_home for marker in home_markers):
+        raise InvalidProviderResponse("xv6 home page does not match the reviewed book")
+    home_links = _resolved_links(home_tree, source_spec.home_url)
+    document_spec = source_spec.documents[0]
+    required_links = {
+        document_spec.url,
+        source_spec.license_reference_url,
+        source_spec.home_license_reference_url,
+    }
+    if not required_links.issubset(home_links):
+        raise InvalidProviderResponse("xv6 home page is missing a reviewed evidence link")
+    description = _xv6_description(home_html)
+    normalized_description = normalize_bibliographic_text(description)
+    if any(
+        normalize_bibliographic_text(marker) not in normalized_description
+        for marker in ("teaching operating system developed", "ported xv6 to RISC-V")
+    ):
+        raise InvalidProviderResponse("xv6 description does not match review")
+
+    normalized_license = normalize_bibliographic_text(license_text)
+    license_markers = (
+        "The xv6 book sources are",
+        "Russ Cox, Frans Kaashoek, and Robert Morris",
+        "Massachusetts Institute of Technology",
+        "Permission is hereby granted, free of charge",
+        "substantial portions of the Book",
+    )
+    if any(
+        normalize_bibliographic_text(marker) not in normalized_license for marker in license_markers
+    ):
+        raise InvalidProviderResponse("xv6 source license does not match review")
+
+    raw_document = raw_documents[0]
+    if not isinstance(raw_document, dict) or raw_document.get("url") != document_spec.url:
+        raise InvalidProviderResponse("xv6 PDF URL does not match allowlist")
+    if raw_document.get("resolved_url") != document_spec.url:
+        raise InvalidProviderResponse("xv6 PDF resolved to an unreviewed resource")
+    if raw_document.get("media_type") != "application/pdf":
+        raise InvalidProviderResponse("xv6 PDF has an invalid media type")
+    encoded_content = raw_document.get("content_base64")
+    if not isinstance(encoded_content, str):
+        raise InvalidProviderResponse("xv6 PDF is missing base64 content")
+    try:
+        content = base64.b64decode(encoded_content, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidProviderResponse("xv6 PDF contains invalid base64") from exc
+    if not content.startswith(b"%PDF-"):
+        raise InvalidProviderResponse("xv6 document content is not a PDF")
+    if len(content) > source_spec.max_resource_bytes:
+        raise InvalidProviderResponse("xv6 PDF exceeds its reviewed size limit")
+
+    pdf_source_id = stable_id(
+        "source", source_spec.provider, document_spec.url, source_spec.book_id
+    )
+    expected_roots = [
+        "Operating system interfaces",
+        "Operating system organization",
+        "Page tables",
+        "Traps and system calls",
+        "Page faults",
+        "Interrupts and device drivers",
+        "Locking",
+        "Scheduling",
+        "Sleep and Wakeup",
+        "File system",
+        "Concurrency revisited",
+        "Summary",
+    ]
+    expected_root_pages = [8, 20, 30, 42, 50, 56, 62, 74, 80, 88, 104, 108]
+    try:
+        reader = PdfReader(BytesIO(content))
+        if len(reader.pages) != source_spec.expected_page_count:
+            raise InvalidProviderResponse("xv6 PDF page count does not match review")
+        identity = _reader_page_text(reader, 0, 1, "identity page")
+        normalized_identity = normalize_bibliographic_text(identity)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_identity
+            for marker in document_spec.identity_text_markers
+        ):
+            raise InvalidProviderResponse("xv6 PDF identity does not match review")
+        metadata = reader.metadata or {}
+        if normalize_bibliographic_text(
+            str(metadata.get("/Title", ""))
+        ) != normalize_bibliographic_text(source_spec.title) or any(
+            normalize_bibliographic_text(author)
+            not in normalize_bibliographic_text(str(metadata.get("/Author", "")))
+            for author in source_spec.authors
+        ):
+            raise InvalidProviderResponse("xv6 PDF metadata does not match review")
+
+        toc = _pdf_outline_toc(reader, source_spec.book_id, pdf_source_id)
+        roots = [entry for entry in toc if entry.parent_entry_id is None]
+        level_counts = {level: sum(entry.level == level for entry in toc) for level in (1, 2, 3)}
+        if (
+            len(toc) != 99
+            or [entry.title for entry in roots] != expected_roots
+            or level_counts != {1: 12, 2: 87, 3: 0}
+            or any(entry.level > 2 for entry in toc)
+        ):
+            raise InvalidProviderResponse("xv6 PDF outline does not match review")
+        root_destinations = [item for item in reader.outline if not isinstance(item, list)]
+        root_pages = [reader.get_destination_page_number(item) for item in root_destinations]
+        if root_pages != expected_root_pages:
+            raise InvalidProviderResponse("xv6 PDF chapter destinations do not match review")
+        if source_spec.preface_page_range[1] != expected_root_pages[
+            0
+        ] or source_spec.sample_page_range != (expected_root_pages[0], expected_root_pages[1]):
+            raise InvalidProviderResponse("xv6 evidence ranges do not match the PDF outline")
+        preface = _reader_page_text(
+            reader, *source_spec.preface_page_range, document_name="preface"
+        )
+        sample = _reader_page_text(
+            reader, *source_spec.sample_page_range, document_name="sample chapter"
+        )
+    except InvalidProviderResponse:
+        raise
+    except (PdfReadError, ValueError) as exc:
+        raise InvalidProviderResponse(f"xv6 PDF could not be parsed: {exc}") from exc
+
+    for document_name, text, markers in (
+        ("preface", preface, document_spec.preface_text_markers),
+        ("sample chapter", sample, document_spec.sample_text_markers),
+    ):
+        normalized_text = normalize_bibliographic_text(text)
+        if any(normalize_bibliographic_text(marker) not in normalized_text for marker in markers):
+            raise InvalidProviderResponse(f"xv6 {document_name} text does not match review")
+
+    expected_book_id = stable_id(
+        "book",
+        normalize_bibliographic_text(source_spec.title),
+        normalize_bibliographic_text(source_spec.authors[0]),
+    )
+    if source_spec.book_id != expected_book_id:
+        raise InvalidProviderResponse("xv6 fallback book ID is not deterministic")
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    license_source_id = stable_id("source", "github", source_spec.license_url, source_spec.book_id)
+    home_rights = (
+        "The MIT course page footer links CC BY 3.0 US for the page; the book source "
+        "repository carries a separate permission notice."
+    )
+    book_rights = (
+        "The official MIT PDOS page links this versioned PDF and the xv6 book source "
+        "repository, whose preserved LICENSE grants permissions for the Book without naming "
+        "a standard license identifier."
+    )
+    sources = [
+        Source(
+            source_id=home_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="author_page",
+            url=source_spec.home_url,
+            external_id=f"{source_spec.slug}:home",
+            retrieved_at=retrieved_at,
+            license=source_spec.home_license,
+            rights_note=home_rights,
+            content_hash=sha256_text(home_html),
+        ),
+        Source(
+            source_id=license_source_id,
+            book_id=source_spec.book_id,
+            provider="github",
+            source_type="open_textbook",
+            url=source_spec.license_url,
+            external_id="mit-pdos:xv6-riscv-book:license",
+            retrieved_at=retrieved_at,
+            license=None,
+            rights_note=book_rights,
+            content_hash=sha256_text(license_text),
+        ),
+        Source(
+            source_id=pdf_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="open_textbook",
+            url=document_spec.url,
+            external_id=document_spec.external_id,
+            retrieved_at=retrieved_at,
+            license=None,
+            rights_note=book_rights,
+            content_hash=sha256_bytes(content),
+        ),
+    ]
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", home_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=home_source_id,
+            content_hash=sha256_text(description),
+        ),
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "preface", pdf_source_id),
+            book_id=source_spec.book_id,
+            document_type="preface",
+            text=preface,
+            source_id=pdf_source_id,
+            content_hash=sha256_text(preface),
+        ),
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "sample_chapter", pdf_source_id),
+            book_id=source_spec.book_id,
+            document_type="sample_chapter",
+            text=sample,
+            source_id=pdf_source_id,
+            content_hash=sha256_text(sample),
+        ),
+    ]
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=None,
+        isbn_13=None,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=None,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[source_spec.topic],
+    )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
+
+
 def _normalize_hefferon_response(
     response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -2596,6 +2871,8 @@ def normalize_open_textbook_response(
         return _normalize_hailperin_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "hefferon_pdf_outline":
         return _normalize_hefferon_response(response, source_spec, retrieved_at)
+    if source_spec.source_format == "xv6_pdf_outline":
+        return _normalize_xv6_response(response, source_spec, retrieved_at)
     if source_spec.source_format != "ostep_chapter_pdfs":
         raise InvalidProviderResponse("open textbook source format is unsupported")
     if response.get("home_url") != source_spec.home_url:

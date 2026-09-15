@@ -150,6 +150,61 @@ class _FakeHailperinReader:
         return destination.page_index
 
 
+class _FakeXv6Reader:
+    def __init__(self, _stream, page_count: int = 116, incomplete_outline: bool = False) -> None:
+        self.pages = [_FakePage() for _ in range(page_count)]
+        if page_count >= 21:
+            self.pages[0] = _FakePage(
+                "xv6: a simple, Unix-like teaching operating system Russ Cox "
+                "Frans Kaashoek Robert Morris September 2, 2025"
+            )
+            self.pages[6] = _FakePage(
+                "Foreword and acknowledgments draft text intended for a class on operating "
+                "systems multi-core RISC-V"
+            )
+            self.pages[8] = _FakePage(
+                "Chapter 1 Operating system interfaces processes, memory, file descriptors, "
+                "pipes, and a file system"
+            )
+        self.metadata = {
+            "/Title": "xv6: a simple, Unix-like teaching operating system",
+            "/Author": "Russ Cox, Frans Kaashoek, Robert Morris",
+        }
+        root_titles = (
+            "Operating system interfaces",
+            "Operating system organization",
+            "Page tables",
+            "Traps and system calls",
+            "Page faults",
+            "Interrupts and device drivers",
+            "Locking",
+            "Scheduling",
+            "Sleep and Wakeup",
+            "File system",
+            "Concurrency revisited",
+            "Summary",
+        )
+        root_pages = (8, 20, 30, 42, 50, 56, 62, 74, 80, 88, 104, 108)
+        child_counts = (6, 9, 9, 7, 6, 6, 9, 7, 7, 16, 5, 0)
+        self.outline = []
+        for root_index, (title, page_index) in enumerate(zip(root_titles, root_pages, strict=True)):
+            self.outline.append(_FakeDestination(title, page_index))
+            child_count = child_counts[root_index]
+            if incomplete_outline and root_index == 0:
+                child_count -= 1
+            if child_count:
+                self.outline.append(
+                    [
+                        _FakeDestination(f"{title} section {index + 1}", page_index)
+                        for index in range(child_count)
+                    ]
+                )
+
+    @staticmethod
+    def get_destination_page_number(destination: _FakeDestination) -> int:
+        return destination.page_index
+
+
 def _home_html() -> str:
     source = open_textbook_source("ostep-1.10")
     heading_cells = "".join(
@@ -224,6 +279,39 @@ def _hefferon_payload() -> dict:
                 "url": source.documents[0].url,
                 "media_type": "application/pdf",
                 "content_base64": base64.b64encode(b"%PDF-hefferon").decode(),
+            }
+        ],
+    }
+
+
+def _xv6_payload() -> dict:
+    source = open_textbook_source("xv6-riscv-rev5")
+    document = source.documents[0]
+    return {
+        "source_slug": source.slug,
+        "home_url": source.home_url,
+        "home_html": (
+            "<html><body><h1>Xv6, a simple Unix-like teaching operating system</h1>"
+            "<h2>Introduction</h2>Xv6 is a teaching operating system developed in 2006, "
+            "which we ported xv6 to RISC-V."
+            "<h2>Xv6 sources and text</h2>"
+            f'<a href="{document.url}">xv6 book</a>'
+            f'<a href="{source.license_reference_url}">book sources</a>'
+            f'<a href="{source.home_license_reference_url}">Creative Commons</a>'
+            "</body></html>"
+        ),
+        "license_url": source.license_url,
+        "license_html": (
+            "The xv6 book sources are: Copyright Russ Cox, Frans Kaashoek, and Robert Morris, "
+            "Massachusetts Institute of Technology. Permission is hereby granted, free of "
+            "charge, for copies or substantial portions of the Book."
+        ),
+        "documents": [
+            {
+                "url": document.url,
+                "resolved_url": document.url,
+                "media_type": "application/pdf",
+                "content_base64": base64.b64encode(b"%PDF-xv6").decode(),
             }
         ],
     }
@@ -700,6 +788,41 @@ def test_hefferon_collector_preserves_home_license_and_pdf() -> None:
     assert len(payload["documents"]) == 1
 
 
+def test_xv6_collector_preserves_plain_text_license_and_pdf() -> None:
+    source = open_textbook_source("xv6-riscv-rev5")
+    requested_urls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == source.license_url:
+            return httpx.Response(
+                200,
+                text="The xv6 book sources are licensed here.",
+                headers={"content-type": "text/plain; charset=utf-8"},
+                request=request,
+            )
+        if str(request.url) == source.documents[0].url:
+            return httpx.Response(
+                200,
+                content=b"%PDF-xv6",
+                headers={"content-type": "application/pdf"},
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            text="<html><body>MIT PDOS evidence</body></html>",
+            headers={"content-type": "text/html; charset=utf-8"},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = OpenTextbookCollector(client=client).fetch(source.slug)
+
+    assert requested_urls == [source.home_url, source.license_url, source.documents[0].url]
+    assert payload["license_html"] == "The xv6 book sources are licensed here."
+    assert payload["documents"][0]["resolved_url"] == source.documents[0].url
+
+
 def test_hailperin_collector_preserves_approved_archive_redirect() -> None:
     source = open_textbook_source("hailperin-os-middleware-1.2")
     document = source.documents[0]
@@ -864,6 +987,66 @@ def test_hefferon_normalizes_pdf_outline_and_selected_text(monkeypatch) -> None:
     assert all(item.license == source.license for item in dataset.sources)
     assert dataset.sources[-1].content_hash == sha256_bytes(b"%PDF-hefferon")
     assert validate_dataset(dataset) == []
+
+
+def test_xv6_normalizes_pdf_outline_and_selected_text(monkeypatch) -> None:
+    source = open_textbook_source("xv6-riscv-rev5")
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeXv6Reader)
+
+    dataset = normalize_open_textbook_response(
+        _xv6_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].book_id == source.book_id
+    assert dataset.books[0].authors == ["Russ Cox", "Frans Kaashoek", "Robert Morris"]
+    assert dataset.books[0].published_year == 2025
+    assert [document.document_type for document in dataset.documents] == [
+        "description",
+        "preface",
+        "sample_chapter",
+    ]
+    assert len(dataset.toc) == 99
+    assert {level: sum(entry.level == level for entry in dataset.toc) for level in (1, 2)} == {
+        1: 12,
+        2: 87,
+    }
+    assert [entry.title for entry in dataset.toc if entry.level == 1][:3] == [
+        "Operating system interfaces",
+        "Operating system organization",
+        "Page tables",
+    ]
+    assert [source_record.provider for source_record in dataset.sources] == [
+        "mit_pdos",
+        "github",
+        "mit_pdos",
+    ]
+    assert dataset.sources[0].license == source.home_license
+    assert dataset.sources[1].license is None
+    assert dataset.sources[2].content_hash == sha256_bytes(b"%PDF-xv6")
+    assert validate_dataset(dataset) == []
+
+
+def test_xv6_rejects_incomplete_pdf_outline(monkeypatch) -> None:
+    source = open_textbook_source("xv6-riscv-rev5")
+    monkeypatch.setattr(
+        "data_pipeline.normalizers.PdfReader",
+        lambda stream: _FakeXv6Reader(stream, incomplete_outline=True),
+    )
+
+    with pytest.raises(InvalidProviderResponse, match="outline does not match review"):
+        normalize_open_textbook_response(
+            _xv6_payload(), topic=source.topic, retrieved_at=RETRIEVED_AT
+        )
+
+
+def test_xv6_rejects_unverified_book_license(monkeypatch) -> None:
+    source = open_textbook_source("xv6-riscv-rev5")
+    payload = _xv6_payload()
+    payload["license_html"] = "Unrelated license"
+    monkeypatch.setattr("data_pipeline.normalizers.PdfReader", _FakeXv6Reader)
+
+    with pytest.raises(InvalidProviderResponse, match="source license"):
+        normalize_open_textbook_response(payload, topic=source.topic, retrieved_at=RETRIEVED_AT)
 
 
 def test_hailperin_normalizes_metadata_pdf_outline_and_selected_text(monkeypatch) -> None:
