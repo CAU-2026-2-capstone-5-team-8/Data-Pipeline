@@ -166,6 +166,104 @@ entries, and 52 source records.
 One work-level description was intentionally excluded because it explicitly described a different
 edition than the selected ISBN; the conflicting response remains available in the raw artifact.
 
+## Second Milestone: Scale Pilot
+
+The curated ten-book result above remains the regression/golden dataset in
+[`configs/mvp.json`](configs/mvp.json). The separate
+[`configs/experiments/scale-50.json`](configs/experiments/scale-50.json) experiment fixes the exact
+identities selected for a generic 25+25-book run. It does not invoke any publisher, public-page,
+publisher-document, or open-textbook allowlist. Those collectors remain reviewed, exact-edition
+paths; their safety boundary was not relaxed to improve scale coverage.
+
+The reproducible scale workflow is:
+
+```bash
+uv run data-pipeline collect \
+  --topic operating-systems --limit 25 --provider open-library \
+  --data-dir data/experiments/scale-50
+uv run data-pipeline collect \
+  --topic linear-algebra --limit 25 --provider open-library \
+  --data-dir data/experiments/scale-50
+uv run data-pipeline build-manifest \
+  --manifest configs/experiments/scale-50.json \
+  --data-dir data/experiments/scale-50
+uv run data-pipeline report-scale \
+  --manifest configs/experiments/scale-50.json \
+  --data-dir data/experiments/scale-50
+```
+
+`report-scale` selects the manifest's two immutable raw artifacts, performs two independent
+offline normalizations, compares all four canonical JSONL files byte for byte, and writes:
+
+```text
+data/experiments/scale-50/reports/scale-report.json
+data/experiments/scale-50/reports/scale-audit.csv
+```
+
+The JSON contains discovery, normalization, per-topic and per-book coverage, classified missing
+evidence, integrity counters, build timing, and artifact sizes. The CSV includes identity,
+edition/year, evidence, sources, prose size, TOC size, automated warnings, and intentionally blank
+`identity_ok`, `topic_relevant`, `toc_matches_book`, `prose_matches_book`, `edition_ok`, and `notes`
+columns for human review. Generated raw, canonical, report, and audit files remain outside Git.
+
+### 2026-09-16 real-data result
+
+Open Library returned 100 search candidates per topic. Of 200 candidates, 198 were structurally
+normalizable, one repeated a canonical identity, and 197 unique normalized candidates remained in
+the pool. The manifest-selected canonical output contains exactly 25 books per topic.
+
+| Discovery / normalization metric | Result |
+| --- | ---: |
+| Candidates returned | 200 |
+| Requested / selected / normalized books | 50 / 50 / 50 |
+| Provider discovery | Open Library 200 |
+| ISBN-13 available | 46/50 |
+| ISBN-10 available | 46/50 |
+| Deterministic fallback IDs | 4/50 |
+| Duplicate candidates | 1 |
+| Deduplicated selected books | 50 |
+| Edition-mismatched work descriptions rejected | 2 |
+| Candidate normalization failures | 2 |
+| Detail-fetch rate-limit/network/HTTP failures | 0 |
+
+| Topic | Metadata | Description | TOC | Preface | Introduction | Preview | Sample | Other prose |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Operating Systems | 25/25 | 7/25 | 2/25 | 0/25 | 0/25 | 0/25 | 0/25 | 0/25 |
+| Linear Algebra | 25/25 | 5/25 | 2/25 | 0/25 | 0/25 | 0/25 | 0/25 | 0/25 |
+| Total | 50/50 | 12/50 | 4/50 | 0/50 | 0/50 | 0/50 | 0/50 | 0/50 |
+
+The canonical result contains 13 description documents with 9,753 prose characters and 177 TOC
+entries. Operating Systems contributes 8 documents, 7,342 prose characters, and 40 TOC entries;
+Linear Algebra contributes 5 documents, 2,411 prose characters, and 137 TOC entries. One book has
+two distinct descriptions, hence 13 documents across 12 books.
+
+All integrity counters are zero: broken cross-record references, unresolved duplicate IDs,
+invalid TOC parents, missing provenance, and validation errors. Two offline builds from the same
+raw manifest were byte-identical. The two raw files total 443,536 bytes; the four canonical files
+total 95,655 bytes. The two offline builds took about 0.015 seconds in this environment. Each
+network topic run took about 31 seconds, dominated by the bounded edition/work detail requests.
+
+Scale exposed quality limits that the curated ten-book result could not show:
+
+- title-only metadata discovery admits likely off-topic meanings, including *Robot Operating
+  System*, *Power System Operation*, *Computer Aided Power System Operation and Analysis*, and
+  *The Operating System*; these remain in the golden scale selection so `topic_relevant` can be
+  audited rather than silently asserted;
+- two candidates outside the selected 50 were rejected because Open Library aggregated 11–12
+  authors, and one duplicate candidate was observed;
+- two selected work descriptions explicitly named a different edition and were correctly omitted;
+- generic Open Library metadata is reliable enough to produce 50 valid book records, but is not a
+  sufficient generic source for broad TOC or public-prose coverage;
+- book-specific allowlisting is the main reason the curated ten-book evidence is much richer, but
+  extending that mechanism one ISBN at a time would be the wrong scaling strategy.
+
+Before moving to 100–200 books, metadata discovery needs a generic relevance gate that uses
+provider subjects/classifications and an auditable edition resolver. A second generic source is
+also needed for TOCs and legally public prose, with rate-limit and failure telemetry preserved in
+raw artifacts. The current canonical schema, immutable raw storage, deterministic identifiers,
+manifest build, validation, deduplication checks, audit format, and offline reporting can already
+scale without source-specific downstream knowledge.
+
 ## Setup and commands
 
 Python 3.12 or later and [uv](https://docs.astral.sh/uv/) are required.

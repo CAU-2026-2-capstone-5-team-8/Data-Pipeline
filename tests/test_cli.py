@@ -85,6 +85,14 @@ def test_build_rejects_publisher_limit_other_than_one(tmp_path) -> None:
 
 def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None:
     class FakeOpenLibraryCollector:
+        detail_failures = [
+            {
+                "stage": "work_detail",
+                "external_id": "/works/OL2W",
+                "reason": "network_failure",
+            }
+        ]
+
         def __enter__(self):
             return self
 
@@ -114,6 +122,7 @@ def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None
     )
 
     assert payload["work_details"]["/works/OL1W"]["description"] == "Public description"
+    assert payload["collection_failures"] == FakeOpenLibraryCollector.detail_failures
 
 
 def test_collect_publisher_merges_exact_book_evidence(tmp_path, monkeypatch) -> None:

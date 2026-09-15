@@ -685,6 +685,36 @@ def test_open_library_edition_statement_replaces_polluted_work_authors() -> None
     assert dataset.books[0].authors == ["Correct Author", "Second Author"]
 
 
+def test_open_library_bracketed_by_statement_does_not_duplicate_author() -> None:
+    payload = {
+        "search_response": {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Applied Linear Algebra",
+                    "author_name": ["Ben Noble"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "/books/OL1M",
+                                "title": "Applied Linear Algebra",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "edition_details": {"/books/OL1M": {"by_statement": "[by] Ben Noble."}},
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="linear-algebra", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].authors == ["Ben Noble"]
+
+
 def test_open_library_incomplete_edition_statement_does_not_drop_work_author() -> None:
     payload = {
         "search_response": {

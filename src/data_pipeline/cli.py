@@ -3,6 +3,8 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from time import perf_counter
 from typing import Annotated
 
 import httpx
@@ -39,6 +41,7 @@ from data_pipeline.publisher_document_sources import (
 )
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
 from data_pipeline.reporting import format_book_coverage, format_coverage
+from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
 from data_pipeline.storage import (
     RawArtifact,
     dataset_exists,
@@ -52,7 +55,7 @@ from data_pipeline.validation import validate_dataset
 
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book evidence.")
 TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
-LimitOption = Annotated[int, typer.Option(min=1, max=10, help="Books to normalize.")]
+LimitOption = Annotated[int, typer.Option(min=1, max=100, help="Books to normalize.")]
 ProviderOption = Annotated[
     str, typer.Option(help="Metadata provider: open-library or google-books.")
 ]
@@ -67,7 +70,7 @@ PublisherDocumentSourceOption = Annotated[
 ]
 OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public open textbook slug.")]
 ManifestOption = Annotated[
-    Path, typer.Option(exists=True, dir_okay=False, help="Versioned MVP JSON manifest.")
+    Path, typer.Option(exists=True, dir_okay=False, help="Versioned dataset JSON manifest.")
 ]
 
 
@@ -105,6 +108,7 @@ def _collect_payload(
                     "work_details": collector.fetch_work_details(
                         payload, candidate_limit=edition_detail_limit
                     ),
+                    "collection_failures": getattr(collector, "detail_failures", []),
                 }
             return payload, request_parameters
     except httpx.HTTPStatusError as exc:
@@ -673,7 +677,7 @@ def build_manifest(
         Path | None, typer.Option(file_okay=False, help="Canonical output directory.")
     ] = None,
 ) -> None:
-    """Rebuild and verify the exact MVP book set from the latest matching raw artifacts."""
+    """Rebuild and verify an exact book set from the latest matching raw artifacts."""
     try:
         manifest_spec = load_manifest(manifest)
         raw_paths = select_manifest_raw_paths(manifest_spec, data_dir / "raw")
@@ -709,6 +713,91 @@ def report(
         raise typer.Exit(code=1)
     typer.echo(format_coverage(dataset))
     typer.echo("\nPer-book evidence\n" + format_book_coverage(dataset))
+
+
+@app.command("report-scale")
+def report_scale(
+    manifest: ManifestOption = Path("configs/experiments/scale-50.json"),
+    data_dir: Annotated[Path, typer.Option(file_okay=False, help="Experiment data root.")] = Path(
+        "data/experiments/scale-50"
+    ),
+    output: Annotated[
+        Path | None, typer.Option(file_okay=False, help="Report and audit output directory.")
+    ] = None,
+) -> None:
+    """Rebuild twice and emit detailed scale metrics plus a blank human-audit CSV."""
+    try:
+        manifest_spec = load_manifest(manifest)
+        unsupported = [
+            selector.provider
+            for selector in manifest_spec.raw_artifacts
+            if selector.provider not in {"open-library", "google-books"}
+        ]
+        if unsupported:
+            raise ValueError(
+                "scale report accepts generic metadata providers only: "
+                + ", ".join(sorted(set(unsupported)))
+            )
+        raw_paths = select_manifest_raw_paths(manifest_spec, data_dir / "raw")
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    started = perf_counter()
+    first_dataset, _requested = _dataset_from_raw_paths(raw_paths)
+    second_dataset, _requested_again = _dataset_from_raw_paths(raw_paths)
+    build_seconds = perf_counter() - started
+    errors = [
+        *validate_dataset(first_dataset),
+        *validate_manifest_books(manifest_spec, first_dataset),
+        *validate_dataset(second_dataset),
+        *validate_manifest_books(manifest_spec, second_dataset),
+    ]
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+
+    filenames = ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+    with (
+        TemporaryDirectory(prefix="scale-rebuild-a-") as first_temp,
+        TemporaryDirectory(prefix="scale-rebuild-b-") as second_temp,
+    ):
+        first_directory = Path(first_temp)
+        second_directory = Path(second_temp)
+        write_dataset(first_dataset, first_directory)
+        write_dataset(second_dataset, second_directory)
+        deterministic = all(
+            (first_directory / filename).read_bytes() == (second_directory / filename).read_bytes()
+            for filename in filenames
+        )
+        canonical_bytes = sum((first_directory / filename).stat().st_size for filename in filenames)
+    if not deterministic:
+        raise typer.BadParameter("same raw manifest produced different canonical bytes")
+
+    report_data = create_scale_report(
+        manifest=manifest_spec,
+        dataset=first_dataset,
+        raw_paths=raw_paths,
+        deterministic_rebuild=deterministic,
+        build_seconds=build_seconds,
+        canonical_bytes=canonical_bytes,
+    )
+    report_path, audit_path = write_scale_artifacts(
+        report_data, first_dataset, output or data_dir / "reports"
+    )
+    discovery = report_data["discovery_normalization"]
+    coverage = report_data["evidence_coverage"]["overall"]
+    typer.echo(f"Scale report: {report_path}")
+    typer.echo(f"Human audit CSV: {audit_path}")
+    typer.echo(
+        "Candidates / selected / normalized: "
+        f"{discovery['candidate_count']} / {discovery['selected_book_count']} / "
+        f"{discovery['successfully_normalized_book_count']}"
+    )
+    typer.echo(
+        "Evidence books — description / TOC / preface / introduction / preview / sample: "
+        f"{coverage['description']} / {coverage['toc']} / {coverage['preface']} / "
+        f"{coverage['introduction']} / {coverage['preview']} / {coverage['sample_chapter']}"
+    )
+    typer.echo(f"Offline rebuild byte-identical: {deterministic}")
 
 
 if __name__ == "__main__":

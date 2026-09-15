@@ -886,6 +886,45 @@ The MVP data pipeline is considered successful when:
 
 ---
 
+## 24A. Second Milestone: Scale Pilot
+
+Treat the completed ten-book dataset declared by `configs/mvp.json` as a curated regression and
+golden dataset. Do not replace its identities or pursue 100% optional-evidence coverage as part of
+this milestone.
+
+The Scale Pilot tests the existing topics at a larger book count:
+
+```text
+approximately 25 Operating Systems books
+approximately 25 Linear Algebra books
+approximately 50 books total
+```
+
+Use a separate version-controlled experiment manifest under `configs/experiments/`. Preserve the
+exact selected canonical book identities in that manifest, while keeping third-party raw and
+generated processed data outside Git.
+
+Prefer generic metadata and evidence collectors. Do not add book-specific parsers, exact URLs, or
+ISBN allowlist entries merely to fill optional evidence gaps. Existing exact-edition allowlists
+remain safety boundaries and must not be weakened. Missing evidence from a generic run is an
+experiment result, not a reason to bypass those boundaries.
+
+The report for this milestone must distinguish candidate discovery, normalization, deduplication,
+edition mismatches, identifiers, evidence coverage, classified failures, data integrity, artifact
+sizes, and build time. It must include per-topic and per-book evidence counts and prose sizes.
+Generate a compact CSV or JSON audit artifact with blank fields for human identity, relevance,
+TOC, prose, and edition judgments. Never fabricate those human judgments.
+
+The same raw manifest must produce byte-identical canonical output in two offline builds. The
+canonical four-JSONL schema remains unchanged so downstream ML code does not need provider-specific
+knowledge. Do not add ML, concept inference, scoring, or recommendation logic here.
+
+The Scale Pilot is successful when it reproducibly demonstrates where generic collection works
+and where it fails at roughly fifty books. It is not required to make optional evidence coverage
+100% before proceeding.
+
+---
+
 ## 25. Development Workflow for the Agent
 
 Before writing implementation code:

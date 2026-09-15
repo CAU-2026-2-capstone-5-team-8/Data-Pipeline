@@ -16,6 +16,7 @@ from pypdf.errors import PdfReadError
 from selectolax.parser import HTMLParser
 
 from data_pipeline.collectors.base import InvalidProviderResponse
+from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     is_valid_isbn_10,
     is_valid_isbn_13,
@@ -84,7 +85,7 @@ def _deduplicate_authors(value: Any) -> list[str]:
 def _authors_from_by_statement(value: Any) -> list[str]:
     if not isinstance(value, str):
         return []
-    statement = re.sub(r"^\s*by\s+", "", value.strip(), flags=re.IGNORECASE).rstrip(".")
+    statement = re.sub(r"^\s*\[?by\]?\s+", "", value.strip(), flags=re.IGNORECASE).rstrip(".")
     authors = re.split(r"\s*(?:,|\band\b)\s*", statement)
     return _deduplicate_authors(authors)
 
@@ -207,6 +208,7 @@ def normalize_google_books_response(
     topic: str,
     limit: int,
     retrieved_at: datetime,
+    diagnostics: NormalizationDiagnostics | None = None,
 ) -> CanonicalDataset:
     if topic not in TOPICS:
         raise ValueError(f"unsupported topic: {topic}")
@@ -216,11 +218,16 @@ def normalize_google_books_response(
     sources: list[Source] = []
     seen_books: set[str] = set()
 
-    for item in _provider_records(response, "items", "google-books"):
+    records = _provider_records(response, "items", "google-books")
+    if diagnostics is not None:
+        diagnostics.candidate_count += len(records)
+    for item in records:
         if not isinstance(item, dict):
             logger.warning(
                 "event=normalization_skipped provider=google_books reason=record_not_object"
             )
+            if diagnostics is not None:
+                diagnostics.fail("invalid_provider_response")
             continue
         try:
             result = _normalize_google_item(item, topic, retrieved_at)
@@ -230,19 +237,29 @@ def normalize_google_books_response(
                 item.get("id"),
                 exc,
             )
+            if diagnostics is not None:
+                diagnostics.fail("parse_failure")
             continue
         if result is None:
+            if diagnostics is not None:
+                diagnostics.fail("ineligible_candidate")
             continue
         book, source, document = result
         book_id = book.book_id
         if book_id in seen_books:
+            if diagnostics is not None:
+                diagnostics.duplicate_candidate_count += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.normalized_candidate_count += 1
+        seen_books.add(book_id)
+        if len(books) >= limit:
             continue
         if document is not None:
             documents.append(document)
-        seen_books.add(book_id)
         books.append(book)
         sources.append(source)
-        if len(books) >= limit:
+        if len(books) >= limit and diagnostics is None:
             break
 
     return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
@@ -379,10 +396,13 @@ def _normalize_open_library_record(
     retrieved_at: datetime,
     edition_details: dict[str, dict[str, Any]],
     work_details: dict[str, dict[str, Any]],
+    diagnostics: NormalizationDiagnostics | None = None,
 ) -> tuple[Book, list[Source], list[Document], list[TocEntry]] | None:
     work_id = str(record.get("key", "")).strip()
     edition_container = record.get("editions", {})
     if not isinstance(edition_container, dict):
+        if diagnostics is not None:
+            diagnostics.fail("invalid_provider_response")
         return None
     edition_records = edition_container.get("docs", [])
     edition = next(
@@ -399,11 +419,15 @@ def _normalize_open_library_record(
             "work_id=%s reason=no_english_edition",
             work_id,
         )
+        if diagnostics is not None:
+            diagnostics.fail("no_english_edition")
         return None
 
     external_id = str(edition.get("key") or work_id).strip()
     title = str(edition.get("title") or record.get("title", "")).strip()
     if not external_id or not title:
+        if diagnostics is not None:
+            diagnostics.fail("missing_identity")
         return None
     edition_detail = edition_details.get(external_id, {})
     if not isinstance(edition_detail, dict):
@@ -425,6 +449,8 @@ def _normalize_open_library_record(
             work_id,
             len(authors),
         )
+        if diagnostics is not None:
+            diagnostics.fail("unreliable_author_aggregation")
         return None
     isbn_10, isbn_13 = _open_library_isbns(edition)
     book_id = _book_id(isbn_10, isbn_13, title, authors, "open_library", external_id)
@@ -505,6 +531,8 @@ def _normalize_open_library_record(
             sorted(selected_editions),
             sorted(described_editions),
         )
+        if diagnostics is not None:
+            diagnostics.edition_mismatch(book_id)
         work_description = None
     work_description_hash = sha256_text(work_description) if work_description is not None else None
     if work_description is not None and work_description_hash not in description_hashes:
@@ -535,6 +563,7 @@ def normalize_open_library_response(
     topic: str,
     limit: int,
     retrieved_at: datetime,
+    diagnostics: NormalizationDiagnostics | None = None,
 ) -> CanonicalDataset:
     if topic not in TOPICS:
         raise ValueError(f"unsupported topic: {topic}")
@@ -553,15 +582,25 @@ def normalize_open_library_response(
     work_details = response.get("work_details", {})
     if not isinstance(work_details, dict):
         work_details = {}
-    for record in _provider_records(search_response, "docs", "open-library"):
+    records = _provider_records(search_response, "docs", "open-library")
+    if diagnostics is not None:
+        diagnostics.candidate_count += len(records)
+    for record in records:
         if not isinstance(record, dict):
             logger.warning(
                 "event=normalization_skipped provider=open_library reason=record_not_object"
             )
+            if diagnostics is not None:
+                diagnostics.fail("invalid_provider_response")
             continue
         try:
             result = _normalize_open_library_record(
-                record, topic, retrieved_at, edition_details, work_details
+                record,
+                topic,
+                retrieved_at,
+                edition_details,
+                work_details,
+                diagnostics,
             )
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             logger.warning(
@@ -569,19 +608,27 @@ def normalize_open_library_response(
                 record.get("key"),
                 exc,
             )
+            if diagnostics is not None:
+                diagnostics.fail("parse_failure")
             continue
         if result is None:
             continue
         book, book_sources, book_documents, book_toc = result
         book_id = book.book_id
         if book_id in seen_books:
+            if diagnostics is not None:
+                diagnostics.duplicate_candidate_count += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.normalized_candidate_count += 1
+        seen_books.add(book_id)
+        if len(books) >= limit:
             continue
         books.append(book)
         sources.extend(book_sources)
         documents.extend(book_documents)
         toc.extend(book_toc)
-        seen_books.add(book_id)
-        if len(books) >= limit:
+        if len(books) >= limit and diagnostics is None:
             break
 
     return CanonicalDataset(books=books, documents=documents, toc=toc, sources=sources)
