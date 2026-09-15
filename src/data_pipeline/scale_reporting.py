@@ -33,6 +33,14 @@ PROSE_TYPES = {
     "sample_chapter",
     "other",
 }
+FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def spreadsheet_safe_csv_value(value: Any) -> Any:
+    """Neutralize formula-like strings only at the spreadsheet-facing CSV boundary."""
+    if isinstance(value, str) and value.lstrip().startswith(FORMULA_PREFIXES):
+        return "'" + value
+    return value
 
 
 def normalization_diagnostics(raw_paths: list[Path]) -> list[NormalizationDiagnostics]:
@@ -390,30 +398,31 @@ def write_scale_artifacts(
                 for evidence_type in ("metadata", *EVIDENCE_TYPES, "toc", "other_prose")
                 if row[evidence_type]
             ]
+            audit_row = {
+                "book_id": book.book_id,
+                "title": book.title,
+                "authors": " | ".join(book.authors),
+                "isbn_10": book.isbn_10 or "",
+                "isbn_13": book.isbn_13 or "",
+                "edition_or_year": book.published_year or "",
+                "topic": row["topic"],
+                "evidence_types": " | ".join(evidence_types),
+                "source_providers": " | ".join(row["providers"]),
+                "source_urls": " | ".join(row["source_urls"]),
+                "prose_character_count": row["prose_character_count"],
+                "toc_entry_count": row["toc_entry_count"],
+                "warnings": " | ".join(_audit_warnings(book, row)),
+                "suspected_identity_or_edition_conflicts": " | ".join(
+                    row["suspected_identity_or_edition_conflicts"]
+                ),
+                "identity_ok": "",
+                "topic_relevant": "",
+                "toc_matches_book": "",
+                "prose_matches_book": "",
+                "edition_ok": "",
+                "notes": "",
+            }
             writer.writerow(
-                {
-                    "book_id": book.book_id,
-                    "title": book.title,
-                    "authors": " | ".join(book.authors),
-                    "isbn_10": book.isbn_10 or "",
-                    "isbn_13": book.isbn_13 or "",
-                    "edition_or_year": book.published_year or "",
-                    "topic": row["topic"],
-                    "evidence_types": " | ".join(evidence_types),
-                    "source_providers": " | ".join(row["providers"]),
-                    "source_urls": " | ".join(row["source_urls"]),
-                    "prose_character_count": row["prose_character_count"],
-                    "toc_entry_count": row["toc_entry_count"],
-                    "warnings": " | ".join(_audit_warnings(book, row)),
-                    "suspected_identity_or_edition_conflicts": " | ".join(
-                        row["suspected_identity_or_edition_conflicts"]
-                    ),
-                    "identity_ok": "",
-                    "topic_relevant": "",
-                    "toc_matches_book": "",
-                    "prose_matches_book": "",
-                    "edition_ok": "",
-                    "notes": "",
-                }
+                {field: spreadsheet_safe_csv_value(value) for field, value in audit_row.items()}
             )
     return report_path, audit_path

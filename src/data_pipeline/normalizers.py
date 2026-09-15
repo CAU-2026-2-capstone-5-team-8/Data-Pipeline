@@ -71,6 +71,27 @@ def _provider_records(response: dict[str, Any], field: str, provider: str) -> li
     return records
 
 
+def _google_book_items(response: dict[str, Any]) -> list[Any]:
+    """Flatten preserved Google result pages while accepting legacy single responses."""
+    if "pages" not in response:
+        return _provider_records(response, "items", "google-books")
+    pages = _provider_records(response, "pages", "google-books")
+    items: list[Any] = []
+    for page_index, page in enumerate(pages):
+        if not isinstance(page, dict):
+            raise InvalidProviderResponse(
+                f"google-books returned an invalid page at index {page_index}"
+            )
+        parameters = page.get("request_parameters")
+        page_response = page.get("response")
+        if not isinstance(parameters, dict) or not isinstance(page_response, dict):
+            raise InvalidProviderResponse(
+                f"google-books page {page_index} lacks request parameters or response"
+            )
+        items.extend(_provider_records(page_response, "items", "google-books"))
+    return items
+
+
 def _deduplicate_authors(value: Any) -> list[str]:
     authors: list[str] = []
     seen: set[str] = set()
@@ -83,6 +104,7 @@ def _deduplicate_authors(value: Any) -> list[str]:
 
 
 def _authors_from_by_statement(value: Any) -> list[str]:
+    """Parse a simple edition byline and remove plain or bracketed `by` prefixes."""
     if not isinstance(value, str):
         return []
     statement = re.sub(r"^\s*\[?by\]?\s+", "", value.strip(), flags=re.IGNORECASE).rstrip(".")
@@ -210,6 +232,7 @@ def normalize_google_books_response(
     retrieved_at: datetime,
     diagnostics: NormalizationDiagnostics | None = None,
 ) -> CanonicalDataset:
+    """Normalize legacy or paginated Google responses into canonical evidence."""
     if topic not in TOPICS:
         raise ValueError(f"unsupported topic: {topic}")
 
@@ -218,7 +241,7 @@ def normalize_google_books_response(
     sources: list[Source] = []
     seen_books: set[str] = set()
 
-    records = _provider_records(response, "items", "google-books")
+    records = _google_book_items(response)
     if diagnostics is not None:
         diagnostics.candidate_count += len(records)
     for item in records:
@@ -398,6 +421,7 @@ def _normalize_open_library_record(
     work_details: dict[str, dict[str, Any]],
     diagnostics: NormalizationDiagnostics | None = None,
 ) -> tuple[Book, list[Source], list[Document], list[TocEntry]] | None:
+    """Normalize one work and its selected English edition, retaining evidence sources."""
     work_id = str(record.get("key", "")).strip()
     edition_container = record.get("editions", {})
     if not isinstance(edition_container, dict):
@@ -565,6 +589,7 @@ def normalize_open_library_response(
     retrieved_at: datetime,
     diagnostics: NormalizationDiagnostics | None = None,
 ) -> CanonicalDataset:
+    """Normalize an Open Library search plus optional edition and work details."""
     if topic not in TOPICS:
         raise ValueError(f"unsupported topic: {topic}")
 

@@ -125,10 +125,14 @@ into explicit parent relationships and the second page's 7-Part/20-Chapter seque
 canonical levels. Since these are bookstore catalog pages rather than publisher or author pages,
 their sources are explicitly recorded as `other`; no license or access rights are inferred.
 
-Google Books is also implemented (`--provider google-books`), but its public endpoint returned
-HTTP 429 from the development environment on 2026-09-12. A borrow link, scan identifier, preview
-URL, or TOC heading named `Preface` is not treated as public book text. The pipeline does not fetch
-restricted scans or infer unavailable preface, introduction, preview, or sample content.
+Google Books is also implemented (`--provider google-books`). Searches above its 40-result request
+limit are split into ordered `startIndex` pages of at most 40 items, and every fetched page retains
+its exact request parameters and unmodified response inside one immutable raw artifact. A short
+page ends pagination; a failed page fails the collection visibly instead of publishing a partial
+artifact. The public endpoint returned HTTP 429 from the development environment on 2026-09-12,
+so pagination is verified with network-independent HTTP fixtures. A borrow link, scan identifier,
+preview URL, or TOC heading named `Preface` is not treated as public book text. The pipeline does
+not fetch restricted scans or infer unavailable preface, introduction, preview, or sample content.
 
 ## Real-data evidence experiment
 
@@ -205,6 +209,9 @@ evidence, integrity counters, build timing, and artifact sizes. The CSV includes
 edition/year, evidence, sources, prose size, TOC size, automated warnings, and intentionally blank
 `identity_ok`, `topic_relevant`, `toc_matches_book`, `prose_matches_book`, `edition_ok`, and `notes`
 columns for human review. Generated raw, canonical, report, and audit files remain outside Git.
+Formula-like strings beginning with `=`, `+`, `-`, or `@` after optional leading whitespace are
+prefixed with a single quote only when written to the audit CSV. Raw responses, canonical JSONL,
+and the JSON report retain the original provider text.
 
 ### 2026-09-16 real-data result
 

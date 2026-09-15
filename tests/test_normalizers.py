@@ -107,6 +107,41 @@ def test_google_response_preserves_provenance_and_deduplicates_isbn() -> None:
     assert dataset.toc == []
 
 
+def test_google_paginated_response_deduplicates_across_page_boundary() -> None:
+    def item(index: int) -> dict:
+        return {
+            "id": f"volume-{index}",
+            "volumeInfo": {
+                "title": f"Operating Systems {index}",
+                "authors": [f"Author {index}"],
+                "language": "en",
+            },
+        }
+
+    payload = {
+        "pages": [
+            {
+                "request_parameters": {"startIndex": 0, "maxResults": 40},
+                "response": {"items": [item(index) for index in range(40)]},
+            },
+            {
+                "request_parameters": {"startIndex": 40, "maxResults": 1},
+                "response": {"items": [item(39)]},
+            },
+        ]
+    }
+
+    dataset = normalize_google_books_response(
+        payload,
+        topic="operating-systems",
+        limit=41,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert len(dataset.books) == 40
+    assert len({book.book_id for book in dataset.books}) == 40
+
+
 def test_fallback_book_id_is_deterministic() -> None:
     response = {
         "items": [

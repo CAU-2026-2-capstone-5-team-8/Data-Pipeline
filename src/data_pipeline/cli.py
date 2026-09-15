@@ -80,6 +80,13 @@ def _ensure_topic(topic: str) -> None:
         raise typer.BadParameter(f"topic must be one of: {choices}")
 
 
+def _metadata_candidate_limit(provider: str, requested_limit: int) -> int:
+    """Choose provider-specific discovery depth for one requested result set."""
+    return (
+        requested_limit if provider == "google-books" else max(requested_limit * 4, requested_limit)
+    )
+
+
 def _collect_payload(
     provider: str,
     topic: str,
@@ -87,6 +94,7 @@ def _collect_payload(
     *,
     edition_detail_limit: int = 0,
 ) -> tuple[dict, dict]:
+    """Collect one provider response together with its reproducible request plan."""
     collectors = {
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
@@ -198,6 +206,7 @@ def _collect_open_textbook_payload(source_slug: str) -> tuple[dict, dict]:
 
 
 def _expected_request_parameters(artifact: RawArtifact) -> dict:
+    """Reconstruct the deterministic request identity recorded by one raw artifact."""
     provider = artifact.provider
     topic = artifact.topic
     limit = artifact.requested_limit
@@ -249,7 +258,68 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
         collector_class = collectors[provider]
     except KeyError as exc:
         raise typer.BadParameter(f"unsupported raw artifact provider: {provider}") from exc
-    return collector_class.search_parameters(topic, max(limit * 4, limit))
+    return collector_class.search_parameters(topic, _metadata_candidate_limit(provider, limit))
+
+
+def _validate_google_page_provenance(artifact: RawArtifact) -> None:
+    """Require fetched Google pages to be an ordered, explainable prefix of the request plan."""
+    if artifact.provider != "google-books" or "pages" not in artifact.response:
+        return
+    planned_pages = artifact.request_parameters.get("pages")
+    fetched_pages = artifact.response.get("pages")
+    if not isinstance(planned_pages, list) or not isinstance(fetched_pages, list):
+        raise typer.BadParameter("paginated google-books raw artifact has invalid page lists")
+    if not fetched_pages or len(fetched_pages) > len(planned_pages):
+        raise typer.BadParameter("paginated google-books raw artifact has an invalid page count")
+    for index, fetched_page in enumerate(fetched_pages):
+        if not isinstance(fetched_page, dict):
+            raise typer.BadParameter(
+                f"paginated google-books raw artifact has invalid page {index}"
+            )
+        if fetched_page.get("request_parameters") != planned_pages[index]:
+            raise typer.BadParameter(
+                f"paginated google-books raw artifact page {index} request mismatch"
+            )
+    if len(fetched_pages) < len(planned_pages):
+        last_page = fetched_pages[-1]
+        response = last_page.get("response")
+        items = response.get("items", []) if isinstance(response, dict) else None
+        page_size = planned_pages[len(fetched_pages) - 1].get("maxResults")
+        total_items = response.get("totalItems") if isinstance(response, dict) else None
+        collected_count = sum(
+            len(page.get("response", {}).get("items", []))
+            for page in fetched_pages
+            if isinstance(page, dict)
+            and isinstance(page.get("response"), dict)
+            and isinstance(page["response"].get("items", []), list)
+        )
+        reached_total = (
+            isinstance(total_items, int)
+            and not isinstance(total_items, bool)
+            and collected_count >= total_items
+        )
+        if (
+            not isinstance(items, list)
+            or not isinstance(page_size, int)
+            or (len(items) >= page_size and not reached_total)
+        ):
+            raise typer.BadParameter(
+                "paginated google-books raw artifact ended without a short final page"
+            )
+
+
+def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
+    """Accept the current plan or the pre-pagination Google single-request identity."""
+    if artifact.request_parameters == expected:
+        return True
+    if artifact.provider != "google-books" or "pages" in artifact.response:
+        return False
+    legacy_plan = GoogleBooksCollector.search_parameters(
+        artifact.topic, max(artifact.requested_limit * 4, artifact.requested_limit)
+    )
+    legacy_parameters = dict(legacy_plan["pages"][0])
+    legacy_parameters.pop("startIndex")
+    return artifact.request_parameters == legacy_parameters
 
 
 def _normalize(
@@ -300,10 +370,11 @@ def _dataset_from_raw_paths(
             raise typer.BadParameter(str(exc)) from exc
         _ensure_topic(artifact.topic)
         expected_parameters = _expected_request_parameters(artifact)
-        if artifact.request_parameters != expected_parameters:
+        if not _request_parameters_match(artifact, expected_parameters):
             raise typer.BadParameter(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
             )
+        _validate_google_page_provenance(artifact)
         datasets.append(
             _normalize(
                 artifact.response,
@@ -332,7 +403,9 @@ def search(
 ) -> None:
     """Preview metadata candidates without writing data."""
     _ensure_topic(topic)
-    payload, _request_parameters = _collect_payload(provider, topic, max(limit * 4, limit))
+    payload, _request_parameters = _collect_payload(
+        provider, topic, _metadata_candidate_limit(provider, limit)
+    )
     candidates = []
     dataset = _normalize(payload, provider, topic, limit, datetime.now(UTC))
     for book in dataset.books:
@@ -357,7 +430,7 @@ def collect(
     """Fetch one small response, preserve it, normalize it, and validate outputs."""
     _ensure_topic(topic)
     retrieved_at = datetime.now(UTC)
-    candidate_limit = max(limit * 4, limit)
+    candidate_limit = _metadata_candidate_limit(provider, limit)
     payload, request_parameters = _collect_payload(
         provider,
         topic,

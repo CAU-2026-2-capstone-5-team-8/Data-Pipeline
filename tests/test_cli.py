@@ -6,6 +6,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from data_pipeline.cli import _collect_payload, app
+from data_pipeline.collectors.google_books import GoogleBooksCollector
 from data_pipeline.collectors.open_library import OpenLibraryCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
@@ -14,7 +15,13 @@ from data_pipeline.models import Book, CanonicalDataset, Source
 from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
-from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
+from data_pipeline.storage import (
+    RawArtifact,
+    read_dataset,
+    read_raw_response,
+    write_dataset,
+    write_raw_response,
+)
 from data_pipeline.validation import validate_dataset
 
 WILEY_HOME_FIXTURE = Path(__file__).parent / "fixtures" / "wiley_osc7_home.html"
@@ -40,6 +47,72 @@ def test_build_rejects_topic_query_mismatch(tmp_path) -> None:
 
     assert result.exit_code != 0
     assert "topic/query mismatch" in result.output
+
+
+def test_build_rejects_google_page_request_provenance_mismatch(tmp_path) -> None:
+    raw_path = tmp_path / "google-pages.json"
+    request_parameters = GoogleBooksCollector.search_parameters("linear-algebra", 41)
+    artifact = RawArtifact(
+        provider="google-books",
+        topic="linear-algebra",
+        requested_limit=41,
+        retrieved_at=datetime(2026, 9, 12, 12, 34, tzinfo=UTC),
+        request_parameters=request_parameters,
+        response={
+            "pages": [
+                {
+                    "request_parameters": {
+                        **request_parameters["pages"][0],
+                        "startIndex": 1,
+                    },
+                    "response": {"items": []},
+                }
+            ]
+        },
+    )
+    write_raw_response(artifact, raw_path)
+
+    result = CliRunner().invoke(
+        app, ["build", "--raw", str(raw_path), "--output", str(tmp_path / "processed")]
+    )
+
+    assert result.exit_code != 0
+    assert "page 0 request mismatch" in result.output
+
+
+def test_build_accepts_legacy_single_page_google_raw_artifact(tmp_path) -> None:
+    raw_path = tmp_path / "legacy-google.json"
+    legacy_parameters = GoogleBooksCollector.search_parameters("linear-algebra", 4)["pages"][0]
+    legacy_parameters = {
+        key: value for key, value in legacy_parameters.items() if key != "startIndex"
+    }
+    artifact = RawArtifact(
+        provider="google-books",
+        topic="linear-algebra",
+        requested_limit=1,
+        retrieved_at=datetime(2026, 9, 12, 12, 34, tzinfo=UTC),
+        request_parameters=legacy_parameters,
+        response={
+            "items": [
+                {
+                    "id": "legacy-volume",
+                    "volumeInfo": {
+                        "title": "Legacy Linear Algebra",
+                        "authors": ["Legacy Author"],
+                        "language": "en",
+                    },
+                }
+            ]
+        },
+    )
+    write_raw_response(artifact, raw_path)
+
+    result = CliRunner().invoke(
+        app, ["build", "--raw", str(raw_path), "--output", str(tmp_path / "processed")]
+    )
+
+    assert result.exit_code == 0
+    assert len(read_dataset(tmp_path / "processed").books) == 1
 
 
 def test_build_reports_invalid_provider_collection_without_traceback(tmp_path) -> None:
@@ -123,6 +196,156 @@ def test_collect_payload_includes_open_library_work_details(monkeypatch) -> None
 
     assert payload["work_details"]["/works/OL1W"]["description"] == "Public description"
     assert payload["collection_failures"] == FakeOpenLibraryCollector.detail_failures
+
+
+def test_collect_google_books_preserves_raw_and_reports_insufficient_unique_results(
+    tmp_path, monkeypatch
+) -> None:
+    def item(index: int) -> dict:
+        return {
+            "id": f"volume-{index}",
+            "volumeInfo": {
+                "title": f"Operating Systems {index}",
+                "authors": [f"Author {index}"],
+                "language": "en",
+            },
+        }
+
+    class FakeGoogleBooksCollector:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        search_parameters = staticmethod(GoogleBooksCollector.search_parameters)
+
+        @staticmethod
+        def search_books(topic, candidate_limit):
+            assert topic == "operating-systems"
+            assert candidate_limit == 41
+            parameters = GoogleBooksCollector.search_parameters(topic, candidate_limit)["pages"]
+            return {
+                "pages": [
+                    {
+                        "request_parameters": parameters[0],
+                        "response": {"items": [item(index) for index in range(40)]},
+                    },
+                    {
+                        "request_parameters": parameters[1],
+                        "response": {"items": [item(39)]},
+                    },
+                ]
+            }
+
+    monkeypatch.setattr("data_pipeline.cli.GoogleBooksCollector", FakeGoogleBooksCollector)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "collect",
+            "--topic",
+            "operating-systems",
+            "--limit",
+            "41",
+            "--provider",
+            "google-books",
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Only 40 eligible English records found; requested 41" in result.output
+    raw_paths = list((tmp_path / "raw" / "google_books" / "operating-systems").glob("*.json"))
+    assert len(raw_paths) == 1
+    raw_artifact = read_raw_response(raw_paths[0])
+    assert [
+        page["request_parameters"]["startIndex"] for page in raw_artifact.response["pages"]
+    ] == [0, 40]
+    assert not (tmp_path / "processed").exists()
+
+
+def test_collect_google_books_builds_fifty_books_from_two_pages(tmp_path, monkeypatch) -> None:
+    def item(index: int) -> dict:
+        return {
+            "id": f"volume-{index}",
+            "volumeInfo": {
+                "title": f"Operating Systems {index}",
+                "authors": [f"Author {index}"],
+                "language": "en",
+            },
+        }
+
+    class FakeGoogleBooksCollector:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        search_parameters = staticmethod(GoogleBooksCollector.search_parameters)
+
+        @staticmethod
+        def search_books(topic, candidate_limit):
+            assert candidate_limit == 50
+            parameters = GoogleBooksCollector.search_parameters(topic, candidate_limit)["pages"]
+            return {
+                "pages": [
+                    {
+                        "request_parameters": page,
+                        "response": {
+                            "totalItems": 50,
+                            "items": [
+                                item(index)
+                                for index in range(
+                                    page["startIndex"],
+                                    page["startIndex"] + page["maxResults"],
+                                )
+                            ],
+                        },
+                    }
+                    for page in parameters
+                ]
+            }
+
+    monkeypatch.setattr("data_pipeline.cli.GoogleBooksCollector", FakeGoogleBooksCollector)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "collect",
+            "--topic",
+            "operating-systems",
+            "--limit",
+            "50",
+            "--provider",
+            "google-books",
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+
+    dataset = read_dataset(tmp_path / "processed")
+    assert result.exit_code == 0
+    assert len(dataset.books) == 50
+    assert validate_dataset(dataset) == []
+    raw_path = next((tmp_path / "raw" / "google_books" / "operating-systems").glob("*.json"))
+    rebuild_result = CliRunner().invoke(
+        app,
+        [
+            "build",
+            "--raw",
+            str(raw_path),
+            "--output",
+            str(tmp_path / "rebuilt"),
+        ],
+    )
+    assert rebuild_result.exit_code == 0
+    for filename in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl"):
+        assert (tmp_path / "processed" / filename).read_bytes() == (
+            tmp_path / "rebuilt" / filename
+        ).read_bytes()
 
 
 def test_collect_publisher_merges_exact_book_evidence(tmp_path, monkeypatch) -> None:
