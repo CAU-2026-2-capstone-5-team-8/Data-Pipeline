@@ -1859,6 +1859,266 @@ def _normalize_nicholson_response(
     return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
 
 
+def _normalize_hailperin_response(
+    response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize Hailperin's reviewed OTL metadata and complete public PDF."""
+    if (
+        source_spec.license is None
+        or source_spec.license_reference_url is None
+        or source_spec.home_license is None
+        or source_spec.document_reference_url is None
+        or source_spec.version is None
+        or source_spec.publisher is None
+        or source_spec.expected_page_count is None
+        or source_spec.preface_page_range is None
+        or source_spec.sample_page_range is None
+    ):
+        raise InvalidProviderResponse("Hailperin allowlist provenance is incomplete")
+    if response.get("home_url") != source_spec.home_url:
+        raise InvalidProviderResponse("Hailperin metadata URL does not match allowlist")
+    home_html = response.get("home_html")
+    raw_documents = response.get("documents")
+    if not isinstance(home_html, str) or not isinstance(raw_documents, list):
+        raise InvalidProviderResponse("Hailperin response has invalid content fields")
+    if len(raw_documents) != 1 or len(source_spec.documents) != 1:
+        raise InvalidProviderResponse("Hailperin response must contain one reviewed PDF")
+
+    home_tree = HTMLParser(home_html)
+    home_links = _resolved_links(home_tree, source_spec.home_url)
+    if source_spec.document_reference_url not in home_links:
+        raise InvalidProviderResponse(
+            "Hailperin PDF format is not linked from Open Textbook Library"
+        )
+    metadata = _open_textbook_library_book(home_html)
+    expected_metadata = {
+        "@id": "161",
+        "name": source_spec.title,
+        "inLanguage": "English",
+        "license": source_spec.home_license,
+        "copyrightYear": source_spec.published_year,
+        "isAccessibleForFree": True,
+    }
+    if any(metadata.get(key) != value for key, value in expected_metadata.items()):
+        raise InvalidProviderResponse("Hailperin Open Textbook Library metadata changed")
+    authors = metadata.get("author")
+    publishers = metadata.get("publisher")
+    if (
+        not isinstance(authors, list)
+        or [author.get("name") for author in authors if isinstance(author, dict)]
+        != list(source_spec.authors)
+        or not isinstance(publishers, list)
+        or [publisher.get("name") for publisher in publishers if isinstance(publisher, dict)]
+        != [source_spec.publisher]
+    ):
+        raise InvalidProviderResponse("Hailperin Open Textbook Library identity changed")
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        raise InvalidProviderResponse("Hailperin Open Textbook Library description is missing")
+    description = " ".join(description.split())
+
+    document_spec = source_spec.documents[0]
+    raw_document = raw_documents[0]
+    if not isinstance(raw_document, dict) or raw_document.get("url") != document_spec.url:
+        raise InvalidProviderResponse("Hailperin PDF URL does not match allowlist")
+    if raw_document.get("media_type") != "application/pdf":
+        raise InvalidProviderResponse("Hailperin PDF has an invalid media type")
+    resolved_url = raw_document.get("resolved_url")
+    resolved = urlsplit(resolved_url) if isinstance(resolved_url, str) else None
+    requested_path = urlsplit(document_spec.url).path
+    expected_path_suffix = f"/items/{requested_path.removeprefix('/download/')}"
+    if (
+        resolved is None
+        or resolved.scheme != "https"
+        or resolved.hostname is None
+        or not any(
+            resolved.hostname == host or resolved.hostname.endswith(f".{host}")
+            for host in document_spec.allowed_redirect_hosts
+        )
+        or not resolved.path.endswith(expected_path_suffix)
+    ):
+        raise InvalidProviderResponse("Hailperin PDF resolved to an unreviewed resource")
+    encoded_content = raw_document.get("content_base64")
+    if not isinstance(encoded_content, str):
+        raise InvalidProviderResponse("Hailperin PDF is missing base64 content")
+    try:
+        content = base64.b64decode(encoded_content, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise InvalidProviderResponse("Hailperin PDF contains invalid base64") from exc
+    if not content.startswith(b"%PDF-"):
+        raise InvalidProviderResponse("Hailperin document content is not a PDF")
+    if len(content) > source_spec.max_resource_bytes:
+        raise InvalidProviderResponse("Hailperin PDF exceeds its reviewed size limit")
+
+    pdf_provider = "internet_archive"
+    pdf_source_id = stable_id("source", pdf_provider, document_spec.url, source_spec.book_id)
+    try:
+        reader = PdfReader(BytesIO(content))
+        if len(reader.pages) != source_spec.expected_page_count:
+            raise InvalidProviderResponse("Hailperin PDF page count does not match review")
+        identity = _reader_page_text(reader, 0, 1, "identity page")
+        normalized_identity = normalize_bibliographic_text(identity)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_identity
+            for marker in document_spec.identity_text_markers
+        ):
+            raise InvalidProviderResponse("Hailperin PDF identity does not match review")
+        pdf_metadata = reader.metadata or {}
+        if normalize_bibliographic_text(
+            str(pdf_metadata.get("/Title", ""))
+        ) != normalize_bibliographic_text(source_spec.title) or normalize_bibliographic_text(
+            source_spec.authors[0]
+        ) != normalize_bibliographic_text(str(pdf_metadata.get("/Author", ""))):
+            raise InvalidProviderResponse("Hailperin PDF metadata does not match review")
+        license_page = _reader_page_text(reader, 1, 2, "license page")
+        normalized_license = normalize_bibliographic_text(license_page)
+        if any(
+            normalize_bibliographic_text(marker) not in normalized_license
+            for marker in (source_spec.license, source_spec.license_reference_url)
+        ):
+            raise InvalidProviderResponse("Hailperin PDF license does not match review")
+
+        toc = _pdf_outline_toc(reader, source_spec.book_id, pdf_source_id)
+        roots = [entry for entry in toc if entry.parent_entry_id is None]
+        expected_roots = [
+            "Preface",
+            "Introduction",
+            "Threads",
+            "Scheduling",
+            "Synchronization and Deadlocks",
+            "Atomic Transactions",
+            "Virtual Memory",
+            "Processes and Protection",
+            "Files and Other Persistent Storage",
+            "Networking",
+            "Messaging, RPC, and Web Services",
+            "Security",
+            "Stacks",
+            "Bibliography",
+            "Index",
+        ]
+        level_counts = {level: sum(entry.level == level for entry in toc) for level in (1, 2, 3)}
+        if (
+            len(toc) != 179
+            or [entry.title for entry in roots] != expected_roots
+            or level_counts != {1: 15, 2: 80, 3: 84}
+            or any(entry.level > 3 for entry in toc)
+        ):
+            raise InvalidProviderResponse("Hailperin PDF outline does not match review")
+        root_destinations = [item for item in reader.outline if not isinstance(item, list)]
+        root_pages = [reader.get_destination_page_number(item) for item in root_destinations[:3]]
+        if (
+            root_pages
+            != [
+                source_spec.preface_page_range[0],
+                source_spec.sample_page_range[0],
+                source_spec.sample_page_range[1],
+            ]
+            or source_spec.preface_page_range[1] != source_spec.sample_page_range[0]
+        ):
+            raise InvalidProviderResponse("Hailperin PDF evidence ranges do not match outline")
+        preface = _reader_page_text(
+            reader, *source_spec.preface_page_range, document_name="preface"
+        )
+        sample = _reader_page_text(
+            reader, *source_spec.sample_page_range, document_name="sample chapter"
+        )
+    except InvalidProviderResponse:
+        raise
+    except (PdfReadError, ValueError) as exc:
+        raise InvalidProviderResponse(f"Hailperin PDF could not be parsed: {exc}") from exc
+
+    for document_name, text, markers in (
+        ("preface", preface, document_spec.preface_text_markers),
+        ("sample chapter", sample, document_spec.sample_text_markers),
+    ):
+        normalized_text = normalize_bibliographic_text(text)
+        if any(normalize_bibliographic_text(marker) not in normalized_text for marker in markers):
+            raise InvalidProviderResponse(f"Hailperin {document_name} text does not match review")
+
+    expected_book_id = stable_id(
+        "book",
+        normalize_bibliographic_text(source_spec.title),
+        normalize_bibliographic_text(source_spec.authors[0]),
+    )
+    if source_spec.book_id != expected_book_id:
+        raise InvalidProviderResponse("Hailperin fallback book ID is not deterministic")
+    home_source_id = stable_id(
+        "source", source_spec.provider, source_spec.home_url, source_spec.book_id
+    )
+    documents = [
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "description", home_source_id),
+            book_id=source_spec.book_id,
+            document_type="description",
+            text=description,
+            source_id=home_source_id,
+            content_hash=sha256_text(description),
+        ),
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "preface", pdf_source_id),
+            book_id=source_spec.book_id,
+            document_type="preface",
+            text=preface,
+            source_id=pdf_source_id,
+            content_hash=sha256_text(preface),
+        ),
+        Document(
+            document_id=stable_id("doc", source_spec.book_id, "sample_chapter", pdf_source_id),
+            book_id=source_spec.book_id,
+            document_type="sample_chapter",
+            text=sample,
+            source_id=pdf_source_id,
+            content_hash=sha256_text(sample),
+        ),
+    ]
+    sources = [
+        Source(
+            source_id=home_source_id,
+            book_id=source_spec.book_id,
+            provider=source_spec.provider,
+            source_type="open_textbook",
+            url=source_spec.home_url,
+            external_id="open-textbook-library:161",
+            retrieved_at=retrieved_at,
+            license=source_spec.home_license,
+            rights_note=(
+                "The Open Textbook Library structured record states Attribution-ShareAlike "
+                "without a license version."
+            ),
+            content_hash=sha256_text(home_html),
+        ),
+        Source(
+            source_id=pdf_source_id,
+            book_id=source_spec.book_id,
+            provider=pdf_provider,
+            source_type="open_textbook",
+            url=document_spec.url,
+            external_id=document_spec.external_id,
+            retrieved_at=retrieved_at,
+            license=document_spec.license,
+            rights_note=(
+                "The preserved revised-edition PDF explicitly applies CC BY-SA 3.0 "
+                "Unported to the work."
+            ),
+            content_hash=sha256_bytes(content),
+        ),
+    ]
+    book = Book(
+        book_id=source_spec.book_id,
+        isbn_10=None,
+        isbn_13=None,
+        title=source_spec.title,
+        subtitle=None,
+        authors=list(source_spec.authors),
+        publisher=source_spec.publisher,
+        published_year=source_spec.published_year,
+        language="en",
+        topics=TOPICS[source_spec.topic],
+    )
+    return CanonicalDataset(books=[book], documents=documents, toc=toc, sources=sources)
+
+
 def _normalize_understanding_linear_algebra_response(
     response: dict[str, Any], source_spec: OpenTextbookSourceSpec, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -2336,6 +2596,8 @@ def normalize_open_textbook_response(
         return _normalize_understanding_linear_algebra_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "libretexts_html":
         return _normalize_nicholson_response(response, source_spec, retrieved_at)
+    if source_spec.source_format == "hailperin_pdf_outline":
+        return _normalize_hailperin_response(response, source_spec, retrieved_at)
     if source_spec.source_format == "hefferon_pdf_outline":
         return _normalize_hefferon_response(response, source_spec, retrieved_at)
     if source_spec.source_format != "ostep_chapter_pdfs":

@@ -2,6 +2,7 @@
 
 import base64
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -38,10 +39,28 @@ class OpenTextbookCollector:
         wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
         reraise=True,
     )
-    def _fetch(self, url: str, expected_content_type: str, max_bytes: int) -> bytes:
-        response = self.client.get(url)
-        if response.is_redirect:
-            raise InvalidProviderResponse("open textbook source returned an unapproved redirect")
+    def _fetch(
+        self,
+        url: str,
+        expected_content_type: str,
+        max_bytes: int,
+        allowed_redirect_hosts: tuple[str, ...] = (),
+    ) -> tuple[bytes, str]:
+        response = self.client.get(url, follow_redirects=False)
+        redirect_count = 0
+        while response.is_redirect:
+            location = response.headers.get("location")
+            redirect_url = urljoin(str(response.url), location) if location else ""
+            if urlsplit(redirect_url).scheme != "https" or not self._redirect_host_allowed(
+                redirect_url, allowed_redirect_hosts
+            ):
+                raise InvalidProviderResponse(
+                    "open textbook source redirected to an unapproved host"
+                )
+            redirect_count += 1
+            if redirect_count > 5:
+                raise InvalidProviderResponse("open textbook source exceeded redirect limit")
+            response = self.client.get(redirect_url, follow_redirects=False)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "").casefold()
         if expected_content_type not in content_type:
@@ -57,27 +76,39 @@ class OpenTextbookCollector:
             raise InvalidProviderResponse(
                 f"open textbook resource exceeded its {limit_mib} MiB MVP limit"
             )
-        return content
+        return content, str(response.url)
+
+    @staticmethod
+    def _redirect_host_allowed(url: str, allowed_hosts: tuple[str, ...]) -> bool:
+        """Accept an explicitly reviewed host or one of its subdomains."""
+        hostname = urlsplit(url).hostname
+        return hostname is not None and any(
+            hostname == allowed or hostname.endswith(f".{allowed}") for allowed in allowed_hosts
+        )
 
     def fetch(self, source_slug: str) -> dict[str, Any]:
         """Fetch only the allowlisted home, license, and reviewed resources."""
         source = open_textbook_source(source_slug)
-        home = self._fetch(source.home_url, "text/html", 1024 * 1024).decode(
-            "utf-8", errors="replace"
-        )
+        home_content, _ = self._fetch(source.home_url, "text/html", 1024 * 1024)
+        home = home_content.decode("utf-8", errors="replace")
         license_html = None
         if source.license_url is not None:
-            license_html = self._fetch(source.license_url, "text/html", 1024 * 1024).decode(
-                "utf-8", errors="replace"
-            )
+            license_content, _ = self._fetch(source.license_url, "text/html", 1024 * 1024)
+            license_html = license_content.decode("utf-8", errors="replace")
         documents = []
         for document in source.documents:
-            content = self._fetch(document.url, document.media_type, source.max_resource_bytes)
+            content, resolved_url = self._fetch(
+                document.url,
+                document.media_type,
+                source.max_resource_bytes,
+                document.allowed_redirect_hosts,
+            )
             if document.media_type == "application/pdf" and not content.startswith(b"%PDF-"):
                 raise InvalidProviderResponse("open textbook document response is not a PDF")
             documents.append(
                 {
                     "url": document.url,
+                    "resolved_url": resolved_url,
                     "media_type": document.media_type,
                     "content_base64": base64.b64encode(content).decode("ascii"),
                 }
