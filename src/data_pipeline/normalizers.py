@@ -429,6 +429,10 @@ def _normalize_open_library_record(
             diagnostics.fail("invalid_provider_response")
         return None
     edition_records = edition_container.get("docs", [])
+    if not isinstance(edition_records, list):
+        if diagnostics is not None:
+            diagnostics.fail("invalid_provider_response")
+        return None
     edition = next(
         (
             item

@@ -8,6 +8,7 @@ import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.datasets import DatasetMergeError, merge_datasets
+from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     normalize_bibliographic_text,
     sha256_bytes,
@@ -61,6 +62,30 @@ def test_provider_record_collections_must_be_lists() -> None:
             limit=1,
             retrieved_at=RETRIEVED_AT,
         )
+
+
+@pytest.mark.parametrize("edition_records", ["not-a-list", {"key": "/books/OL1M"}])
+def test_open_library_rejects_non_list_edition_records(edition_records: object) -> None:
+    diagnostics = NormalizationDiagnostics(provider="open_library")
+
+    dataset = normalize_open_library_response(
+        {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Linear Algebra",
+                    "editions": {"docs": edition_records},
+                }
+            ]
+        },
+        topic="linear-algebra",
+        limit=1,
+        retrieved_at=RETRIEVED_AT,
+        diagnostics=diagnostics,
+    )
+
+    assert dataset.books == []
+    assert diagnostics.failure_counts == {"invalid_provider_response": 1}
 
 
 def test_provider_date_formats_preserve_edition_year() -> None:
