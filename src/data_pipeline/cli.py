@@ -3,6 +3,8 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from time import perf_counter
 from typing import Annotated
 
 import httpx
@@ -39,6 +41,7 @@ from data_pipeline.publisher_document_sources import (
 )
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
 from data_pipeline.reporting import format_book_coverage, format_coverage
+from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
 from data_pipeline.storage import (
     RawArtifact,
     dataset_exists,
@@ -52,7 +55,7 @@ from data_pipeline.validation import validate_dataset
 
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book evidence.")
 TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
-LimitOption = Annotated[int, typer.Option(min=1, max=10, help="Books to normalize.")]
+LimitOption = Annotated[int, typer.Option(min=1, max=100, help="Books to normalize.")]
 ProviderOption = Annotated[
     str, typer.Option(help="Metadata provider: open-library or google-books.")
 ]
@@ -67,7 +70,7 @@ PublisherDocumentSourceOption = Annotated[
 ]
 OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public open textbook slug.")]
 ManifestOption = Annotated[
-    Path, typer.Option(exists=True, dir_okay=False, help="Versioned MVP JSON manifest.")
+    Path, typer.Option(exists=True, dir_okay=False, help="Versioned dataset JSON manifest.")
 ]
 
 
@@ -77,6 +80,13 @@ def _ensure_topic(topic: str) -> None:
         raise typer.BadParameter(f"topic must be one of: {choices}")
 
 
+def _metadata_candidate_limit(provider: str, requested_limit: int) -> int:
+    """Choose provider-specific discovery depth for one requested result set."""
+    return (
+        requested_limit if provider == "google-books" else max(requested_limit * 4, requested_limit)
+    )
+
+
 def _collect_payload(
     provider: str,
     topic: str,
@@ -84,6 +94,7 @@ def _collect_payload(
     *,
     edition_detail_limit: int = 0,
 ) -> tuple[dict, dict]:
+    """Collect one provider response together with its reproducible request plan."""
     collectors = {
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
@@ -105,6 +116,7 @@ def _collect_payload(
                     "work_details": collector.fetch_work_details(
                         payload, candidate_limit=edition_detail_limit
                     ),
+                    "collection_failures": getattr(collector, "detail_failures", []),
                 }
             return payload, request_parameters
     except httpx.HTTPStatusError as exc:
@@ -194,6 +206,7 @@ def _collect_open_textbook_payload(source_slug: str) -> tuple[dict, dict]:
 
 
 def _expected_request_parameters(artifact: RawArtifact) -> dict:
+    """Reconstruct the deterministic request identity recorded by one raw artifact."""
     provider = artifact.provider
     topic = artifact.topic
     limit = artifact.requested_limit
@@ -245,7 +258,74 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
         collector_class = collectors[provider]
     except KeyError as exc:
         raise typer.BadParameter(f"unsupported raw artifact provider: {provider}") from exc
-    return collector_class.search_parameters(topic, max(limit * 4, limit))
+    return collector_class.search_parameters(topic, _metadata_candidate_limit(provider, limit))
+
+
+def _validate_google_page_provenance(artifact: RawArtifact) -> None:
+    """Require fetched Google pages to be an ordered, explainable prefix of the request plan."""
+    if artifact.provider != "google-books" or "pages" not in artifact.response:
+        return
+    planned_pages = artifact.request_parameters.get("pages")
+    fetched_pages = artifact.response.get("pages")
+    if not isinstance(planned_pages, list) or not isinstance(fetched_pages, list):
+        raise typer.BadParameter("paginated google-books raw artifact has invalid page lists")
+    if not fetched_pages or len(fetched_pages) > len(planned_pages):
+        raise typer.BadParameter("paginated google-books raw artifact has an invalid page count")
+    for index, fetched_page in enumerate(fetched_pages):
+        if not isinstance(fetched_page, dict):
+            raise typer.BadParameter(
+                f"paginated google-books raw artifact has invalid page {index}"
+            )
+        if fetched_page.get("request_parameters") != planned_pages[index]:
+            raise typer.BadParameter(
+                f"paginated google-books raw artifact page {index} request mismatch"
+            )
+    if len(fetched_pages) < len(planned_pages):
+        last_page = fetched_pages[-1]
+        response = last_page.get("response")
+        items = response.get("items", []) if isinstance(response, dict) else None
+        page_size = planned_pages[len(fetched_pages) - 1].get("maxResults")
+        total_items = response.get("totalItems") if isinstance(response, dict) else None
+        collected_count = sum(
+            len(page.get("response", {}).get("items", []))
+            for page in fetched_pages
+            if isinstance(page, dict)
+            and isinstance(page.get("response"), dict)
+            and isinstance(page["response"].get("items", []), list)
+        )
+        reached_total = (
+            isinstance(total_items, int)
+            and not isinstance(total_items, bool)
+            and total_items >= 0
+            and collected_count >= total_items
+        )
+        total_requires_more = (
+            isinstance(total_items, int)
+            and not isinstance(total_items, bool)
+            and total_items >= 0
+            and collected_count < total_items
+        )
+        if (
+            not isinstance(items, list)
+            or not isinstance(page_size, int)
+            or total_requires_more
+            or (len(items) >= page_size and not reached_total)
+        ):
+            raise typer.BadParameter("google-books raw pages ended before plan was satisfied")
+
+
+def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
+    """Accept the current plan or the pre-pagination Google single-request identity."""
+    if artifact.request_parameters == expected:
+        return True
+    if artifact.provider != "google-books" or "pages" in artifact.response:
+        return False
+    legacy_plan = GoogleBooksCollector.search_parameters(
+        artifact.topic, max(artifact.requested_limit * 4, artifact.requested_limit)
+    )
+    legacy_parameters = dict(legacy_plan["pages"][0])
+    legacy_parameters.pop("startIndex")
+    return artifact.request_parameters == legacy_parameters
 
 
 def _normalize(
@@ -296,10 +376,11 @@ def _dataset_from_raw_paths(
             raise typer.BadParameter(str(exc)) from exc
         _ensure_topic(artifact.topic)
         expected_parameters = _expected_request_parameters(artifact)
-        if artifact.request_parameters != expected_parameters:
+        if not _request_parameters_match(artifact, expected_parameters):
             raise typer.BadParameter(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
             )
+        _validate_google_page_provenance(artifact)
         datasets.append(
             _normalize(
                 artifact.response,
@@ -328,7 +409,9 @@ def search(
 ) -> None:
     """Preview metadata candidates without writing data."""
     _ensure_topic(topic)
-    payload, _request_parameters = _collect_payload(provider, topic, max(limit * 4, limit))
+    payload, _request_parameters = _collect_payload(
+        provider, topic, _metadata_candidate_limit(provider, limit)
+    )
     candidates = []
     dataset = _normalize(payload, provider, topic, limit, datetime.now(UTC))
     for book in dataset.books:
@@ -353,7 +436,7 @@ def collect(
     """Fetch one small response, preserve it, normalize it, and validate outputs."""
     _ensure_topic(topic)
     retrieved_at = datetime.now(UTC)
-    candidate_limit = max(limit * 4, limit)
+    candidate_limit = _metadata_candidate_limit(provider, limit)
     payload, request_parameters = _collect_payload(
         provider,
         topic,
@@ -673,7 +756,7 @@ def build_manifest(
         Path | None, typer.Option(file_okay=False, help="Canonical output directory.")
     ] = None,
 ) -> None:
-    """Rebuild and verify the exact MVP book set from the latest matching raw artifacts."""
+    """Rebuild and verify an exact book set from the latest matching raw artifacts."""
     try:
         manifest_spec = load_manifest(manifest)
         raw_paths = select_manifest_raw_paths(manifest_spec, data_dir / "raw")
@@ -709,6 +792,91 @@ def report(
         raise typer.Exit(code=1)
     typer.echo(format_coverage(dataset))
     typer.echo("\nPer-book evidence\n" + format_book_coverage(dataset))
+
+
+@app.command("report-scale")
+def report_scale(
+    manifest: ManifestOption = Path("configs/experiments/scale-50.json"),
+    data_dir: Annotated[Path, typer.Option(file_okay=False, help="Experiment data root.")] = Path(
+        "data/experiments/scale-50"
+    ),
+    output: Annotated[
+        Path | None, typer.Option(file_okay=False, help="Report and audit output directory.")
+    ] = None,
+) -> None:
+    """Rebuild twice and emit detailed scale metrics plus a blank human-audit CSV."""
+    try:
+        manifest_spec = load_manifest(manifest)
+        unsupported = [
+            selector.provider
+            for selector in manifest_spec.raw_artifacts
+            if selector.provider not in {"open-library", "google-books"}
+        ]
+        if unsupported:
+            raise ValueError(
+                "scale report accepts generic metadata providers only: "
+                + ", ".join(sorted(set(unsupported)))
+            )
+        raw_paths = select_manifest_raw_paths(manifest_spec, data_dir / "raw")
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    started = perf_counter()
+    first_dataset, _requested = _dataset_from_raw_paths(raw_paths)
+    second_dataset, _requested_again = _dataset_from_raw_paths(raw_paths)
+    build_seconds = perf_counter() - started
+    errors = [
+        *validate_dataset(first_dataset),
+        *validate_manifest_books(manifest_spec, first_dataset),
+        *validate_dataset(second_dataset),
+        *validate_manifest_books(manifest_spec, second_dataset),
+    ]
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+
+    filenames = ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+    with (
+        TemporaryDirectory(prefix="scale-rebuild-a-") as first_temp,
+        TemporaryDirectory(prefix="scale-rebuild-b-") as second_temp,
+    ):
+        first_directory = Path(first_temp)
+        second_directory = Path(second_temp)
+        write_dataset(first_dataset, first_directory)
+        write_dataset(second_dataset, second_directory)
+        deterministic = all(
+            (first_directory / filename).read_bytes() == (second_directory / filename).read_bytes()
+            for filename in filenames
+        )
+        canonical_bytes = sum((first_directory / filename).stat().st_size for filename in filenames)
+    if not deterministic:
+        raise typer.BadParameter("same raw manifest produced different canonical bytes")
+
+    report_data = create_scale_report(
+        manifest=manifest_spec,
+        dataset=first_dataset,
+        raw_paths=raw_paths,
+        deterministic_rebuild=deterministic,
+        build_seconds=build_seconds,
+        canonical_bytes=canonical_bytes,
+    )
+    report_path, audit_path = write_scale_artifacts(
+        report_data, first_dataset, output or data_dir / "reports"
+    )
+    discovery = report_data["discovery_normalization"]
+    coverage = report_data["evidence_coverage"]["overall"]
+    typer.echo(f"Scale report: {report_path}")
+    typer.echo(f"Human audit CSV: {audit_path}")
+    typer.echo(
+        "Candidates / selected / normalized: "
+        f"{discovery['candidate_count']} / {discovery['selected_book_count']} / "
+        f"{discovery['successfully_normalized_book_count']}"
+    )
+    typer.echo(
+        "Evidence books — description / TOC / preface / introduction / preview / sample: "
+        f"{coverage['description']} / {coverage['toc']} / {coverage['preface']} / "
+        f"{coverage['introduction']} / {coverage['preview']} / {coverage['sample_chapter']}"
+    )
+    typer.echo(f"Offline rebuild byte-identical: {deterministic}")
 
 
 if __name__ == "__main__":
