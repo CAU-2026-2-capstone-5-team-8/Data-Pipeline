@@ -322,12 +322,67 @@ unverified**. These are automated diagnostics, not human correctness ratings.
 
 The evidence loss is real: the v1 metadata collector only fetched detail pages for its first
 28 search results, so replacement candidates later in that same raw search have less detail.
-Do not claim that removing four suspicious titles proved a precision gain. Both audit CSVs keep
-`topic_relevant` blank. For a future precision measurement, copy those CSVs to review files outside
-the generated report paths, fill `topic_relevant` with `yes` or `no` for **all 50 books in each**,
-and pass the reviewed paths to `compare-scale`. It rejects contradictory labels for shared book
-IDs and returns `null` for any incomplete precision/delta. Re-running `report-scale` overwrites
-its generated blank audit CSV, so retain reviewed copies separately.
+Do not claim that removing four suspicious titles proved a precision gain. The automatic gate is
+not human ground truth. Both generated audit CSVs keep `topic_relevant` blank, and `compare-scale`
+returns `null` for any incomplete precision/delta.
+
+### One-pass human relevance review
+
+Recreate both reports and blank audits offline from the preserved raw artifacts. Use a separate
+ignored directory so generated files do not overwrite human work:
+
+```bash
+uv run data-pipeline report-scale \
+  --manifest configs/experiments/scale-50.json \
+  --data-dir data/experiments/scale-50 \
+  --output data/experiments/relevance-review/v1
+uv run data-pipeline report-scale \
+  --manifest configs/experiments/scale-50-v2.json \
+  --data-dir data/experiments/scale-50 \
+  --output data/experiments/relevance-review/v2
+uv run data-pipeline prepare-relevance-review \
+  --v1-report data/experiments/relevance-review/v1/scale-report.json \
+  --v2-report data/experiments/relevance-review/v2/scale-report.json \
+  --v1-audit data/experiments/relevance-review/v1/scale-audit.csv \
+  --v2-audit data/experiments/relevance-review/v2/scale-audit.csv \
+  --output data/experiments/relevance-review/relevance-review.csv
+```
+
+`prepare-relevance-review` requires the two reports to name the same raw snapshot hashes and
+timestamps. The v1 manifest selects the latest local matching artifact, while v2 pins exact
+snapshots; if new raw data makes them differ, preparation stops rather than comparing different
+inputs. It also requires untouched, blank generated audits. The union CSV has one row per
+`book_id`, with selection/replacement flags, bibliographic identity, v2 gate basis, source record
+IDs, source-attributed subject and title evidence, and empty `topic_relevant`/`notes`. For a
+v1-only book, a v2 rejection is attached only when its topic and title uniquely match; the
+`relevance_match_method=unique_topic_title` column flags that association for human checking.
+These diagnostics are evidence to inspect, not automatic relevance labels.
+
+On the preserved data, the review has **54 unique books**: 46 shared, four v1-only, and four
+v2-only. A reviewer should fill `topic_relevant` with `yes` or `no` for every row, optionally add
+notes, and keep the edited CSV outside the generated report directories. No precision is computed
+until all 54 judgments exist. Then split the one review back into both original audit formats:
+
+```bash
+uv run data-pipeline finalize-relevance-review \
+  --v1-report data/experiments/relevance-review/v1/scale-report.json \
+  --v2-report data/experiments/relevance-review/v2/scale-report.json \
+  --v1-audit data/experiments/relevance-review/v1/scale-audit.csv \
+  --v2-audit data/experiments/relevance-review/v2/scale-audit.csv \
+  --review data/experiments/relevance-review/relevance-review.csv \
+  --v1-output data/experiments/relevance-review/v1-reviewed.csv \
+  --v2-output data/experiments/relevance-review/v2-reviewed.csv
+uv run data-pipeline compare-scale \
+  --v1-report data/experiments/relevance-review/v1/scale-report.json \
+  --v2-report data/experiments/relevance-review/v2/scale-report.json \
+  --v1-audit data/experiments/relevance-review/v1-reviewed.csv \
+  --v2-audit data/experiments/relevance-review/v2-reviewed.csv
+```
+
+Finalization rejects missing, duplicate, unknown, wrong-topic, or incomplete labels before writing
+either review audit, and never overwrites an existing output. The shared-book judgment is copied
+into both audits consistently. The 2026-09-16 experiment has **no human labels yet**; the real-data
+precision for both versions remains unavailable.
 
 ## Setup and commands
 
