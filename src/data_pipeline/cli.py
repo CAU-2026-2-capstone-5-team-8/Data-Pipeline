@@ -41,6 +41,7 @@ from data_pipeline.publisher_document_sources import (
 )
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
 from data_pipeline.reporting import format_book_coverage, format_coverage
+from data_pipeline.scale_comparison import compare_scale_reports
 from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
 from data_pipeline.storage import (
     RawArtifact,
@@ -329,7 +330,12 @@ def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
 
 
 def _normalize(
-    payload: dict, provider: str, topic: str, limit: int, retrieved_at: datetime
+    payload: dict,
+    provider: str,
+    topic: str,
+    limit: int,
+    retrieved_at: datetime,
+    relevance_gate: str | None = None,
 ) -> CanonicalDataset:
     try:
         if provider == "google-books":
@@ -338,7 +344,11 @@ def _normalize(
             )
         if provider == "open-library":
             return normalize_open_library_response(
-                payload, topic=topic, limit=limit, retrieved_at=retrieved_at
+                payload,
+                topic=topic,
+                limit=limit,
+                retrieved_at=retrieved_at,
+                relevance_gate=relevance_gate,
             )
         if provider == "publisher-page":
             return normalize_publisher_page_response(
@@ -364,6 +374,7 @@ def _normalize(
 
 def _dataset_from_raw_paths(
     raw_paths: list[Path],
+    relevance_gate: str | None = None,
 ) -> tuple[CanonicalDataset, dict[str, int]]:
     """Normalize and merge preserved raw artifacts without publishing files."""
     datasets = []
@@ -381,15 +392,22 @@ def _dataset_from_raw_paths(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
             )
         _validate_google_page_provenance(artifact)
-        datasets.append(
-            _normalize(
-                artifact.response,
-                artifact.provider,
-                artifact.topic,
-                artifact.requested_limit,
+        normalization_args = (
+            artifact.response,
+            artifact.provider,
+            artifact.topic,
+            artifact.requested_limit,
+        )
+        evidence = (
+            _normalize(*normalization_args, retrieved_at=artifact.retrieved_at)
+            if relevance_gate is None
+            else _normalize(
+                *normalization_args,
                 retrieved_at=artifact.retrieved_at,
+                relevance_gate=relevance_gate,
             )
         )
+        datasets.append(evidence)
         if artifact.provider == "open-textbook":
             source_slug = artifact.request_parameters["source"]
             replacement_book_ids.add(open_textbook_source(source_slug).replaces_book_id)
@@ -762,7 +780,11 @@ def build_manifest(
         raw_paths = select_manifest_raw_paths(manifest_spec, data_dir / "raw")
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    dataset, requested_by_topic = _dataset_from_raw_paths(raw_paths)
+    dataset, requested_by_topic = (
+        _dataset_from_raw_paths(raw_paths)
+        if manifest_spec.relevance_gate is None
+        else _dataset_from_raw_paths(raw_paths, manifest_spec.relevance_gate)
+    )
     errors = [*validate_dataset(dataset), *validate_manifest_books(manifest_spec, dataset)]
     if errors:
         raise typer.BadParameter("; ".join(errors))
@@ -822,8 +844,10 @@ def report_scale(
         raise typer.BadParameter(str(exc)) from exc
 
     started = perf_counter()
-    first_dataset, _requested = _dataset_from_raw_paths(raw_paths)
-    second_dataset, _requested_again = _dataset_from_raw_paths(raw_paths)
+    first_dataset, _requested = _dataset_from_raw_paths(raw_paths, manifest_spec.relevance_gate)
+    second_dataset, _requested_again = _dataset_from_raw_paths(
+        raw_paths, manifest_spec.relevance_gate
+    )
     build_seconds = perf_counter() - started
     errors = [
         *validate_dataset(first_dataset),
@@ -877,6 +901,21 @@ def report_scale(
         f"{coverage['introduction']} / {coverage['preview']} / {coverage['sample_chapter']}"
     )
     typer.echo(f"Offline rebuild byte-identical: {deterministic}")
+
+
+@app.command("compare-scale")
+def compare_scale(
+    v1_report: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v2_report: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v1_audit: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v2_audit: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+) -> None:
+    """Compare selected identities; show precision only after complete human audit."""
+    try:
+        comparison = compare_scale_reports(v1_report, v2_report, v1_audit, v2_audit)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(comparison, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
