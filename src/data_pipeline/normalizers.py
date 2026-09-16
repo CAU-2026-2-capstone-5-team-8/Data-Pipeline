@@ -650,7 +650,9 @@ def normalize_open_library_response(
         book_id = book.book_id
         decision = None
         if relevance_gate is not None:
-            decision = open_library_relevance(topic, record, edition_details, work_details)
+            decision = open_library_relevance(
+                topic, record, edition_details, work_details, selected_title=book.title
+            )
             if diagnostics is not None:
                 diagnostics.relevance_reasons[decision.reason] += 1
             if not decision.accepted:
@@ -660,7 +662,7 @@ def normalize_open_library_response(
                         {
                             "topic": topic,
                             "external_id": str(record.get("key", "")),
-                            "title": decision.evaluated_title,
+                            "title": book.title,
                             "work_title": str(record.get("title", "")),
                             "reason": decision.reason,
                             "evidence": decision.evidence,

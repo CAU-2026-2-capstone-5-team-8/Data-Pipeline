@@ -10,7 +10,6 @@ class RelevanceDecision:
     accepted: bool
     reason: str
     evidence: list[dict[str, str]]
-    evaluated_title: str
 
 
 TOPIC_TERMS = {
@@ -32,8 +31,10 @@ def open_library_relevance(
     record: dict[str, Any],
     edition_details: dict[str, dict[str, Any]],
     work_details: dict[str, dict[str, Any]],
+    *,
+    selected_title: str | None = None,
 ) -> RelevanceDecision:
-    """Prefer preserved subject evidence, falling back to an explicit weak title signal."""
+    """Prefer source-attributed subjects, then the exact normalized edition title."""
     subject_evidence: list[dict[str, str]] = []
     english_title = ""
     edition_key = ""
@@ -63,15 +64,15 @@ def open_library_relevance(
                     if isinstance(item, str)
                 )
             break
-    title = english_title or record.get("title", "")
+    title = selected_title or english_title or record.get("title", "")
     title = title if isinstance(title, str) else ""
     subjects = " | ".join(item["value"] for item in subject_evidence)
     if subjects:
         conflict = CONFLICTING_SUBJECTS.get(topic)
         if conflict is not None and conflict.search(subjects):
-            return RelevanceDecision(False, "conflicting_subject", subject_evidence, title)
+            return RelevanceDecision(False, "conflicting_subject", subject_evidence)
         if TOPIC_TERMS[topic].search(subjects):
-            return RelevanceDecision(True, "matching_subject", subject_evidence, title)
+            return RelevanceDecision(True, "matching_subject", subject_evidence)
     title_evidence = [
         {
             "origin": "search_edition_title" if english_title else "search_work_title",
@@ -84,7 +85,5 @@ def open_library_relevance(
         }
     ]
     if TOPIC_TERMS[topic].search(title):
-        return RelevanceDecision(True, "title_only_unverified", title_evidence, title)
-    return RelevanceDecision(
-        False, "no_topic_evidence", [*subject_evidence, *title_evidence], title
-    )
+        return RelevanceDecision(True, "title_only_unverified", title_evidence)
+    return RelevanceDecision(False, "no_topic_evidence", [*subject_evidence, *title_evidence])

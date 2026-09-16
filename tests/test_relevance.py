@@ -78,7 +78,7 @@ def test_relevance_uses_subjects_then_english_edition_title() -> None:
 
 def test_rejected_candidate_evidence_identifies_work_and_edition_records() -> None:
     record = _candidate("/works/robot", "A computing text", "9780306406157")
-    record["editions"]["docs"][0]["title"] = "Robot Operating System"
+    record["editions"]["docs"][0]["title"] = "  Robot Operating System  "
     payload = {
         "search_response": {"docs": [record]},
         "work_details": {"/works/robot": {"subjects": ["Operating systems (computers)"]}},
