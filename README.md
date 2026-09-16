@@ -273,6 +273,60 @@ raw artifacts. The current canonical schema, immutable raw storage, deterministi
 manifest build, validation, deduplication checks, audit format, and offline reporting can already
 scale without source-specific downstream knowledge.
 
+### Scale Pilot v2: opt-in topic relevance gate
+
+[`configs/experiments/scale-50-v2.json`](configs/experiments/scale-50-v2.json) pins the **same two
+raw response hashes and retrieval timestamps** used for v1 and enables `topic-evidence-v1` only
+for Open Library. It uses the selected English edition's and associated work's subject metadata,
+excludes candidates
+whose subjects explicitly indicate a competing domain, and otherwise accepts a matching English
+edition title with the audit warning `topic_title_only_unverified`. A matching subject is not a
+human relevance verdict. No live recollection, new topic, source-specific book allowlist, or
+canonical schema change is necessary for this controlled before/after test.
+
+```bash
+uv run data-pipeline build-manifest \
+  --manifest configs/experiments/scale-50-v2.json \
+  --data-dir data/experiments/scale-50 \
+  --output data/experiments/scale-50-v2/processed
+uv run data-pipeline report-scale \
+  --manifest configs/experiments/scale-50-v2.json \
+  --data-dir data/experiments/scale-50 \
+  --output data/experiments/scale-50-v2/reports
+uv run data-pipeline compare-scale \
+  --v1-report data/experiments/scale-50/reports/scale-report.json \
+  --v2-report data/experiments/scale-50-v2/reports/scale-report.json \
+  --v1-audit data/experiments/scale-50/reports/scale-audit.csv \
+  --v2-audit data/experiments/scale-50-v2/reports/scale-audit.csv
+```
+
+On the preserved September 2026 raw data, v2 selects 25 books per topic. It removes four
+Operating Systems candidates (*Power system operation*, *Computer aided power system operation
+and analysis*, *Robot Operating System*, and *The Operating System*) and adds four other candidates.
+Linear Algebra identities are unchanged. Of 200 candidates, 16 were rejected (4 competing-subject,
+12 without topic evidence); rejected titles, IDs, reasons, and subject evidence are in the v2
+report. Among selected books, 23 have matching subject evidence and **27 are title-only,
+unverified**. These are automated diagnostics, not human correctness ratings.
+
+| Measure | v1 | v2 |
+| --- | ---: | ---: |
+| Selected books | 50 | 50 |
+| Description coverage | 12 | 11 |
+| TOC coverage / entries | 4 / 177 | 4 / 166 |
+| Preface, introduction, preview, sample | 0 | 0 |
+| Broken references / missing provenance | 0 | 0 |
+| Two offline builds byte-identical | yes | yes |
+| Audited relevance precision | unavailable | unavailable |
+
+The evidence loss is real: the v1 metadata collector only fetched detail pages for its first
+28 search results, so replacement candidates later in that same raw search have less detail.
+Do not claim that removing four suspicious titles proved a precision gain. Both audit CSVs keep
+`topic_relevant` blank. For a future precision measurement, copy those CSVs to review files outside
+the generated report paths, fill `topic_relevant` with `yes` or `no` for **all 50 books in each**,
+and pass the reviewed paths to `compare-scale`. It rejects contradictory labels for shared book
+IDs and returns `null` for any incomplete precision/delta. Re-running `report-scale` overwrites
+its generated blank audit CSV, so retain reviewed copies separately.
+
 ## Setup and commands
 
 Python 3.12 or later and [uv](https://docs.astral.sh/uv/) are required.

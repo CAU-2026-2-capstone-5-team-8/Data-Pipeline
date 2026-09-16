@@ -1,5 +1,6 @@
 """Versioned dataset manifest loading and raw-artifact selection."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -33,6 +34,15 @@ class RawArtifactSelector(BaseModel):
     topic: Literal["linear-algebra", "operating-systems"]
     requested_limit: int = Field(ge=1, le=100)
     source: str | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    retrieved_at: datetime | None = None
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def snapshot_time_must_have_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("raw snapshot retrieved_at must include timezone")
+        return value
 
     @model_validator(mode="after")
     def source_matches_provider(self) -> "RawArtifactSelector":
@@ -52,6 +62,8 @@ class RawArtifactSelector(BaseModel):
             and artifact.topic == self.topic
             and artifact.requested_limit == self.requested_limit
             and (self.source is None or artifact.request_parameters.get("source") == self.source)
+            and (self.content_hash is None or artifact.content_hash == self.content_hash)
+            and (self.retrieved_at is None or artifact.retrieved_at == self.retrieved_at)
         )
 
     def display_name(self) -> str:
@@ -68,6 +80,16 @@ class MvpManifest(BaseModel):
     schema_version: Literal[1] = 1
     raw_artifacts: list[RawArtifactSelector] = Field(min_length=1)
     expected_book_ids: list[str] = Field(min_length=1)
+    relevance_gate: Literal["topic-evidence-v1"] | None = None
+
+    @model_validator(mode="after")
+    def gate_requires_supported_provider(self) -> "MvpManifest":
+        """Avoid silently treating unsupported collectors as relevance-filtered."""
+        if self.relevance_gate and any(
+            selector.provider != "open-library" for selector in self.raw_artifacts
+        ):
+            raise ValueError("topic-evidence-v1 supports open-library raw artifacts only")
+        return self
 
     @field_validator("raw_artifacts")
     @classmethod

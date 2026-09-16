@@ -124,6 +124,41 @@ def test_manifest_selects_latest_artifact_for_each_request_identity(tmp_path) ->
     assert selected == [raw_artifact_path(tmp_path, newer), raw_artifact_path(tmp_path, textbook)]
 
 
+def test_manifest_can_pin_an_older_raw_snapshot_with_same_response_hash(tmp_path) -> None:
+    older = _artifact(
+        provider="open-library",
+        topic="operating-systems",
+        requested_limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    newer = RawArtifact(
+        provider=older.provider,
+        topic=older.topic,
+        requested_limit=older.requested_limit,
+        retrieved_at=RETRIEVED_AT + timedelta(minutes=1),
+        request_parameters=older.request_parameters,
+        response=older.response,
+    )
+    for artifact in (older, newer):
+        write_raw_response(artifact, raw_artifact_path(tmp_path, artifact))
+    manifest = MvpManifest(
+        raw_artifacts=[
+            RawArtifactSelector(
+                provider="open-library",
+                topic="operating-systems",
+                requested_limit=5,
+                content_hash=older.content_hash,
+                retrieved_at=older.retrieved_at,
+            )
+        ],
+        expected_book_ids=[BOOK_ID],
+    )
+
+    assert select_manifest_raw_paths(manifest, tmp_path / "raw") == [
+        raw_artifact_path(tmp_path, older)
+    ]
+
+
 def test_manifest_reports_missing_artifact_and_wrong_book_set(tmp_path) -> None:
     manifest = MvpManifest(
         raw_artifacts=[

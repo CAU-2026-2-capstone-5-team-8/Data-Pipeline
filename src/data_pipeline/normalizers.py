@@ -31,6 +31,7 @@ from data_pipeline.open_textbook_sources import OpenTextbookSourceSpec, open_tex
 from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
+from data_pipeline.relevance import open_library_relevance
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -592,10 +593,13 @@ def normalize_open_library_response(
     limit: int,
     retrieved_at: datetime,
     diagnostics: NormalizationDiagnostics | None = None,
+    relevance_gate: str | None = None,
 ) -> CanonicalDataset:
     """Normalize an Open Library search plus optional edition and work details."""
     if topic not in TOPICS:
         raise ValueError(f"unsupported topic: {topic}")
+    if relevance_gate not in (None, "topic-evidence-v1"):
+        raise ValueError(f"unsupported relevance gate: {relevance_gate}")
 
     books: list[Book] = []
     documents: list[Document] = []
@@ -644,12 +648,43 @@ def normalize_open_library_response(
             continue
         book, book_sources, book_documents, book_toc = result
         book_id = book.book_id
+        decision = None
+        if relevance_gate is not None:
+            decision = open_library_relevance(topic, record, edition_details, work_details)
+            if diagnostics is not None:
+                diagnostics.relevance_reasons[decision.reason] += 1
+            if not decision.accepted:
+                if diagnostics is not None:
+                    diagnostics.relevance_rejected_count += 1
+                    diagnostics.relevance_rejected_candidates.append(
+                        {
+                            "topic": topic,
+                            "external_id": str(record.get("key", "")),
+                            "title": str(record.get("title", "")),
+                            "reason": decision.reason,
+                            "evidence": decision.evidence,
+                        }
+                    )
+                logger.info(
+                    "event=candidate_rejected provider=open_library work_id=%s reason=%s",
+                    record.get("key"),
+                    decision.reason,
+                )
+                continue
+        if (
+            diagnostics is not None
+            and decision is not None
+            and decision.reason == "title_only_unverified"
+        ):
+            diagnostics.relevance_weak_count += 1
         if book_id in seen_books:
             if diagnostics is not None:
                 diagnostics.duplicate_candidate_count += 1
             continue
         if diagnostics is not None:
             diagnostics.normalized_candidate_count += 1
+            if decision is not None:
+                diagnostics.relevance_by_book_id[book_id] = decision.reason
         seen_books.add(book_id)
         if len(books) >= limit:
             continue

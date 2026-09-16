@@ -43,7 +43,9 @@ def spreadsheet_safe_csv_value(value: Any) -> Any:
     return value
 
 
-def normalization_diagnostics(raw_paths: list[Path]) -> list[NormalizationDiagnostics]:
+def normalization_diagnostics(
+    raw_paths: list[Path], relevance_gate: str | None = None
+) -> list[NormalizationDiagnostics]:
     """Replay generic provider normalizers over their full candidate pools for metrics."""
     results: list[NormalizationDiagnostics] = []
     for raw_path in raw_paths:
@@ -61,6 +63,7 @@ def normalization_diagnostics(raw_paths: list[Path]) -> list[NormalizationDiagno
                 limit=candidate_limit,
                 retrieved_at=artifact.retrieved_at,
                 diagnostics=diagnostics,
+                relevance_gate=relevance_gate,
             )
         elif artifact.provider == "google-books":
             normalize_google_books_response(
@@ -268,7 +271,7 @@ def create_scale_report(
 ) -> dict[str, Any]:
     """Create the complete machine-readable Scale Pilot report."""
     artifacts = [read_raw_response(path) for path in raw_paths]
-    diagnostics = normalization_diagnostics(raw_paths)
+    diagnostics = normalization_diagnostics(raw_paths, manifest.relevance_gate)
     rows = _book_coverage(dataset)
     books_by_id = {book.book_id: book for book in dataset.books}
     edition_mismatch_book_ids = set().union(
@@ -279,6 +282,15 @@ def create_scale_report(
         if row["book_id"] in edition_mismatch_book_ids:
             conflicts.append("work_description_edition_mismatch")
         row["suspected_identity_or_edition_conflicts"] = conflicts
+        if manifest.relevance_gate is not None:
+            row["relevance_basis"] = next(
+                (
+                    item.relevance_by_book_id[row["book_id"]]
+                    for item in diagnostics
+                    if row["book_id"] in item.relevance_by_book_id
+                ),
+                "unknown",
+            )
     rows_by_topic: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         rows_by_topic[row["topic"]].append(row)
@@ -310,7 +322,21 @@ def create_scale_report(
             item.normalization_failure_count for item in diagnostics
         ),
     }
-    return {
+    if manifest.relevance_gate is not None:
+        discovery["relevance_rejected_count"] = sum(
+            item.relevance_rejected_count for item in diagnostics
+        )
+        discovery["relevance_weak_candidate_count"] = sum(
+            item.relevance_weak_count for item in diagnostics
+        )
+        reasons: Counter[str] = Counter()
+        for item in diagnostics:
+            reasons.update(item.relevance_reasons)
+        discovery["relevance_decision_counts"] = dict(sorted(reasons.items()))
+        discovery["relevance_rejected_candidates"] = [
+            candidate for item in diagnostics for candidate in item.relevance_rejected_candidates
+        ]
+    report = {
         "schema_version": 1,
         "experiment": "scale-50",
         "discovery_normalization": discovery,
@@ -327,10 +353,27 @@ def create_scale_report(
         "artifacts": {
             "raw_artifact_count": len(raw_paths),
             "raw_bytes": sum(path.stat().st_size for path in raw_paths),
+            "raw_content_hashes": sorted(artifact.content_hash for artifact in artifacts),
+            "raw_snapshots": sorted(
+                (
+                    {
+                        "provider": artifact.provider,
+                        "topic": artifact.topic,
+                        "retrieved_at": artifact.retrieved_at.isoformat(),
+                        "content_hash": artifact.content_hash,
+                    }
+                    for artifact in artifacts
+                ),
+                key=lambda item: (item["provider"], item["topic"]),
+            ),
             "canonical_bytes": canonical_bytes,
             "two_offline_build_seconds": round(build_seconds, 6),
         },
     }
+    if manifest.relevance_gate is not None:
+        report["experiment"] = "scale-50-v2"
+        report["relevance_gate"] = manifest.relevance_gate
+    return report
 
 
 def _audit_warnings(book: Book, row: dict[str, Any]) -> list[str]:
@@ -350,6 +393,8 @@ def _audit_warnings(book: Book, row: dict[str, Any]) -> list[str]:
         warnings.append("missing_toc")
     if row["prose_character_count"] == 0:
         warnings.append("insufficient_public_prose")
+    if row.get("relevance_basis") == "title_only_unverified":
+        warnings.append("topic_title_only_unverified")
     return warnings
 
 
@@ -388,6 +433,8 @@ def write_scale_artifacts(
         "edition_ok",
         "notes",
     ]
+    if "relevance_gate" in report:
+        fieldnames.insert(fieldnames.index("evidence_types"), "relevance_basis")
     with audit_path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
@@ -422,6 +469,8 @@ def write_scale_artifacts(
                 "edition_ok": "",
                 "notes": "",
             }
+            if "relevance_gate" in report:
+                audit_row["relevance_basis"] = row.get("relevance_basis", "unknown")
             writer.writerow(
                 {field: spreadsheet_safe_csv_value(value) for field, value in audit_row.items()}
             )

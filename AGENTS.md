@@ -925,6 +925,18 @@ and where it fails at roughly fifty books. It is not required to make optional e
 
 ---
 
+## 24B. Scale Pilot v2: Relevance Audit
+
+Preserve the first fifty-book manifest and ten-book curated MVP. Evaluate a small, opt-in metadata
+topic gate against the **same immutable raw responses** as the first scale experiment; do not
+change the canonical JSONL contract or treat inferred topic relevance as human ground truth.
+Record decisions, rejected candidates, weak title-only evidence, and changed selected identities.
+Keep the original raw and v1 selection untouched. A precision claim requires independent human
+labels for every selected book in both versions; report precision as unavailable until that audit
+is complete. Do not add ML or per-book relevance allowlists.
+
+---
+
 ## 25. Development Workflow for the Agent
 
 Before writing implementation code:

@@ -16,6 +16,11 @@ class NormalizationDiagnostics:
     normalization_failure_count: int = 0
     failure_counts: Counter[str] = field(default_factory=Counter)
     edition_mismatch_book_ids: set[str] = field(default_factory=set)
+    relevance_rejected_count: int = 0
+    relevance_weak_count: int = 0
+    relevance_reasons: Counter[str] = field(default_factory=Counter)
+    relevance_by_book_id: dict[str, str] = field(default_factory=dict)
+    relevance_rejected_candidates: list[dict[str, str]] = field(default_factory=list)
 
     def fail(self, reason: str) -> None:
         """Record one candidate-level normalization failure."""
