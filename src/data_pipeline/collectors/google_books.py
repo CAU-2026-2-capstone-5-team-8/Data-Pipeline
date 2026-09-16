@@ -74,12 +74,14 @@ class GoogleBooksCollector:
             pages.append({"request_parameters": parameters, "response": response})
             collected_count += len(items)
             total_items = response.get("totalItems")
-            reached_total = (
+            has_valid_total = (
                 isinstance(total_items, int)
                 and not isinstance(total_items, bool)
-                and collected_count >= total_items
+                and total_items >= 0
             )
-            if len(items) < parameters["maxResults"] or reached_total:
+            if has_valid_total and collected_count >= total_items:
+                break
+            if not has_valid_total and len(items) < parameters["maxResults"]:
                 break
         return {"pages": pages}
 

@@ -128,11 +128,13 @@ their sources are explicitly recorded as `other`; no license or access rights ar
 Google Books is also implemented (`--provider google-books`). Searches above its 40-result request
 limit are split into ordered `startIndex` pages of at most 40 items, and every fetched page retains
 its exact request parameters and unmodified response inside one immutable raw artifact. A short
-page ends pagination; a failed page fails the collection visibly instead of publishing a partial
-artifact. The public endpoint returned HTTP 429 from the development environment on 2026-09-12,
-so pagination is verified with network-independent HTTP fixtures. A borrow link, scan identifier,
-preview URL, or TOC heading named `Preface` is not treated as public book text. The pipeline does
-not fetch restricted scans or infer unavailable preface, introduction, preview, or sample content.
+page ends pagination only when `totalItems` is absent or the reported total has been reached; an
+explicit remaining total continues with the next planned page. A failed page fails the collection
+visibly instead of publishing a partial artifact. The public endpoint returned HTTP 429 from the
+development environment on 2026-09-12, so pagination is verified with network-independent HTTP
+fixtures. A borrow link, scan identifier, preview URL, or TOC heading named `Preface` is not
+treated as public book text. The pipeline does not fetch restricted scans or infer unavailable
+preface, introduction, preview, or sample content.
 
 ## Real-data evidence experiment
 

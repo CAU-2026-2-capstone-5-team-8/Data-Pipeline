@@ -80,6 +80,38 @@ def test_build_rejects_google_page_request_provenance_mismatch(tmp_path) -> None
     assert "page 0 request mismatch" in result.output
 
 
+def test_build_rejects_truncated_google_pages_when_total_items_remain(tmp_path) -> None:
+    raw_path = tmp_path / "truncated-google-pages.json"
+    request_parameters = GoogleBooksCollector.search_parameters("linear-algebra", 100)
+    artifact = RawArtifact(
+        provider="google-books",
+        topic="linear-algebra",
+        requested_limit=100,
+        retrieved_at=datetime(2026, 9, 12, 12, 34, tzinfo=UTC),
+        request_parameters=request_parameters,
+        response={
+            "pages": [
+                {
+                    "request_parameters": request_parameters["pages"][0],
+                    "response": {"totalItems": 100, "items": [{} for _index in range(40)]},
+                },
+                {
+                    "request_parameters": request_parameters["pages"][1],
+                    "response": {"totalItems": 100, "items": [{} for _index in range(7)]},
+                },
+            ]
+        },
+    )
+    write_raw_response(artifact, raw_path)
+
+    result = CliRunner().invoke(
+        app, ["build", "--raw", str(raw_path), "--output", str(tmp_path / "processed")]
+    )
+
+    assert result.exit_code != 0
+    assert "raw pages ended before plan was satisfied" in result.output
+
+
 def test_build_accepts_legacy_single_page_google_raw_artifact(tmp_path) -> None:
     raw_path = tmp_path / "legacy-google.json"
     legacy_parameters = GoogleBooksCollector.search_parameters("linear-algebra", 4)["pages"][0]

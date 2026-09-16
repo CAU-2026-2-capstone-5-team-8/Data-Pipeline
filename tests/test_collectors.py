@@ -81,7 +81,7 @@ def test_google_books_paginates_with_bounded_page_sizes(
     )
 
 
-def test_google_books_stops_after_a_short_final_page() -> None:
+def test_google_books_continues_after_a_short_page_when_total_items_remain() -> None:
     requested_start_indexes = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -92,6 +92,33 @@ def test_google_books_stops_after_a_short_final_page() -> None:
             200,
             json={
                 "totalItems": 100,
+                "items": [
+                    _google_item(index) for index in range(start_index, start_index + item_count)
+                ],
+            },
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = GoogleBooksCollector(client=client).search_books(
+            "linear-algebra", candidate_limit=100
+        )
+
+    assert requested_start_indexes == [0, 40, 80]
+    assert [len(page["response"]["items"]) for page in payload["pages"]] == [40, 7, 7]
+
+
+def test_google_books_stops_after_a_short_final_page() -> None:
+    requested_start_indexes = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start_index = int(request.url.params["startIndex"])
+        requested_start_indexes.append(start_index)
+        item_count = 40 if start_index == 0 else 7
+        return httpx.Response(
+            200,
+            json={
+                "totalItems": 47,
                 "items": [
                     _google_item(index) for index in range(start_index, start_index + item_count)
                 ],

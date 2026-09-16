@@ -296,16 +296,22 @@ def _validate_google_page_provenance(artifact: RawArtifact) -> None:
         reached_total = (
             isinstance(total_items, int)
             and not isinstance(total_items, bool)
+            and total_items >= 0
             and collected_count >= total_items
+        )
+        total_requires_more = (
+            isinstance(total_items, int)
+            and not isinstance(total_items, bool)
+            and total_items >= 0
+            and collected_count < total_items
         )
         if (
             not isinstance(items, list)
             or not isinstance(page_size, int)
+            or total_requires_more
             or (len(items) >= page_size and not reached_total)
         ):
-            raise typer.BadParameter(
-                "paginated google-books raw artifact ended without a short final page"
-            )
+            raise typer.BadParameter("google-books raw pages ended before plan was satisfied")
 
 
 def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
