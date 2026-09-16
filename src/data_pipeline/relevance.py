@@ -85,5 +85,7 @@ def open_library_relevance(
         }
     ]
     if TOPIC_TERMS[topic].search(title):
-        return RelevanceDecision(True, "title_only_unverified", title_evidence)
+        return RelevanceDecision(
+            True, "title_only_unverified", [*subject_evidence, *title_evidence]
+        )
     return RelevanceDecision(False, "no_topic_evidence", [*subject_evidence, *title_evidence])

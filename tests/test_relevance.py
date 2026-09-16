@@ -76,6 +76,28 @@ def test_relevance_uses_subjects_then_english_edition_title() -> None:
     assert not open_library_relevance("operating-systems", no_match, {}, {}).accepted
 
 
+def test_title_only_decision_preserves_nonmatching_subject_evidence() -> None:
+    record = _candidate("/works/algebra", "A mathematics textbook", "9780131103627")
+    record["editions"]["docs"][0]["title"] = "Linear Algebra"
+    decision = open_library_relevance(
+        "linear-algebra",
+        record,
+        {},
+        {"/works/algebra": {"subjects": ["Matrices"]}},
+    )
+
+    assert decision.accepted
+    assert decision.reason == "title_only_unverified"
+    assert decision.evidence == [
+        {"origin": "work_detail", "external_id": "/works/algebra", "value": "Matrices"},
+        {
+            "origin": "search_edition_title",
+            "external_id": "/books/algebra",
+            "value": "Linear Algebra",
+        },
+    ]
+
+
 def test_rejected_candidate_evidence_identifies_work_and_edition_records() -> None:
     record = _candidate("/works/robot", "A computing text", "9780306406157")
     record["editions"]["docs"][0]["title"] = "  Robot Operating System  "
