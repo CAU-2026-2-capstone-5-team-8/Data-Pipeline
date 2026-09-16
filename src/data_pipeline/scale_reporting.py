@@ -291,6 +291,14 @@ def create_scale_report(
                 ),
                 "unknown",
             )
+            row["relevance_evidence"] = next(
+                (
+                    item.relevance_evidence_by_book_id[row["book_id"]]
+                    for item in diagnostics
+                    if row["book_id"] in item.relevance_evidence_by_book_id
+                ),
+                [],
+            )
     rows_by_topic: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         rows_by_topic[row["topic"]].append(row)
@@ -435,6 +443,7 @@ def write_scale_artifacts(
     ]
     if "relevance_gate" in report:
         fieldnames.insert(fieldnames.index("evidence_types"), "relevance_basis")
+        fieldnames.insert(fieldnames.index("evidence_types"), "relevance_source_records")
     with audit_path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames)
         writer.writeheader()
@@ -471,6 +480,14 @@ def write_scale_artifacts(
             }
             if "relevance_gate" in report:
                 audit_row["relevance_basis"] = row.get("relevance_basis", "unknown")
+                audit_row["relevance_source_records"] = " | ".join(
+                    sorted(
+                        {
+                            f"{item['origin']}:{item['external_id']}"
+                            for item in row.get("relevance_evidence", [])
+                        }
+                    )
+                )
             writer.writerow(
                 {field: spreadsheet_safe_csv_value(value) for field, value in audit_row.items()}
             )

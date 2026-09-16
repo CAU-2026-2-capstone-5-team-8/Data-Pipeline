@@ -9,7 +9,8 @@ from typing import Any
 class RelevanceDecision:
     accepted: bool
     reason: str
-    evidence: str
+    evidence: list[dict[str, str]]
+    evaluated_title: str
 
 
 TOPIC_TERMS = {
@@ -33,12 +34,17 @@ def open_library_relevance(
     work_details: dict[str, dict[str, Any]],
 ) -> RelevanceDecision:
     """Prefer preserved subject evidence, falling back to an explicit weak title signal."""
-    subject_values: list[str] = []
+    subject_evidence: list[dict[str, str]] = []
     english_title = ""
+    edition_key = ""
     work_key = record.get("key")
     work = work_details.get(work_key) if isinstance(work_key, str) else None
     if isinstance(work, dict) and isinstance(work.get("subjects"), list):
-        subject_values.extend(item for item in work["subjects"] if isinstance(item, str))
+        subject_evidence.extend(
+            {"origin": "work_detail", "external_id": work_key, "value": item}
+            for item in work["subjects"]
+            if isinstance(item, str)
+        )
     editions = record.get("editions", {})
     if isinstance(editions, dict) and isinstance(editions.get("docs"), list):
         for edition in editions["docs"]:
@@ -47,20 +53,38 @@ def open_library_relevance(
             if "eng" not in edition["language"]:
                 continue
             english_title = edition.get("title") if isinstance(edition.get("title"), str) else ""
-            edition_key = edition.get("key")
-            detail = edition_details.get(edition_key) if isinstance(edition_key, str) else None
+            selected_key = edition.get("key")
+            edition_key = selected_key if isinstance(selected_key, str) else ""
+            detail = edition_details.get(edition_key)
             if isinstance(detail, dict) and isinstance(detail.get("subjects"), list):
-                subject_values.extend(item for item in detail["subjects"] if isinstance(item, str))
+                subject_evidence.extend(
+                    {"origin": "edition_detail", "external_id": edition_key, "value": item}
+                    for item in detail["subjects"]
+                    if isinstance(item, str)
+                )
             break
-    subjects = " | ".join(subject_values)
+    title = english_title or record.get("title", "")
+    title = title if isinstance(title, str) else ""
+    subjects = " | ".join(item["value"] for item in subject_evidence)
     if subjects:
         conflict = CONFLICTING_SUBJECTS.get(topic)
         if conflict is not None and conflict.search(subjects):
-            return RelevanceDecision(False, "conflicting_subject", subjects)
+            return RelevanceDecision(False, "conflicting_subject", subject_evidence, title)
         if TOPIC_TERMS[topic].search(subjects):
-            return RelevanceDecision(True, "matching_subject", subjects)
-    title = english_title or record.get("title", "")
-    title = title if isinstance(title, str) else ""
+            return RelevanceDecision(True, "matching_subject", subject_evidence, title)
+    title_evidence = [
+        {
+            "origin": "search_edition_title" if english_title else "search_work_title",
+            "external_id": edition_key
+            if english_title
+            else work_key
+            if isinstance(work_key, str)
+            else "",
+            "value": title,
+        }
+    ]
     if TOPIC_TERMS[topic].search(title):
-        return RelevanceDecision(True, "title_only_unverified", title)
-    return RelevanceDecision(False, "no_topic_evidence", title)
+        return RelevanceDecision(True, "title_only_unverified", title_evidence, title)
+    return RelevanceDecision(
+        False, "no_topic_evidence", [*subject_evidence, *title_evidence], title
+    )

@@ -305,7 +305,9 @@ Operating Systems candidates (*Power system operation*, *Computer aided power sy
 and analysis*, *Robot Operating System*, and *The Operating System*) and adds four other candidates.
 Linear Algebra identities are unchanged. Of 200 candidates, 16 were rejected (4 competing-subject,
 12 without topic evidence); rejected titles, IDs, reasons, and subject evidence are in the v2
-report. Among selected books, 23 have matching subject evidence and **27 are title-only,
+report. Every relevance evidence item records the exact Open Library work/edition external ID;
+selected-book evidence is also listed in the JSON report and referenced by record ID in the CSV.
+Among selected books, 24 have matching subject evidence and **26 are title-only,
 unverified**. These are automated diagnostics, not human correctness ratings.
 
 | Measure | v1 | v2 |

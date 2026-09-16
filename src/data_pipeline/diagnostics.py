@@ -2,6 +2,7 @@
 
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -20,7 +21,8 @@ class NormalizationDiagnostics:
     relevance_weak_count: int = 0
     relevance_reasons: Counter[str] = field(default_factory=Counter)
     relevance_by_book_id: dict[str, str] = field(default_factory=dict)
-    relevance_rejected_candidates: list[dict[str, str]] = field(default_factory=list)
+    relevance_evidence_by_book_id: dict[str, list[dict[str, str]]] = field(default_factory=dict)
+    relevance_rejected_candidates: list[dict[str, Any]] = field(default_factory=list)
 
     def fail(self, reason: str) -> None:
         """Record one candidate-level normalization failure."""

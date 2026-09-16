@@ -6,18 +6,22 @@ from pathlib import Path
 from typing import Any
 
 
-def _audit_labels(path: Path, expected_ids: set[str]) -> dict[str, bool]:
+def _audit_labels(path: Path, expected_topics: dict[str, str]) -> dict[str, bool]:
     """Read explicit yes/no review labels; reject unknown identities and contradictory rows."""
     labels: dict[str, bool] = {}
     seen: set[str] = set()
     with path.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)
-        if not reader.fieldnames or not {"book_id", "topic_relevant"} <= set(reader.fieldnames):
-            raise ValueError(f"audit CSV lacks book_id/topic_relevant columns: {path}")
+        if not reader.fieldnames or not {"book_id", "topic", "topic_relevant"} <= set(
+            reader.fieldnames
+        ):
+            raise ValueError(f"audit CSV lacks book_id/topic/topic_relevant columns: {path}")
         for row in reader:
             book_id = row.get("book_id")
-            if book_id in seen or book_id not in expected_ids:
+            if book_id in seen or book_id not in expected_topics:
                 raise ValueError(f"duplicate or unexpected audit book ID in {path}: {book_id}")
+            if row.get("topic") != expected_topics[book_id]:
+                raise ValueError(f"audit topic mismatch for {book_id}: {path}")
             seen.add(book_id)
             raw_answer = row.get("topic_relevant")
             if not isinstance(raw_answer, str):
@@ -29,8 +33,10 @@ def _audit_labels(path: Path, expected_ids: set[str]) -> dict[str, bool]:
                 labels[book_id] = False
             elif answer:
                 raise ValueError(f"invalid topic_relevant value for {book_id}: {answer}")
-    if seen != expected_ids:
-        raise ValueError(f"audit CSV is missing {len(expected_ids - seen)} selected books: {path}")
+    if seen != set(expected_topics):
+        raise ValueError(
+            f"audit CSV is missing {len(set(expected_topics) - seen)} selected books: {path}"
+        )
     return labels
 
 
@@ -43,6 +49,8 @@ def compare_scale_reports(
     """Compare exact IDs and independently audited precision, or return null if incomplete."""
     first = json.loads(v1_report.read_text(encoding="utf-8"))
     second = json.loads(v2_report.read_text(encoding="utf-8"))
+    if first.get("experiment") != "scale-50" or second.get("experiment") != "scale-50-v2":
+        raise ValueError("expected a scale-50 v1 report followed by a scale-50-v2 report")
     first_snapshots = first.get("artifacts", {}).get("raw_snapshots")
     second_snapshots = second.get("artifacts", {}).get("raw_snapshots")
     if not isinstance(first_snapshots, list) or not isinstance(second_snapshots, list):
@@ -51,8 +59,12 @@ def compare_scale_reports(
         raise ValueError("v1 and v2 reports were built from different raw snapshots")
     first_rows = {row["book_id"]: row for row in first["evidence_coverage"]["by_book"]}
     second_rows = {row["book_id"]: row for row in second["evidence_coverage"]["by_book"]}
-    first_labels = _audit_labels(v1_audit, set(first_rows))
-    second_labels = _audit_labels(v2_audit, set(second_rows))
+    first_labels = _audit_labels(
+        v1_audit, {book_id: row["topic"] for book_id, row in first_rows.items()}
+    )
+    second_labels = _audit_labels(
+        v2_audit, {book_id: row["topic"] for book_id, row in second_rows.items()}
+    )
     for shared_id in set(first_labels) & set(second_labels):
         if first_labels[shared_id] != second_labels[shared_id]:
             raise ValueError(f"conflicting human topic relevance for {shared_id}")

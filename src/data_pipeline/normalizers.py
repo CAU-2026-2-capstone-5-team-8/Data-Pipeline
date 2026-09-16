@@ -660,7 +660,8 @@ def normalize_open_library_response(
                         {
                             "topic": topic,
                             "external_id": str(record.get("key", "")),
-                            "title": str(record.get("title", "")),
+                            "title": decision.evaluated_title,
+                            "work_title": str(record.get("title", "")),
                             "reason": decision.reason,
                             "evidence": decision.evidence,
                         }
@@ -685,6 +686,7 @@ def normalize_open_library_response(
             diagnostics.normalized_candidate_count += 1
             if decision is not None:
                 diagnostics.relevance_by_book_id[book_id] = decision.reason
+                diagnostics.relevance_evidence_by_book_id[book_id] = decision.evidence
         seen_books.add(book_id)
         if len(books) >= limit:
             continue

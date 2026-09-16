@@ -58,6 +58,11 @@ def test_relevance_uses_subjects_then_english_edition_title() -> None:
     subjects = {"/works/robot": {"subjects": ["Operating systems (computers)", "Robotics"]}}
     decision = open_library_relevance("operating-systems", robot, {}, subjects)
     assert (decision.accepted, decision.reason) == (False, "conflicting_subject")
+    assert decision.evidence[0] == {
+        "origin": "work_detail",
+        "external_id": "/works/robot",
+        "value": "Operating systems (computers)",
+    }
 
     english = _candidate("/works/german", "Lineare Algebra", "9780131103627")
     english["editions"]["docs"][0]["title"] = "Linear Algebra"
@@ -69,6 +74,30 @@ def test_relevance_uses_subjects_then_english_edition_title() -> None:
     ).accepted
     no_match = _candidate("/works/power", "Power system operation", "9780306406157")
     assert not open_library_relevance("operating-systems", no_match, {}, {}).accepted
+
+
+def test_rejected_candidate_evidence_identifies_work_and_edition_records() -> None:
+    record = _candidate("/works/robot", "A computing text", "9780306406157")
+    record["editions"]["docs"][0]["title"] = "Robot Operating System"
+    payload = {
+        "search_response": {"docs": [record]},
+        "work_details": {"/works/robot": {"subjects": ["Operating systems (computers)"]}},
+        "edition_details": {"/books/robot": {"subjects": ["Robotics"]}},
+    }
+    diagnostics = NormalizationDiagnostics(provider="open_library")
+    normalize_open_library_response(
+        payload,
+        topic="operating-systems",
+        limit=1,
+        retrieved_at=RETRIEVED_AT,
+        relevance_gate="topic-evidence-v1",
+        diagnostics=diagnostics,
+    )
+    rejected = diagnostics.relevance_rejected_candidates[0]
+    assert rejected["title"] == "Robot Operating System"
+    assert rejected["work_title"] == "A computing text"
+    assert [item["origin"] for item in rejected["evidence"]] == ["work_detail", "edition_detail"]
+    assert rejected["evidence"][1]["external_id"] == "/books/robot"
 
 
 def test_opt_in_gate_replaces_conflicting_subject_without_changing_default(tmp_path) -> None:
@@ -152,7 +181,10 @@ def test_opt_in_gate_replaces_conflicting_subject_without_changing_default(tmp_p
     with (tmp_path / "reports" / "scale-audit.csv").open(encoding="utf-8") as stream:
         audit = next(csv.DictReader(stream))
     assert audit["relevance_basis"] == "matching_subject"
+    assert audit["relevance_source_records"] == "work_detail:/works/unix"
     assert audit["topic_relevant"] == ""
+    by_book = report["evidence_coverage"]["by_book"]
+    assert by_book[0]["relevance_evidence"][0]["external_id"] == "/works/unix"
 
 
 def test_gate_manifest_rejects_unsupported_provider() -> None:
@@ -202,6 +234,7 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
     first_report.write_text(
         json.dumps(
             {
+                "experiment": "scale-50",
                 "artifacts": {
                     "raw_snapshots": [
                         {
@@ -213,8 +246,8 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
                 },
                 "evidence_coverage": {
                     "by_book": [
-                        {"book_id": "one", "title": "One"},
-                        {"book_id": "two", "title": "Two"},
+                        {"book_id": "one", "title": "One", "topic": "operating-systems"},
+                        {"book_id": "two", "title": "Two", "topic": "operating-systems"},
                     ]
                 },
             }
@@ -224,6 +257,7 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
     second_report.write_text(
         json.dumps(
             {
+                "experiment": "scale-50-v2",
                 "artifacts": {
                     "raw_snapshots": [
                         {
@@ -235,8 +269,8 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
                 },
                 "evidence_coverage": {
                     "by_book": [
-                        {"book_id": "one", "title": "One"},
-                        {"book_id": "three", "title": "Three"},
+                        {"book_id": "one", "title": "One", "topic": "operating-systems"},
+                        {"book_id": "three", "title": "Three", "topic": "operating-systems"},
                     ]
                 },
             }
@@ -246,9 +280,9 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
 
     def write_audit(path, rows):
         with path.open("w", newline="", encoding="utf-8") as stream:
-            writer = csv.DictWriter(stream, fieldnames=["book_id", "topic_relevant"])
+            writer = csv.DictWriter(stream, fieldnames=["book_id", "topic", "topic_relevant"])
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows([{"topic": "operating-systems", **row} for row in rows])
 
     write_audit(
         first_audit,
@@ -263,6 +297,8 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
     )
     partial = compare_scale_reports(first_report, second_report, first_audit, second_audit)
     assert partial["v1_precision"] is None and partial["precision_delta"] is None
+    with pytest.raises(ValueError, match="v1 report followed"):
+        compare_scale_reports(second_report, first_report, second_audit, first_audit)
     write_audit(
         first_audit,
         [{"book_id": "one", "topic_relevant": "yes"}, {"book_id": "two", "topic_relevant": "no"}],
@@ -275,6 +311,15 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
     )
     write_audit(
         second_audit,
+        [
+            {"book_id": "one", "topic": "linear-algebra", "topic_relevant": "yes"},
+            {"book_id": "three", "topic_relevant": "yes"},
+        ],
+    )
+    with pytest.raises(ValueError, match="audit topic mismatch"):
+        compare_scale_reports(first_report, second_report, first_audit, second_audit)
+    write_audit(
+        second_audit,
         [{"book_id": "one", "topic_relevant": "no"}, {"book_id": "three", "topic_relevant": "yes"}],
     )
     with pytest.raises(ValueError, match="conflicting human"):
@@ -282,6 +327,7 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
     second_report.write_text(
         json.dumps(
             {
+                "experiment": "scale-50-v2",
                 "artifacts": {
                     "raw_snapshots": [
                         {
@@ -291,7 +337,9 @@ def test_precision_comparison_requires_full_consistent_human_labels(tmp_path) ->
                         }
                     ]
                 },
-                "evidence_coverage": {"by_book": [{"book_id": "one", "title": "One"}]},
+                "evidence_coverage": {
+                    "by_book": [{"book_id": "one", "title": "One", "topic": "operating-systems"}]
+                },
             }
         ),
         encoding="utf-8",
