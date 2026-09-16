@@ -22,7 +22,7 @@ class RawArtifact(BaseModel):
     schema_version: Literal[1] = 1
     provider: str
     topic: str
-    requested_limit: int = Field(ge=1, le=10)
+    requested_limit: int = Field(ge=1, le=100)
     retrieved_at: datetime
     request_parameters: dict[str, Any]
     response: dict[str, Any]

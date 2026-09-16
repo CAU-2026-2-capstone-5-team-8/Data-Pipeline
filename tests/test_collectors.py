@@ -12,6 +12,17 @@ from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 
 
+def _google_item(index: int) -> dict:
+    return {
+        "id": f"volume-{index}",
+        "volumeInfo": {
+            "title": f"Book {index}",
+            "authors": [f"Author {index}"],
+            "language": "en",
+        },
+    }
+
+
 @pytest.mark.parametrize("collector_class", [GoogleBooksCollector, OpenLibraryCollector])
 def test_collector_reports_malformed_success_response(collector_class) -> None:
     transport = httpx.MockTransport(
@@ -22,6 +33,128 @@ def test_collector_reports_malformed_success_response(collector_class) -> None:
 
         with pytest.raises(InvalidProviderResponse, match="malformed JSON"):
             collector.search_books("operating-systems", candidate_limit=5)
+
+
+@pytest.mark.parametrize(
+    ("candidate_limit", "expected_page_sizes"),
+    [
+        (25, [25]),
+        (40, [40]),
+        (41, [40, 1]),
+        (50, [40, 10]),
+        (100, [40, 40, 20]),
+    ],
+)
+def test_google_books_paginates_with_bounded_page_sizes(
+    candidate_limit, expected_page_sizes
+) -> None:
+    requested: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start_index = int(request.url.params["startIndex"])
+        page_size = int(request.url.params["maxResults"])
+        requested.append((start_index, page_size))
+        return httpx.Response(
+            200,
+            json={
+                "totalItems": 500,
+                "items": [
+                    _google_item(index) for index in range(start_index, start_index + page_size)
+                ],
+            },
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = GoogleBooksCollector(client=client).search_books(
+            "operating-systems", candidate_limit=candidate_limit
+        )
+
+    assert requested == [
+        (start_index, page_size)
+        for start_index, page_size in zip(
+            range(0, candidate_limit, 40), expected_page_sizes, strict=True
+        )
+    ]
+    assert [page["request_parameters"]["maxResults"] for page in payload["pages"]] == (
+        expected_page_sizes
+    )
+
+
+def test_google_books_continues_after_a_short_page_when_total_items_remain() -> None:
+    requested_start_indexes = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start_index = int(request.url.params["startIndex"])
+        requested_start_indexes.append(start_index)
+        item_count = 40 if start_index == 0 else 7
+        return httpx.Response(
+            200,
+            json={
+                "totalItems": 100,
+                "items": [
+                    _google_item(index) for index in range(start_index, start_index + item_count)
+                ],
+            },
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = GoogleBooksCollector(client=client).search_books(
+            "linear-algebra", candidate_limit=100
+        )
+
+    assert requested_start_indexes == [0, 40, 80]
+    assert [len(page["response"]["items"]) for page in payload["pages"]] == [40, 7, 7]
+
+
+def test_google_books_stops_after_a_short_final_page() -> None:
+    requested_start_indexes = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start_index = int(request.url.params["startIndex"])
+        requested_start_indexes.append(start_index)
+        item_count = 40 if start_index == 0 else 7
+        return httpx.Response(
+            200,
+            json={
+                "totalItems": 47,
+                "items": [
+                    _google_item(index) for index in range(start_index, start_index + item_count)
+                ],
+            },
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = GoogleBooksCollector(client=client).search_books(
+            "linear-algebra", candidate_limit=100
+        )
+
+    assert requested_start_indexes == [0, 40]
+    assert [len(page["response"]["items"]) for page in payload["pages"]] == [40, 7]
+
+
+def test_google_books_reports_middle_page_failure() -> None:
+    requested_start_indexes = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        start_index = int(request.url.params["startIndex"])
+        requested_start_indexes.append(start_index)
+        if start_index == 40:
+            return httpx.Response(400, text="bad page", request=request)
+        return httpx.Response(
+            200,
+            json={"totalItems": 50, "items": [_google_item(index) for index in range(40)]},
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = GoogleBooksCollector(client=client)
+        with pytest.raises(InvalidProviderResponse, match="startIndex=40"):
+            collector.search_books("operating-systems", candidate_limit=50)
+
+    assert requested_start_indexes == [0, 40]
 
 
 def test_open_library_fetches_bounded_english_edition_details() -> None:

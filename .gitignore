@@ -7,3 +7,4 @@ __pycache__/
 # Provider responses and generated canonical datasets are reproducible artifacts.
 data/raw/
 data/processed/
+data/experiments/

@@ -46,6 +46,32 @@ class OpenLibraryCollector:
             timeout=httpx.Timeout(20.0),
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1 (metadata research)"},
         )
+        self.detail_failures: list[dict[str, str | int]] = []
+
+    def _record_detail_failure(self, kind: str, external_id: str, exc: Exception) -> None:
+        """Retain a compact, non-secret reason for a skipped detail response."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            status_code = exc.response.status_code
+            reason = "rate_limit" if status_code == 429 else "provider_http_error"
+            failure: dict[str, str | int] = {
+                "stage": kind,
+                "external_id": external_id,
+                "reason": reason,
+                "status_code": status_code,
+            }
+        elif isinstance(exc, httpx.RequestError):
+            failure = {
+                "stage": kind,
+                "external_id": external_id,
+                "reason": "network_failure",
+            }
+        else:
+            failure = {
+                "stage": kind,
+                "external_id": external_id,
+                "reason": "invalid_provider_response",
+            }
+        self.detail_failures.append(failure)
 
     def close(self) -> None:
         if self._owns_client:
@@ -115,6 +141,7 @@ class OpenLibraryCollector:
             try:
                 details[edition_key] = self.fetch_edition(edition_key)
             except (httpx.HTTPError, InvalidProviderResponse) as exc:
+                self._record_detail_failure("edition_detail", edition_key, exc)
                 logger.warning(
                     "event=edition_detail_fetch_failed provider=open_library "
                     "edition_key=%s error=%s",
@@ -154,6 +181,7 @@ class OpenLibraryCollector:
             try:
                 details[work_key] = self.fetch_work(work_key)
             except (httpx.HTTPError, InvalidProviderResponse) as exc:
+                self._record_detail_failure("work_detail", work_key, exc)
                 logger.warning(
                     "event=work_detail_fetch_failed provider=open_library work_key=%s error=%s",
                     work_key,

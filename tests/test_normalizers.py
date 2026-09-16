@@ -8,6 +8,7 @@ import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.datasets import DatasetMergeError, merge_datasets
+from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     normalize_bibliographic_text,
     sha256_bytes,
@@ -63,6 +64,30 @@ def test_provider_record_collections_must_be_lists() -> None:
         )
 
 
+@pytest.mark.parametrize("edition_records", ["not-a-list", {"key": "/books/OL1M"}])
+def test_open_library_rejects_non_list_edition_records(edition_records: object) -> None:
+    diagnostics = NormalizationDiagnostics(provider="open_library")
+
+    dataset = normalize_open_library_response(
+        {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Linear Algebra",
+                    "editions": {"docs": edition_records},
+                }
+            ]
+        },
+        topic="linear-algebra",
+        limit=1,
+        retrieved_at=RETRIEVED_AT,
+        diagnostics=diagnostics,
+    )
+
+    assert dataset.books == []
+    assert diagnostics.failure_counts == {"invalid_provider_response": 1}
+
+
 def test_provider_date_formats_preserve_edition_year() -> None:
     payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
     payload["items"][0]["volumeInfo"]["publishedDate"] = "December 15, 2000"
@@ -105,6 +130,41 @@ def test_google_response_preserves_provenance_and_deduplicates_isbn() -> None:
     assert dataset.documents[0].source_id == dataset.sources[0].source_id
     assert dataset.documents[0].document_type == "description"
     assert dataset.toc == []
+
+
+def test_google_paginated_response_deduplicates_across_page_boundary() -> None:
+    def item(index: int) -> dict:
+        return {
+            "id": f"volume-{index}",
+            "volumeInfo": {
+                "title": f"Operating Systems {index}",
+                "authors": [f"Author {index}"],
+                "language": "en",
+            },
+        }
+
+    payload = {
+        "pages": [
+            {
+                "request_parameters": {"startIndex": 0, "maxResults": 40},
+                "response": {"items": [item(index) for index in range(40)]},
+            },
+            {
+                "request_parameters": {"startIndex": 40, "maxResults": 1},
+                "response": {"items": [item(39)]},
+            },
+        ]
+    }
+
+    dataset = normalize_google_books_response(
+        payload,
+        topic="operating-systems",
+        limit=41,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert len(dataset.books) == 40
+    assert len({book.book_id for book in dataset.books}) == 40
 
 
 def test_fallback_book_id_is_deterministic() -> None:
@@ -683,6 +743,36 @@ def test_open_library_edition_statement_replaces_polluted_work_authors() -> None
     )
 
     assert dataset.books[0].authors == ["Correct Author", "Second Author"]
+
+
+def test_open_library_bracketed_by_statement_does_not_duplicate_author() -> None:
+    payload = {
+        "search_response": {
+            "docs": [
+                {
+                    "key": "/works/OL1W",
+                    "title": "Applied Linear Algebra",
+                    "author_name": ["Ben Noble"],
+                    "editions": {
+                        "docs": [
+                            {
+                                "key": "/books/OL1M",
+                                "title": "Applied Linear Algebra",
+                                "language": ["eng"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        },
+        "edition_details": {"/books/OL1M": {"by_statement": "[by] Ben Noble."}},
+    }
+
+    dataset = normalize_open_library_response(
+        payload, topic="linear-algebra", limit=1, retrieved_at=RETRIEVED_AT
+    )
+
+    assert dataset.books[0].authors == ["Ben Noble"]
 
 
 def test_open_library_incomplete_edition_statement_does_not_drop_work_author() -> None:

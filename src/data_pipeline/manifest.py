@@ -1,4 +1,4 @@
-"""Versioned MVP manifest loading and raw-artifact selection."""
+"""Versioned dataset manifest loading and raw-artifact selection."""
 
 from pathlib import Path
 from typing import Literal
@@ -31,7 +31,7 @@ class RawArtifactSelector(BaseModel):
 
     provider: ManifestProvider
     topic: Literal["linear-algebra", "operating-systems"]
-    requested_limit: int = Field(ge=1, le=10)
+    requested_limit: int = Field(ge=1, le=100)
     source: str | None = None
 
     @model_validator(mode="after")
@@ -61,7 +61,7 @@ class RawArtifactSelector(BaseModel):
 
 
 class MvpManifest(BaseModel):
-    """Declare the raw inputs and exact canonical book identities for one MVP build."""
+    """Declare raw inputs and exact canonical book identities for one reproducible build."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -92,7 +92,7 @@ def load_manifest(path: Path) -> MvpManifest:
     try:
         return MvpManifest.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise ValueError(f"MVP manifest is invalid: {path}: {exc}") from exc
+        raise ValueError(f"dataset manifest is invalid: {path}: {exc}") from exc
 
 
 def select_manifest_raw_paths(manifest: MvpManifest, raw_directory: Path) -> list[Path]:
