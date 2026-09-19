@@ -535,3 +535,24 @@ check passed.
 Twenty of these 25 books still lack TOCs. This result is a 12-percentage-point improvement on
 this fixed Operating Systems sample, not a 50-book or arbitrary-book coverage claim. Wider
 coverage requires additional reviewed publisher/catalog adapters and exact-edition discovery.
+
+### Additional flat-TOC coverage (2026-09-20)
+
+Added a reusable parser for bold headings separated by line breaks, preserving chapter labels
+and representing the observed flat list at level 1. Text outside supported headings, empty
+headings, changed entry counts, titles, ISBNs, editions or chapter sequences fail validation.
+The reviewed catalog registry now includes:
+
+- Tanenbaum, *Distributed Operating Systems*, first edition, ISBN 9780132199087:
+  https://cincinnatistate.ecampus.com/distributed-operating-systems-1st/bk/9780132199087
+- Bach, *Design of the UNIX Operating System*, first edition, ISBN 9780132017992:
+  https://wright.ecampus.com/design-unix-operating-system-1st-bach/bk/9780132017992
+
+Live enrichment on the same 25-book set increased TOC coverage from 5/25 (20%) to 7/25 (28%),
+adding 24 entries (294 -> 318). Relative to the original metadata-only baseline this is
+2/25 -> 7/25. Eighteen books remain unsupported/missing; no generalized coverage is claimed.
+Both pages passed exact-edition identity and reviewed chapter-sequence validation. Raw HTML
+is preserved locally and excluded from Git. Full tests: 161 passed. Offline chronological
+replay of all raw artifacts again produced four byte-identical JSONL files.
+Run `enrich-toc` again to pick up newly supported books; already populated TOCs are skipped.
+For a fresh baseline use `--max-sources 6` to allow all currently registered sources in one run.
