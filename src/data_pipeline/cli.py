@@ -450,16 +450,26 @@ def collect(
     limit: LimitOption = 5,
     provider: ProviderOption = "open-library",
     data_dir: Annotated[Path, typer.Option(help="Raw and processed data root.")] = Path("data"),
+    detail_limit: Annotated[
+        int | None,
+        typer.Option(
+            min=1, max=100, help="Open Library detail candidate budget; default limit + 3."
+        ),
+    ] = None,
 ) -> None:
     """Fetch one small response, preserve it, normalize it, and validate outputs."""
     _ensure_topic(topic)
+    if detail_limit is not None and provider != "open-library":
+        raise typer.BadParameter("--detail-limit is only supported for open-library")
     retrieved_at = datetime.now(UTC)
     candidate_limit = _metadata_candidate_limit(provider, limit)
     payload, request_parameters = _collect_payload(
         provider,
         topic,
         candidate_limit,
-        edition_detail_limit=min(limit + 3, candidate_limit),
+        edition_detail_limit=min(
+            detail_limit if detail_limit is not None else limit + 3, candidate_limit
+        ),
     )
     artifact = RawArtifact(
         provider=provider,

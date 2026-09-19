@@ -427,3 +427,54 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+## TOC collection diagnosis (2026-09-19)
+
+The generic Open Library collector defaults to details for only the first `limit + 3`
+search candidates. Rejected, duplicate, or relevance-filtered candidates can cause later
+selected books to have no fetched edition details. That is not proof that their TOC is absent.
+To cover more of the search pool explicitly (maximum 100 candidates):
+
+```bash
+uv run data-pipeline collect --topic operating-systems --limit 25 \
+  --provider open-library --detail-limit 100 --data-dir data/experiments/toc-expanded
+```
+
+`--detail-limit` is Open-Library-only, bounded by the search candidate budget. It controls
+both edition and work detail candidates; existing request pacing and retry rules apply.
+The default stays unchanged to avoid silently increasing network traffic. Recollection
+creates a new raw artifact: an offline rebuild cannot recover responses never fetched.
+
+`report-scale` now records a book-specific TOC reason in `failure_analysis.by_book` and
+in the audit CSV column `missing_toc_reason` (blank when TOC exists):
+
+- `edition_detail_not_fetched`: no preserved detail response or fetch failure for the edition
+- `rate_limit`, `network_failure`, `provider_http_error`: recorded edition-fetch failure
+- `invalid_provider_response`: invalid edition response
+- `provider_returned_no_evidence`: fetched edition has no TOC or an empty list
+- `toc_parse_failure`: nonempty/malformed TOC exists but no canonical entries survived
+- `unsupported_source`: no supported edition evidence path was found
+
+Reasons describe preserved responses, not whether a TOC exists anywhere on the web.
+Partial TOCs are not certified complete by this report. Canonical JSONL schemas and
+edition matching are unchanged; TOCs from other editions are not substituted.
+
+### Live reproduction
+
+On 2026-09-19, an Operating Systems run requested 25 books, discovered 100 candidates,
+and fetched 28 edition plus 28 work details with no recorded fetch failures. The selected
+25 books had **2 TOCs and 23 fetched editions without TOC evidence**. Across the 28 fetched
+editions, 3 contained TOCs; one was outside the selected set. Therefore this experiment's
+low coverage is primarily missing provider evidence, not a demonstrated parser defect.
+Increasing the detail budget alone does not promise to improve these 25 books.
+
+The raw response SHA-256 is
+`6fdca83dfd96` (prefix); generated raw data and audit CSV stay outside Git.
+The report rebuilt the four canonical files twice with byte-identical results; all reference,
+TOC-parent, provenance and validation error counts were zero. On Windows use Python UTF-8
+mode (`python -X utf8 -m data_pipeline.cli ...`) if the terminal cannot print report punctuation.
+
+Next collection work should use a second public publisher/catalog source, with exact
+ISBN/edition verification and retained raw provenance. This change does not implement that
+source, ML scoring, or a claim of improved live TOC coverage. The synthetic regression verifies
+that an explicitly larger detail budget preserves an otherwise unqueried edition's TOC.

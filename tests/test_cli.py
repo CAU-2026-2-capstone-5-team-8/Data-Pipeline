@@ -577,3 +577,90 @@ def test_collect_publisher_document_merges_extracted_text(tmp_path, monkeypatch)
     assert len(dataset.sources) == 2
     assert validate_dataset(dataset) == []
     assert len(list((tmp_path / "raw" / "publisher_document").rglob("*.json"))) == 1
+
+
+def test_collect_allows_explicit_detail_budget(monkeypatch, tmp_path):
+    captured = {}
+
+    def collect_payload(provider, topic, candidate_limit, *, edition_detail_limit):
+        captured["limit"] = edition_detail_limit
+        return {"docs": []}, {}
+
+    monkeypatch.setattr("data_pipeline.cli._collect_payload", collect_payload)
+    result = CliRunner().invoke(
+        app,
+        [
+            "collect",
+            "--topic",
+            "operating-systems",
+            "--limit",
+            "25",
+            "--detail-limit",
+            "100",
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+    assert captured.get("limit") == 100, result.output
+    assert result.exit_code == 1  # Empty fixture, not an option-parsing failure.
+
+
+def test_detail_budget_recovers_toc_after_filtered_candidates(monkeypatch, tmp_path):
+    import json
+
+    docs = [
+        {
+            "key": f"/works/OL{i}W",
+            "title": f"Book {i}",
+            "author_name": ["Author"],
+            "editions": {
+                "docs": [
+                    {
+                        "key": f"/books/OL{i}M",
+                        "title": f"Book {i}",
+                        "language": ["spa"] if i < 4 else ["eng"],
+                    }
+                ]
+            },
+        }
+        for i in range(5)
+    ]
+    monkeypatch.setattr(OpenLibraryCollector, "search_books", lambda *a, **kw: {"docs": docs})
+    monkeypatch.setattr(
+        OpenLibraryCollector,
+        "fetch_edition",
+        lambda *a: {
+            "table_of_contents": [{"title": "Evidence at the fifth candidate", "level": 0}]
+        },
+    )
+    monkeypatch.setattr(OpenLibraryCollector, "fetch_work", lambda *a: {})
+    monkeypatch.setattr("data_pipeline.collectors.open_library.time.sleep", lambda *a: None)
+    # Request two books: eight search candidates, default five detail candidates.
+    # Explicitly reproduce an insufficient four-candidate budget, then recover with five.
+    for budget, expected in [(4, 0), (5, 1)]:
+        root = tmp_path / str(budget)
+        result = CliRunner().invoke(
+            app,
+            [
+                "collect",
+                "--topic",
+                "operating-systems",
+                "--limit",
+                "2",
+                "--detail-limit",
+                str(budget),
+                "--data-dir",
+                str(root),
+            ],
+        )
+        assert result.exit_code == 1  # Only one eligible book; raw evidence still retained.
+        raw = next((root / "raw").rglob("*.json"))
+        payload = json.loads(raw.read_text(encoding="utf-8"))["response"]
+        from data_pipeline.normalizers import normalize_open_library_response
+
+        dataset = normalize_open_library_response(
+            payload, topic="operating-systems", limit=2, retrieved_at=datetime.now(UTC)
+        )
+        assert len(dataset.books) == 1
+        assert len(dataset.toc) == expected
+        assert validate_dataset(dataset) == []

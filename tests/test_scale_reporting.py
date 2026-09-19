@@ -210,3 +210,42 @@ def test_scale_audit_sanitizes_external_cells_without_changing_canonical_data(
     assert audit_row["identity_ok"] == ""
     assert unsafe_book.title == "=SUM(1, 2)"
     assert read_raw_response(raw_path).response == response
+
+
+@pytest.mark.parametrize(
+    ("detail", "failure", "expected"),
+    [
+        (None, None, "edition_detail_not_fetched"),
+        (None, "rate_limit", "rate_limit"),
+        (None, "network_failure", "network_failure"),
+        ({}, None, "provider_returned_no_evidence"),
+        ({"table_of_contents": []}, None, "provider_returned_no_evidence"),
+        ({"table_of_contents": "bad"}, None, "toc_parse_failure"),
+        ({"table_of_contents": [{"title": "Root"}]}, None, "toc_parse_failure"),
+    ],
+)
+def test_missing_toc_distinguishes_unfetched_failed_empty_and_unparsed(detail, failure, expected):
+    from data_pipeline.scale_reporting import _book_coverage, _failure_analysis
+
+    response = _raw_response()
+    response["edition_details"] = {} if detail is None else {"/books/OL1M": detail}
+    if failure:
+        response["collection_failures"] = [
+            {"stage": "edition_detail", "external_id": "/books/OL1M", "reason": failure}
+        ]
+    artifact = RawArtifact(
+        provider="open-library",
+        topic="linear-algebra",
+        requested_limit=1,
+        retrieved_at=RETRIEVED_AT,
+        request_parameters={},
+        response=response,
+    )
+    dataset = normalize_open_library_response(
+        response,
+        topic="linear-algebra",
+        limit=1,
+        retrieved_at=RETRIEVED_AT,
+    )
+    result = _failure_analysis(_book_coverage(dataset), [artifact], [])
+    assert result["by_book"][0]["missing"]["toc"] == expected
