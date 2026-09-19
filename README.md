@@ -478,3 +478,60 @@ Next collection work should use a second public publisher/catalog source, with e
 ISBN/edition verification and retained raw provenance. This change does not implement that
 source, ML scoring, or a claim of improved live TOC coverage. The synthetic regression verifies
 that an explicitly larger detail budget preserves an otherwise unqueried edition's TOC.
+
+## Missing-TOC enrichment
+
+After generic metadata collection, run the opt-in reviewed-source fallback:
+
+```bash
+uv run data-pipeline enrich-toc --data-dir data/experiments/scale-50 --dry-run
+uv run data-pipeline enrich-toc --data-dir data/experiments/scale-50 --max-sources 4
+```
+
+This command matches missing-TOC books by exact canonical ISBN identity and topic against
+existing `PUBLISHER_SOURCES` and `PUBLIC_BOOK_SOURCES`. Publisher pages are tried first.
+It reuses their ISBN/title/edition/completeness checks, preserves raw HTML, and merges only
+validated evidence. It never substitutes an OER book or a different edition to raise coverage.
+This connects the already-reviewed sources to the scale workflow; it is not a new generic
+web crawler or a claim that all books now have a supported source.
+
+Existing TOCs are skipped, including on a second invocation. The source-attempt budget is
+bounded (default 4, maximum 20). Fetch/identity/parser failures are recorded and subsequent
+sources are attempted; successful prior enrichments remain saved. Exit status is 1 if any
+attempt failed, even if others succeeded. Missing sources are listed as remaining books,
+not treated as network failures. A dry run neither fetches nor writes anything.
+
+`reports/toc-enrichment.json` contains before/after book counts, added and remaining book IDs,
+source-level attempts and errors. It describes the latest invocation and is replaced on rerun;
+immutable raw artifacts remain retained separately. The canonical four-JSONL schema is unchanged.
+To reproduce the exact output order offline, pass original metadata and enrichment raw artifacts
+to `build --raw ... --raw ...` in collection timestamp order. An old metadata-only manifest will
+still reproduce the baseline; explicitly include the enrichment artifacts when rebuilding.
+
+### Verified result: 2026-09-20 KST
+
+Used the **same 25 Operating Systems books** from the 2026-09-19 experiment, with a separate
+output copy at `data/experiments/toc-enriched-20260920`.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Books | 25 | 25 |
+| Books with TOC | 2 (8%) | 5 (20%) |
+| TOC entries | 40 | 294 |
+| Books with description | 7 | 8 |
+
+New exact-edition TOCs: Wiley *Operating System Concepts*, 7th edition (ISBN 9780471694663,
+26 entries); eCampus *Advanced Concepts in Operating Systems*, 1st edition (9780070575721,
+27 entries); eCampus Stallings *Operating Systems*, 4th edition (9780130319999, 201 entries).
+The existing edition/provenance validators accepted all three live responses. No new raw text
+or third-party book content is committed to Git.
+
+Offline replay in collection order produced four byte-identical JSONL files. Book records and
+prior TOC entries were unchanged, and canonical validation reported no errors. Tests cover
+repeated-run network skipping, wrong-edition rejection, raw preservation, dry runs, source
+budgets and continuation after a failed provider. Full suite: 157 passed; Ruff check and format
+check passed.
+
+Twenty of these 25 books still lack TOCs. This result is a 12-percentage-point improvement on
+this fixed Operating Systems sample, not a 50-book or arbitrary-book coverage claim. Wider
+coverage requires additional reviewed publisher/catalog adapters and exact-edition discovery.
