@@ -16,13 +16,45 @@ class PublicBookSourceSpec:
     title: str
     edition: int
     url: str
-    toc_format: Literal["indented_table", "heading_sequence", "flat_bold"]
+    toc_format: Literal["indented_table", "heading_sequence", "flat_bold", "paragraph_sequence"]
     expected_toc_count: int
     expected_root_titles: tuple[str, ...]
     expected_chapter_labels: tuple[str, ...]
 
 
 PUBLIC_BOOK_SOURCES = {
+    "ecampus-osc10": PublicBookSourceSpec(
+        slug="ecampus-osc10",
+        provider="ecampus",
+        topic="operating-systems",
+        book_id="isbn13:9781119800361",
+        isbn_13="9781119800361",
+        title="Operating System Concepts",
+        edition=10,
+        url="https://umass.ecampus.com/operating-system-concepts-10th/bk/9781119800361",
+        toc_format="paragraph_sequence",
+        expected_toc_count=36,
+        expected_root_titles=(
+            "Overview",
+            "Process Management",
+            "Process Synchronization",
+            "Memory Management",
+            "Storage Management",
+            "File System",
+            "Security and Protection",
+            "Advanced Topics",
+            "Case Studies",
+            "Appendices",
+        ),
+        expected_chapter_labels=(
+            *(str(number) for number in range(1, 22)),
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+        ),
+    ),
     "ecampus-tanenbaum-distributed1": PublicBookSourceSpec(
         slug="ecampus-tanenbaum-distributed1",
         provider="ecampus",

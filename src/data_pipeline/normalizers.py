@@ -3282,6 +3282,57 @@ def _flat_bold_toc_entries(html: str, book_id: str, source_id: str) -> list[TocE
     return entries
 
 
+def _paragraph_sequence_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse strict Part/Chapter paragraphs into a two-level TOC."""
+    content = _public_page_section(HTMLParser(html), "Table of Contents")
+    paragraphs = content.css("p")
+    titles = [paragraph.text(separator=" ", strip=True) for paragraph in paragraphs]
+    full_text = " ".join(content.text(separator=" ", strip=True).split())
+    if not titles or any(not title for title in titles):
+        raise InvalidProviderResponse("paragraph TOC is empty or contains empty entries")
+    if full_text != " ".join(" ".join(title.split()) for title in titles):
+        raise InvalidProviderResponse("paragraph TOC contains unsupported text outside entries")
+
+    entries: list[TocEntry] = []
+    current_part: TocEntry | None = None
+    for text in titles:
+        part_match = re.fullmatch(
+            r"(Part\s+(?:\d+|[A-Za-z]+))\.?\s+(.+)", text, flags=re.IGNORECASE
+        )
+        chapter_match = re.fullmatch(
+            r"Chapter\s+([A-Za-z0-9]+)\.?\s*\.?\s*(.+)", text, flags=re.IGNORECASE
+        )
+        if part_match is not None:
+            label = part_match.group(1)
+            title = part_match.group(2).strip()
+            parent_entry_id = None
+            level = 1
+        elif chapter_match is not None and current_part is not None:
+            label = chapter_match.group(1)
+            title = chapter_match.group(2).strip()
+            parent_entry_id = current_part.toc_entry_id
+            level = 2
+        else:
+            raise InvalidProviderResponse(
+                f"public book page TOC contained an unsupported paragraph: {text!r}"
+            )
+        order_index = len(entries)
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), label, title),
+            book_id=book_id,
+            parent_entry_id=parent_entry_id,
+            level=level,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        if level == 1:
+            current_part = entry
+    return entries
+
+
 def normalize_public_book_page_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -3325,6 +3376,8 @@ def normalize_public_book_page_response(
         toc = _indented_table_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "flat_bold":
         toc = _flat_bold_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "paragraph_sequence":
+        toc = _paragraph_sequence_toc_entries(html, source_spec.book_id, source_id)
     else:
         toc = _heading_sequence_toc_entries(html, source_spec.book_id, source_id)
     if len(toc) != source_spec.expected_toc_count:

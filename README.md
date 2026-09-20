@@ -629,3 +629,20 @@ Linear Algebra title and five Operating Systems titles from Wiley or reviewed ca
 Canonical validation succeeded after every collection. Raw responses and the temporary dataset
 remain outside Git. Forty selected books still lack TOCs, so this is a bounded improvement rather
 than sufficient evidence coverage for a representative 50-book ML gold evaluation.
+
+### Scale-50 v2 exact-edition expansion (2026-09-21 KST)
+
+The reviewed paragraph-sequence parser adds the 10th edition of Wiley's *Operating System
+Concepts* (ISBN 9781119800361) from an exact-edition eCampus page. It preserves ten parts and
+twenty-six chapter or appendix entries as a two-level, 36-entry TOC and rejects changed identity,
+edition, entry count, part titles, or chapter labels.
+
+A live run against a temporary copy of the relevance-gated Scale-50 v2 dataset collected every
+eligible reviewed source without failures. Coverage increased from 4/50 to 11/50: Linear Algebra
+2/25 to 3/25 and Operating Systems 2/25 to 8/25. The source HTML, raw artifacts, and generated
+dataset remain outside Git. Thirty-nine selected books still lack TOCs.
+
+The same investigation found a richer exact-edition page for *Operating System Concepts
+Essentials*, 2nd edition, but the selected record already contains a three-entry provider TOC.
+`enrich-toc` therefore skips it rather than merging two source trees and double-counting headings.
+Replacing or preferring a more complete TOC is a separate source-selection policy decision.
