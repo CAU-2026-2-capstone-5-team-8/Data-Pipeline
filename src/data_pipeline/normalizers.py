@@ -3282,6 +3282,45 @@ def _flat_bold_toc_entries(html: str, book_id: str, source_id: str) -> list[TocE
     return entries
 
 
+def _flat_table_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Preserve a flat catalog table while excluding its verified legal footer."""
+    content = _public_page_section(HTMLParser(html), "Table of Contents")
+    table = content.css_first("table")
+    if table is None:
+        raise InvalidProviderResponse("flat table TOC section contained no table")
+    rows = _direct_table_rows(table)
+    titles = []
+    for row in rows:
+        cells = [cell for cell in row.css("td") if cell.parent.mem_id == row.mem_id]
+        if not cells:
+            raise InvalidProviderResponse("flat table TOC contained an empty row")
+        title = cells[0].text(separator=" ", strip=True)
+        if not title or any(cell.text(separator=" ", strip=True) for cell in cells[1:]):
+            raise InvalidProviderResponse("flat table TOC contained unsupported cell content")
+        titles.append(title)
+    footer = "Table of Contents provided by Publisher. All Rights Reserved."
+    if not titles or titles[-1] != footer or footer in titles[:-1]:
+        raise InvalidProviderResponse("flat table TOC legal footer changed or is missing")
+    titles.pop()
+    full_text = " ".join(content.text(separator=" ", strip=True).split())
+    if full_text != " ".join([*titles, footer]):
+        raise InvalidProviderResponse("flat table TOC contains unsupported text outside rows")
+
+    return [
+        TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(index), title),
+            book_id=book_id,
+            parent_entry_id=None,
+            level=1,
+            order_index=index,
+            label=None,
+            title=title,
+            source_id=source_id,
+        )
+        for index, title in enumerate(titles)
+    ]
+
+
 def _paragraph_sequence_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
     """Parse strict Part/Chapter paragraphs into a two-level TOC."""
     content = _public_page_section(HTMLParser(html), "Table of Contents")
@@ -3445,6 +3484,8 @@ def normalize_public_book_page_response(
         toc = _indented_table_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "flat_bold":
         toc = _flat_bold_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "flat_table":
+        toc = _flat_table_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "paragraph_sequence":
         toc = _paragraph_sequence_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "bold_chapter_paragraphs":

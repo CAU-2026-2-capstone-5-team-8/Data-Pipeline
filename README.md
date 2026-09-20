@@ -665,3 +665,21 @@ reviewed sources without failures. Coverage increased from 4/50 to 12/50: Linear
 Linear Algebra book and 161 TOC entries. Raw HTML, raw artifacts, and generated canonical data
 remain outside Git. Thirty-eight selected books still lack TOCs, so source expansion remains the
 priority before treating a 50-book ML sample as representative.
+
+### Scale-50 v2 flat-table expansion (2026-09-21 KST)
+
+The reviewed catalog registry includes Larson and Edwards, *Elementary Linear Algebra*, fifth
+edition (ISBN 9780618335671):
+https://cincinnatistate.ecampus.com/elementary-linear-algebra-5th-larson-ron/bk/9780618335671
+
+The exact-edition page exposes a flat 66-row publisher table. The parser verifies and excludes the
+final publisher-rights notice, then preserves the remaining 65 rows in source order at level 1.
+The page provides no structural indentation, so the pipeline does not invent parent relationships
+or recover numbering that is absent from the HTML. Title, ISBN, edition, entry count, and every
+ordered row title must match the reviewed contract.
+
+A live run against another temporary copy of the same Scale-50 v2 baseline collected all nine
+eligible reviewed sources without failures. Coverage increased from 4/50 to 13/50: Linear Algebra
+2/25 to 5/25 and Operating Systems 2/25 to 8/25. Relative to the preceding expansion, this source
+adds one Linear Algebra book and 65 TOC entries. Raw HTML, raw artifacts, and generated canonical
+data remain outside Git. Thirty-seven selected books still lack TOCs.
