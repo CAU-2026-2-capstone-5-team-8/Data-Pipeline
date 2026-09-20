@@ -40,6 +40,7 @@ from data_pipeline.publisher_document_sources import (
     publisher_document_source,
 )
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
+from data_pipeline.relevance_review import finalize_relevance_review, prepare_relevance_review
 from data_pipeline.reporting import format_book_coverage, format_coverage
 from data_pipeline.scale_comparison import compare_scale_reports
 from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
@@ -916,6 +917,44 @@ def compare_scale(
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(comparison, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+@app.command("prepare-relevance-review")
+def prepare_relevance_review_command(
+    v1_report: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v2_report: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v1_audit: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v2_audit: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    output: Annotated[Path, typer.Option(dir_okay=False)],
+) -> None:
+    """Prepare one blank human review row per book across both scale selections."""
+    try:
+        counts = prepare_relevance_review(v1_report, v2_report, v1_audit, v2_audit, output)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Human relevance review: {output}")
+    typer.echo(json.dumps(counts, sort_keys=True))
+
+
+@app.command("finalize-relevance-review")
+def finalize_relevance_review_command(
+    v1_report: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v2_report: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v1_audit: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v2_audit: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    review: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    v1_output: Annotated[Path, typer.Option(dir_okay=False)],
+    v2_output: Annotated[Path, typer.Option(dir_okay=False)],
+) -> None:
+    """Split a complete human review into two compare-scale audit inputs."""
+    try:
+        finalize_relevance_review(
+            v1_report, v2_report, v1_audit, v2_audit, review, v1_output, v2_output
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Reviewed v1 audit: {v1_output}")
+    typer.echo(f"Reviewed v2 audit: {v2_output}")
 
 
 if __name__ == "__main__":

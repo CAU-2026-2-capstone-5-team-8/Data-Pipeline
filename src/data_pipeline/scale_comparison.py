@@ -40,13 +40,10 @@ def _audit_labels(path: Path, expected_topics: dict[str, str]) -> dict[str, bool
     return labels
 
 
-def compare_scale_reports(
-    v1_report: Path,
-    v2_report: Path,
-    v1_audit: Path,
-    v2_audit: Path,
-) -> dict[str, Any]:
-    """Compare exact IDs and independently audited precision, or return null if incomplete."""
+def load_scale_pair(
+    v1_report: Path, v2_report: Path
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, dict], dict[str, dict]]:
+    """Require the expected experiment roles and identical preserved raw snapshots."""
     first = json.loads(v1_report.read_text(encoding="utf-8"))
     second = json.loads(v2_report.read_text(encoding="utf-8"))
     if first.get("experiment") != "scale-50" or second.get("experiment") != "scale-50-v2":
@@ -57,8 +54,31 @@ def compare_scale_reports(
         raise ValueError("regenerate both scale reports with raw snapshot IDs before comparing")
     if first_snapshots != second_snapshots:
         raise ValueError("v1 and v2 reports were built from different raw snapshots")
-    first_rows = {row["book_id"]: row for row in first["evidence_coverage"]["by_book"]}
-    second_rows = {row["book_id"]: row for row in second["evidence_coverage"]["by_book"]}
+    first_list = first["evidence_coverage"]["by_book"]
+    second_list = second["evidence_coverage"]["by_book"]
+    first_rows = {row["book_id"]: row for row in first_list}
+    second_rows = {row["book_id"]: row for row in second_list}
+    if len(first_rows) != len(first_list) or len(second_rows) != len(second_list):
+        raise ValueError("scale report contains duplicate book IDs")
+    for shared_id in first_rows.keys() & second_rows.keys():
+        if first_rows[shared_id].get("topic") != second_rows[shared_id].get("topic"):
+            raise ValueError(f"topic changed for shared book ID: {shared_id}")
+        if any(
+            first_rows[shared_id].get(field) != second_rows[shared_id].get(field)
+            for field in ("title", "authors", "published_year", "isbn_10", "isbn_13")
+        ):
+            raise ValueError(f"shared book metadata changed across reports: {shared_id}")
+    return first, second, first_rows, second_rows
+
+
+def compare_scale_reports(
+    v1_report: Path,
+    v2_report: Path,
+    v1_audit: Path,
+    v2_audit: Path,
+) -> dict[str, Any]:
+    """Compare exact IDs and independently audited precision, or return null if incomplete."""
+    _first, _second, first_rows, second_rows = load_scale_pair(v1_report, v2_report)
     first_labels = _audit_labels(
         v1_audit, {book_id: row["topic"] for book_id, row in first_rows.items()}
     )
@@ -68,9 +88,6 @@ def compare_scale_reports(
     for shared_id in set(first_labels) & set(second_labels):
         if first_labels[shared_id] != second_labels[shared_id]:
             raise ValueError(f"conflicting human topic relevance for {shared_id}")
-    for shared_id in first_rows.keys() & second_rows.keys():
-        if first_rows[shared_id].get("topic") != second_rows[shared_id].get("topic"):
-            raise ValueError(f"topic changed for shared book ID: {shared_id}")
 
     def precision(labels: dict[str, bool], rows: dict[str, Any]) -> float | None:
         return sum(labels.values()) / len(rows) if len(labels) == len(rows) and rows else None
