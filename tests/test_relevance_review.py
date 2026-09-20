@@ -170,7 +170,7 @@ def test_prepare_rejects_different_snapshots_and_ambiguous_rejections(tmp_path: 
         prepare_relevance_review(*paths, tmp_path / "review.csv")
 
 
-def test_prepare_rejects_wrong_audit_topic_and_unknown_book(tmp_path: Path) -> None:
+def test_prepare_rejects_wrong_audit_topic_title_and_unknown_book(tmp_path: Path) -> None:
     paths = _fixture_paths(tmp_path)
     fields, rows = _read_csv(paths[2])
     rows[0]["topic"] = "linear-algebra"
@@ -179,6 +179,12 @@ def test_prepare_rejects_wrong_audit_topic_and_unknown_book(tmp_path: Path) -> N
         prepare_relevance_review(*paths, tmp_path / "review.csv")
 
     rows[0]["topic"] = TOPIC
+    rows[0]["title"] = "Different edition"
+    _write_csv(paths[2], rows, fields)
+    with pytest.raises(ValueError, match="audit title mismatch"):
+        prepare_relevance_review(*paths, tmp_path / "review.csv")
+
+    rows[0]["title"] = "Shared book"
     rows[0]["book_id"] = "unknown"
     _write_csv(paths[2], rows, fields)
     with pytest.raises(ValueError, match="unknown audit book ID"):
@@ -302,3 +308,57 @@ def test_complete_review_splits_into_compatible_audits_and_cli_runs(tmp_path: Pa
     )
     assert compared.exit_code == 0, compared.output
     assert json.loads(compared.output)["precision_delta"] == 0.5
+
+
+def test_finalize_sanitizes_all_inherited_fields(tmp_path: Path) -> None:
+    paths = _fixture_paths(tmp_path)
+    for audit_path in paths[2:]:
+        fields, rows = _read_csv(audit_path)
+        fields.append("reviewer_hint")
+        for row in rows:
+            row["reviewer_hint"] = "=untrusted()"
+        _write_csv(audit_path, rows, fields)
+    review = tmp_path / "review.csv"
+    prepare_relevance_review(*paths, review)
+    fields, rows = _read_csv(review)
+    for row in rows:
+        row["topic_relevant"] = "yes"
+    _write_csv(review, rows, fields)
+
+    first_output = tmp_path / "v1-reviewed.csv"
+    second_output = tmp_path / "v2-reviewed.csv"
+    finalize_relevance_review(*paths, review, first_output, second_output)
+
+    for output in (first_output, second_output):
+        _fields, output_rows = _read_csv(output)
+        assert {row["reviewer_hint"] for row in output_rows} == {"'=untrusted()"}
+
+
+def test_finalize_removes_partial_outputs_and_allows_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _fixture_paths(tmp_path)
+    review = tmp_path / "review.csv"
+    prepare_relevance_review(*paths, review)
+    fields, rows = _read_csv(review)
+    for row in rows:
+        row["topic_relevant"] = "yes"
+    _write_csv(review, rows, fields)
+    first_output = tmp_path / "v1-reviewed.csv"
+    second_output = tmp_path / "v2-reviewed.csv"
+    original_replace = Path.replace
+
+    def fail_second_replace(path: Path, target: Path) -> Path:
+        if target == second_output:
+            raise OSError("simulated second publish failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_second_replace)
+    with pytest.raises(OSError, match="simulated second publish failure"):
+        finalize_relevance_review(*paths, review, first_output, second_output)
+    assert not first_output.exists() and not second_output.exists()
+    assert list(tmp_path.glob(".*.tmp")) == []
+
+    monkeypatch.setattr(Path, "replace", original_replace)
+    finalize_relevance_review(*paths, review, first_output, second_output)
+    assert first_output.exists() and second_output.exists()

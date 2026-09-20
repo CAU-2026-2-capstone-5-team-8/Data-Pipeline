@@ -2,7 +2,9 @@
 
 import csv
 import json
+from contextlib import suppress
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from data_pipeline.scale_comparison import load_scale_pair
@@ -39,6 +41,7 @@ def _audit_rows(path: Path, expected: dict[str, dict]) -> tuple[list[str], list[
             or not {
                 "book_id",
                 "topic",
+                "title",
                 "topic_relevant",
                 "notes",
             }
@@ -58,6 +61,8 @@ def _audit_rows(path: Path, expected: dict[str, dict]) -> tuple[list[str], list[
             raise ValueError(f"duplicate or unknown audit book ID in {path}: {book_id}")
         if row.get("topic") != expected[book_id]["topic"]:
             raise ValueError(f"audit topic mismatch for {book_id}: {path}")
+        if row.get("title") != spreadsheet_safe_csv_value(expected[book_id]["title"]):
+            raise ValueError(f"audit title mismatch for {book_id}: {path}")
         if row.get("topic_relevant") != "":
             raise ValueError(f"expected a blank generated audit, not human labels: {path}")
         seen.add(book_id)
@@ -215,16 +220,62 @@ def finalize_relevance_review(
     second_fields, second_audit = _audit_rows(v2_audit, second_rows)
     expected = first_rows | second_rows
     labels = _human_labels(review, expected, set(first_rows), set(second_rows))
-    for output, fields, audit in (
+    outputs = (
         (v1_output, first_fields, first_audit),
         (v2_output, second_fields, second_audit),
-    ):
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with output.open("x", newline="", encoding="utf-8") as stream:
+    )
+    temporary: dict[Path, Path] = {}
+    reserved: list[Path] = []
+    try:
+        for output, fields, audit in outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            temporary[output] = _write_temporary_audit(output, fields, audit, labels)
+        for output, _fields, _audit in outputs:
+            output.touch(exist_ok=False)
+            reserved.append(output)
+        for output, _fields, _audit in outputs:
+            temporary[output].replace(output)
+    except BaseException:
+        for path in (*temporary.values(), *reserved):
+            with suppress(OSError):
+                path.unlink(missing_ok=True)
+        raise
+
+
+def _write_temporary_audit(
+    output: Path,
+    fields: list[str],
+    audit: list[dict[str, str]],
+    labels: dict[str, dict],
+) -> Path:
+    """Write one complete audit beside its destination for an atomic rename."""
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            newline="",
+            encoding="utf-8",
+            dir=output.parent,
+            prefix=f".{output.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
             writer = csv.DictWriter(stream, fieldnames=fields)
             writer.writeheader()
             for row in audit:
                 label = labels[row["book_id"]]
-                row["topic_relevant"] = label["topic_relevant"]
-                row["notes"] = spreadsheet_safe_csv_value(label["notes"])
-                writer.writerow(row)
+                completed = row | label
+                writer.writerow(
+                    {
+                        field: spreadsheet_safe_csv_value(completed.get(field, ""))
+                        for field in fields
+                    }
+                )
+    except BaseException:
+        if temporary is not None:
+            with suppress(OSError):
+                temporary.unlink(missing_ok=True)
+        raise
+    assert temporary is not None
+    return temporary
