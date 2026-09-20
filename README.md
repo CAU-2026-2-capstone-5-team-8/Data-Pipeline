@@ -611,3 +611,21 @@ is preserved locally and excluded from Git. Full tests: 161 passed. Offline chro
 replay of all raw artifacts again produced four byte-identical JSONL files.
 Run `enrich-toc` again to pick up newly supported books; already populated TOCs are skipped.
 For a fresh baseline use `--max-sources 6` to allow all currently registered sources in one run.
+
+### Combined 50-book reproduction (2026-09-20 KST)
+
+After integrating the TOC hierarchy checks and relevance-review workflow from `main`, a live run
+against a temporary copy of the 50-book v1 scale dataset collected all six eligible reviewed
+sources without failures:
+
+| Topic | Books with TOC before | Books with TOC after |
+| --- | ---: | ---: |
+| Linear Algebra | 2/25 | 3/25 |
+| Operating Systems | 2/25 | 7/25 |
+| Combined | 4/50 | 10/50 |
+
+The six additions were the exact ISBN editions listed in `toc-enrichment.json`: one Wiley
+Linear Algebra title and five Operating Systems titles from Wiley or reviewed catalog pages.
+Canonical validation succeeded after every collection. Raw responses and the temporary dataset
+remain outside Git. Forty selected books still lack TOCs, so this is a bounded improvement rather
+than sufficient evidence coverage for a representative 50-book ML gold evaluation.
