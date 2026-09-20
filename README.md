@@ -646,3 +646,22 @@ The same investigation found a richer exact-edition page for *Operating System C
 Essentials*, 2nd edition, but the selected record already contains a three-entry provider TOC.
 `enrich-toc` therefore skips it rather than merging two source trees and double-counting headings.
 Replacing or preferring a more complete TOC is a separate source-selection policy decision.
+
+### Scale-50 v2 Linear Algebra expansion (2026-09-21 KST)
+
+The reviewed catalog registry also includes Richard C. Penney's *Linear Algebra: Ideas and
+Applications*, fourth edition (ISBN 9781118909584):
+https://wright.ecampus.com/linear-algebra-ideas-applications-4th/bk/9781118909584
+
+Its exact-edition page exposes 161 page-numbered paragraphs. The parser preserves four front
+matter entries, eight explicitly bold chapter roots with their 147 ordered children, and two back
+matter entries. It does not infer deeper section nesting that the HTML does not encode. Identity,
+edition, total count, root titles, chapter labels, per-root child-label sequences, and per-root
+child counts are all validated before evidence is merged.
+
+A live run against a temporary copy of the same Scale-50 v2 baseline collected all eight eligible
+reviewed sources without failures. Coverage increased from 4/50 to 12/50: Linear Algebra 2/25 to
+4/25 and Operating Systems 2/25 to 8/25. Relative to the preceding expansion, this source adds one
+Linear Algebra book and 161 TOC entries. Raw HTML, raw artifacts, and generated canonical data
+remain outside Git. Thirty-eight selected books still lack TOCs, so source expansion remains the
+priority before treating a 50-book ML sample as representative.

@@ -16,11 +16,18 @@ class PublicBookSourceSpec:
     title: str
     edition: int
     url: str
-    toc_format: Literal["indented_table", "heading_sequence", "flat_bold", "paragraph_sequence"]
+    toc_format: Literal[
+        "indented_table",
+        "heading_sequence",
+        "flat_bold",
+        "paragraph_sequence",
+        "bold_chapter_paragraphs",
+    ]
     expected_toc_count: int
     expected_root_titles: tuple[str, ...]
     expected_chapter_labels: tuple[str, ...]
-    expected_chapter_groups: tuple[tuple[str, ...], ...] = ()
+    expected_child_label_groups: tuple[tuple[str, ...], ...] = ()
+    expected_child_counts: tuple[int, ...] = ()
 
 
 PUBLIC_BOOK_SOURCES = {
@@ -55,7 +62,7 @@ PUBLIC_BOOK_SOURCES = {
             "D",
             "E",
         ),
-        expected_chapter_groups=(
+        expected_child_label_groups=(
             ("1", "2"),
             ("3", "4", "5"),
             ("6", "7", "8"),
@@ -67,6 +74,92 @@ PUBLIC_BOOK_SOURCES = {
             ("20", "21"),
             ("A", "B", "C", "D", "E"),
         ),
+    ),
+    "ecampus-penney-linear-algebra4": PublicBookSourceSpec(
+        slug="ecampus-penney-linear-algebra4",
+        provider="ecampus",
+        topic="linear-algebra",
+        book_id="isbn13:9781118909584",
+        isbn_13="9781118909584",
+        title="Linear Algebra Ideas and Applications",
+        edition=4,
+        url=("https://wright.ecampus.com/linear-algebra-ideas-applications-4th/bk/9781118909584"),
+        toc_format="bold_chapter_paragraphs",
+        expected_toc_count=161,
+        expected_root_titles=(
+            "Preface",
+            "Features of the Text",
+            "Acknowledgments",
+            "About the Companion Website",
+            "Systems of Linear Equations",
+            "Linear Independence and Dimension",
+            "Linear Transformations",
+            "Determinants",
+            "Eigenvectors and Eigenvalues",
+            "Orthogonality",
+            "Generalized Eigenvectors",
+            "Numerical Techniques",
+            "Answers and Hints",
+            "Index",
+        ),
+        expected_chapter_labels=tuple(str(number) for number in range(1, 9)),
+        expected_child_label_groups=(
+            (),
+            (),
+            (),
+            (),
+            (
+                "1.1",
+                "1.1.1",
+                "1.1.2",
+                "1.2",
+                "1.2.1",
+                "1.2.2",
+                "1.3",
+                "1.3.1",
+                "1.3.2",
+                "1.4",
+                "1.4.1",
+            ),
+            ("2.1", "2.1.1", "2.2", "2.2.1", "2.2.2", "2.3", "2.3.1"),
+            (
+                "3.1",
+                "3.1.1",
+                "3.2",
+                "3.2.1",
+                "3.2.2",
+                "3.3",
+                "3.3.1",
+                "3.3.2",
+                "3.4",
+                "3.4.1",
+                "3.5",
+                "3.5.1",
+            ),
+            ("4.1", "4.1.1", "4.1.2", "4.2", "4.2.1", "4.3"),
+            ("5.1", "5.1.1", "5.1.2", "5.2", "5.2.1", "5.2.2", "5.3", "5.3.1"),
+            (
+                "6.1",
+                "6.2",
+                "6.2.1",
+                "6.3",
+                "6.3.1",
+                "6.3.2",
+                "6.4",
+                "6.4.1",
+                "6.5",
+                "6.5.1",
+                "6.6",
+                "6.6.1",
+                "6.7",
+                "6.8",
+            ),
+            ("7.1", "7.2"),
+            ("8.1", "8.2"),
+            (),
+            (),
+        ),
+        expected_child_counts=(0, 0, 0, 0, 26, 16, 26, 12, 16, 34, 7, 10, 0, 0),
     ),
     "ecampus-tanenbaum-distributed1": PublicBookSourceSpec(
         slug="ecampus-tanenbaum-distributed1",
