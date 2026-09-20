@@ -75,4 +75,22 @@ def validate_dataset(dataset: CanonicalDataset) -> list[str]:
                     f"TOC {entry.toc_entry_id} references parent {entry.parent_entry_id} "
                     f"owned by different book {parent.book_id}"
                 )
+            elif entry.level != parent.level + 1:
+                errors.append(f"TOC {entry.toc_entry_id} level must be parent level + 1")
+        elif entry.level != 1:
+            errors.append(f"TOC {entry.toc_entry_id} root level must be 1")
+
+    # Walk parent links iteratively: malformed deep trees must not overflow the stack.
+    # Each completed path is visited once, including paths ending in a missing parent.
+    checked: set[str] = set()
+    for entry_id in toc_by_id:
+        path: set[str] = set()
+        current: str | None = entry_id
+        while current is not None and current in toc_by_id and current not in checked:
+            if current in path:
+                errors.append(f"TOC parent cycle includes {current}")
+                break
+            path.add(current)
+            current = toc_by_id[current].parent_entry_id
+        checked.update(path)
     return errors
