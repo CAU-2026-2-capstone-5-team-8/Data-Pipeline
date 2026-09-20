@@ -20,6 +20,7 @@ class PublicBookSourceSpec:
     expected_toc_count: int
     expected_root_titles: tuple[str, ...]
     expected_chapter_labels: tuple[str, ...]
+    expected_chapter_groups: tuple[tuple[str, ...], ...] = ()
 
 
 PUBLIC_BOOK_SOURCES = {
@@ -53,6 +54,18 @@ PUBLIC_BOOK_SOURCES = {
             "C",
             "D",
             "E",
+        ),
+        expected_chapter_groups=(
+            ("1", "2"),
+            ("3", "4", "5"),
+            ("6", "7", "8"),
+            ("9", "10"),
+            ("11", "12"),
+            ("13", "14", "15"),
+            ("16", "17"),
+            ("18", "19"),
+            ("20", "21"),
+            ("A", "B", "C", "D", "E"),
         ),
     ),
     "ecampus-tanenbaum-distributed1": PublicBookSourceSpec(

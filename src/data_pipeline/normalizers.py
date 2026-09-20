@@ -3400,6 +3400,20 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed chapter sequence"
         )
+    if source_spec.expected_chapter_groups:
+        roots = tuple(entry for entry in toc if entry.parent_entry_id is None)
+        chapter_groups = tuple(
+            tuple(
+                entry.label
+                for entry in toc
+                if entry.parent_entry_id == root.toc_entry_id and entry.label
+            )
+            for root in roots
+        )
+        if chapter_groups != source_spec.expected_chapter_groups:
+            raise InvalidProviderResponse(
+                "public book page TOC does not match the reviewed chapter hierarchy"
+            )
 
     description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)
     if not description:
