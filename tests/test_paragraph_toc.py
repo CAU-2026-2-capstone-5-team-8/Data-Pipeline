@@ -152,7 +152,7 @@ def test_operating_system_concepts_rejects_chapter_under_wrong_part() -> None:
         ),
     )
 
-    with pytest.raises(InvalidProviderResponse, match="reviewed chapter hierarchy"):
+    with pytest.raises(InvalidProviderResponse, match="reviewed child-label hierarchy"):
         normalize_public_book_page_response(
             {
                 "source_slug": source.slug,

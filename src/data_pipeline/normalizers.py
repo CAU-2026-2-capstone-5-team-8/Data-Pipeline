@@ -3333,6 +3333,75 @@ def _paragraph_sequence_toc_entries(html: str, book_id: str, source_id: str) -> 
     return entries
 
 
+def _bold_chapter_paragraph_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse page-numbered paragraphs, using fully bold chapters as parent evidence."""
+    content = _public_page_section(HTMLParser(html), "Table of Contents")
+    paragraphs = content.css("p")
+    texts = [paragraph.text(separator=" ", strip=True) for paragraph in paragraphs]
+    full_text = " ".join(content.text(separator=" ", strip=True).split())
+    if not texts or any(not text for text in texts):
+        raise InvalidProviderResponse("bold chapter TOC is empty or contains empty entries")
+    if full_text != " ".join(" ".join(text.split()) for text in texts):
+        raise InvalidProviderResponse("bold chapter TOC contains unsupported text outside entries")
+
+    entries: list[TocEntry] = []
+    current_chapter: TocEntry | None = None
+    root_tail_titles = {"Answers and Hints", "Index"}
+    for paragraph, text in zip(paragraphs, texts, strict=True):
+        page_match = re.fullmatch(r"(.+?)\s+(?:[ivxlcdm]+|\d+)", text, flags=re.IGNORECASE)
+        if page_match is None:
+            raise InvalidProviderResponse(
+                f"public book page TOC paragraph lacks a page number: {text!r}"
+            )
+        entry_text = page_match.group(1).strip()
+        bold = paragraph.css_first("b")
+        fully_bold = bold is not None and bold.text(separator=" ", strip=True) == text
+        if bold is not None and not fully_bold:
+            raise InvalidProviderResponse(
+                f"public book page TOC paragraph is only partly bold: {text!r}"
+            )
+
+        chapter_match = re.fullmatch(r"(\d+)\s+(.+)", entry_text) if fully_bold else None
+        section_match = re.fullmatch(r"(\d+(?:\.\d+)+)\s+(.+)", entry_text)
+        if fully_bold:
+            if chapter_match is None:
+                raise InvalidProviderResponse(
+                    f"public book page TOC contained an unsupported bold chapter: {text!r}"
+                )
+            label = chapter_match.group(1)
+            title = chapter_match.group(2).strip()
+            parent_entry_id = None
+            level = 1
+        elif current_chapter is None or entry_text in root_tail_titles:
+            label = None
+            title = entry_text
+            parent_entry_id = None
+            level = 1
+        else:
+            label = section_match.group(1) if section_match is not None else None
+            title = section_match.group(2).strip() if section_match is not None else entry_text
+            parent_entry_id = current_chapter.toc_entry_id
+            level = 2
+
+        order_index = len(entries)
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), label or "", title),
+            book_id=book_id,
+            parent_entry_id=parent_entry_id,
+            level=level,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        if fully_bold:
+            current_chapter = entry
+        elif entry_text in root_tail_titles:
+            current_chapter = None
+    return entries
+
+
 def normalize_public_book_page_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -3378,6 +3447,8 @@ def normalize_public_book_page_response(
         toc = _flat_bold_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "paragraph_sequence":
         toc = _paragraph_sequence_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "bold_chapter_paragraphs":
+        toc = _bold_chapter_paragraph_toc_entries(html, source_spec.book_id, source_id)
     else:
         toc = _heading_sequence_toc_entries(html, source_spec.book_id, source_id)
     if len(toc) != source_spec.expected_toc_count:
@@ -3389,7 +3460,7 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed top-level structure"
         )
-    chapter_level = 1 if source_spec.toc_format == "flat_bold" else 2
+    chapter_level = 1 if source_spec.toc_format in {"flat_bold", "bold_chapter_paragraphs"} else 2
     chapter_labels = tuple(
         entry.label for entry in toc if entry.level == chapter_level and entry.label
     )
@@ -3400,9 +3471,9 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed chapter sequence"
         )
-    if source_spec.expected_chapter_groups:
+    if source_spec.expected_child_label_groups or source_spec.expected_child_counts:
         roots = tuple(entry for entry in toc if entry.parent_entry_id is None)
-        chapter_groups = tuple(
+        child_groups = tuple(
             tuple(
                 entry.label
                 for entry in toc
@@ -3410,9 +3481,19 @@ def normalize_public_book_page_response(
             )
             for root in roots
         )
-        if chapter_groups != source_spec.expected_chapter_groups:
+        if (
+            source_spec.expected_child_label_groups
+            and child_groups != source_spec.expected_child_label_groups
+        ):
             raise InvalidProviderResponse(
-                "public book page TOC does not match the reviewed chapter hierarchy"
+                "public book page TOC does not match the reviewed child-label hierarchy"
+            )
+        child_counts = tuple(
+            sum(entry.parent_entry_id == root.toc_entry_id for entry in toc) for root in roots
+        )
+        if source_spec.expected_child_counts and child_counts != source_spec.expected_child_counts:
+            raise InvalidProviderResponse(
+                "public book page TOC does not match the reviewed child counts"
             )
 
     description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)
