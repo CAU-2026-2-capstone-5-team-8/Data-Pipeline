@@ -482,3 +482,150 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+## TOC collection diagnosis (2026-09-19)
+
+The generic Open Library collector defaults to details for only the first `limit + 3`
+search candidates. Rejected, duplicate, or relevance-filtered candidates can cause later
+selected books to have no fetched edition details. That is not proof that their TOC is absent.
+To cover more of the search pool explicitly (maximum 100 candidates):
+
+```bash
+uv run data-pipeline collect --topic operating-systems --limit 25 \
+  --provider open-library --detail-limit 100 --data-dir data/experiments/toc-expanded
+```
+
+`--detail-limit` is Open-Library-only, bounded by the search candidate budget. It controls
+both edition and work detail candidates; existing request pacing and retry rules apply.
+The default stays unchanged to avoid silently increasing network traffic. Recollection
+creates a new raw artifact: an offline rebuild cannot recover responses never fetched.
+
+`report-scale` now records a book-specific TOC reason in `failure_analysis.by_book` and
+in the audit CSV column `missing_toc_reason` (blank when TOC exists):
+
+- `edition_detail_not_fetched`: no preserved detail response or fetch failure for the edition
+- `rate_limit`, `network_failure`, `provider_http_error`: recorded edition-fetch failure
+- `invalid_provider_response`: invalid edition response
+- `provider_returned_no_evidence`: fetched edition has no TOC or an empty list
+- `toc_parse_failure`: nonempty/malformed TOC exists but no canonical entries survived
+- `unsupported_source`: no supported edition evidence path was found
+
+Reasons describe preserved responses, not whether a TOC exists anywhere on the web.
+Partial TOCs are not certified complete by this report. Canonical JSONL schemas and
+edition matching are unchanged; TOCs from other editions are not substituted.
+
+### Live reproduction
+
+On 2026-09-19, an Operating Systems run requested 25 books, discovered 100 candidates,
+and fetched 28 edition plus 28 work details with no recorded fetch failures. The selected
+25 books had **2 TOCs and 23 fetched editions without TOC evidence**. Across the 28 fetched
+editions, 3 contained TOCs; one was outside the selected set. Therefore this experiment's
+low coverage is primarily missing provider evidence, not a demonstrated parser defect.
+Increasing the detail budget alone does not promise to improve these 25 books.
+
+The raw response SHA-256 is
+`6fdca83dfd96` (prefix); generated raw data and audit CSV stay outside Git.
+The report rebuilt the four canonical files twice with byte-identical results; all reference,
+TOC-parent, provenance and validation error counts were zero. On Windows use Python UTF-8
+mode (`python -X utf8 -m data_pipeline.cli ...`) if the terminal cannot print report punctuation.
+
+Next collection work should use a second public publisher/catalog source, with exact
+ISBN/edition verification and retained raw provenance. This change does not implement that
+source, ML scoring, or a claim of improved live TOC coverage. The synthetic regression verifies
+that an explicitly larger detail budget preserves an otherwise unqueried edition's TOC.
+
+## Missing-TOC enrichment
+
+After generic metadata collection, run the opt-in reviewed-source fallback:
+
+```bash
+uv run data-pipeline enrich-toc --data-dir data/experiments/scale-50 --dry-run
+uv run data-pipeline enrich-toc --data-dir data/experiments/scale-50 --max-sources 4
+```
+
+This command matches missing-TOC books by exact canonical ISBN identity and topic against
+existing `PUBLISHER_SOURCES` and `PUBLIC_BOOK_SOURCES`. Publisher pages are tried first.
+It reuses their ISBN/title/edition/completeness checks, preserves raw HTML, and merges only
+validated evidence. It never substitutes an OER book or a different edition to raise coverage.
+This connects the already-reviewed sources to the scale workflow; it is not a new generic
+web crawler or a claim that all books now have a supported source.
+
+Existing TOCs are skipped, including on a second invocation. The source-attempt budget is
+bounded (default 4, maximum 20). Fetch/identity/parser failures are recorded and subsequent
+sources are attempted; successful prior enrichments remain saved. Exit status is 1 if any
+attempt failed, even if others succeeded. Missing sources are listed as remaining books,
+not treated as network failures. A dry run neither fetches nor writes anything.
+
+`reports/toc-enrichment.json` contains before/after book counts, added and remaining book IDs,
+source-level attempts and errors. It describes the latest invocation and is replaced on rerun;
+immutable raw artifacts remain retained separately. The canonical four-JSONL schema is unchanged.
+To reproduce the exact output order offline, pass original metadata and enrichment raw artifacts
+to `build --raw ... --raw ...` in collection timestamp order. An old metadata-only manifest will
+still reproduce the baseline; explicitly include the enrichment artifacts when rebuilding.
+
+### Verified result: 2026-09-20 KST
+
+Used the **same 25 Operating Systems books** from the 2026-09-19 experiment, with a separate
+output copy at `data/experiments/toc-enriched-20260920`.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Books | 25 | 25 |
+| Books with TOC | 2 (8%) | 5 (20%) |
+| TOC entries | 40 | 294 |
+| Books with description | 7 | 8 |
+
+New exact-edition TOCs: Wiley *Operating System Concepts*, 7th edition (ISBN 9780471694663,
+26 entries); eCampus *Advanced Concepts in Operating Systems*, 1st edition (9780070575721,
+27 entries); eCampus Stallings *Operating Systems*, 4th edition (9780130319999, 201 entries).
+The existing edition/provenance validators accepted all three live responses. No new raw text
+or third-party book content is committed to Git.
+
+Offline replay in collection order produced four byte-identical JSONL files. Book records and
+prior TOC entries were unchanged, and canonical validation reported no errors. Tests cover
+repeated-run network skipping, wrong-edition rejection, raw preservation, dry runs, source
+budgets and continuation after a failed provider. Full suite: 157 passed; Ruff check and format
+check passed.
+
+Twenty of these 25 books still lack TOCs. This result is a 12-percentage-point improvement on
+this fixed Operating Systems sample, not a 50-book or arbitrary-book coverage claim. Wider
+coverage requires additional reviewed publisher/catalog adapters and exact-edition discovery.
+
+### Additional flat-TOC coverage (2026-09-20)
+
+Added a reusable parser for bold headings separated by line breaks, preserving chapter labels
+and representing the observed flat list at level 1. Text outside supported headings, empty
+headings, changed entry counts, titles, ISBNs, editions or chapter sequences fail validation.
+The reviewed catalog registry now includes:
+
+- Tanenbaum, *Distributed Operating Systems*, first edition, ISBN 9780132199087:
+  https://cincinnatistate.ecampus.com/distributed-operating-systems-1st/bk/9780132199087
+- Bach, *Design of the UNIX Operating System*, first edition, ISBN 9780132017992:
+  https://wright.ecampus.com/design-unix-operating-system-1st-bach/bk/9780132017992
+
+Live enrichment on the same 25-book set increased TOC coverage from 5/25 (20%) to 7/25 (28%),
+adding 24 entries (294 -> 318). Relative to the original metadata-only baseline this is
+2/25 -> 7/25. Eighteen books remain unsupported/missing; no generalized coverage is claimed.
+Both pages passed exact-edition identity and reviewed chapter-sequence validation. Raw HTML
+is preserved locally and excluded from Git. Full tests: 161 passed. Offline chronological
+replay of all raw artifacts again produced four byte-identical JSONL files.
+Run `enrich-toc` again to pick up newly supported books; already populated TOCs are skipped.
+For a fresh baseline use `--max-sources 6` to allow all currently registered sources in one run.
+
+### Combined 50-book reproduction (2026-09-20 KST)
+
+After integrating the TOC hierarchy checks and relevance-review workflow from `main`, a live run
+against a temporary copy of the 50-book v1 scale dataset collected all six eligible reviewed
+sources without failures:
+
+| Topic | Books with TOC before | Books with TOC after |
+| --- | ---: | ---: |
+| Linear Algebra | 2/25 | 3/25 |
+| Operating Systems | 2/25 | 7/25 |
+| Combined | 4/50 | 10/50 |
+
+The six additions were the exact ISBN editions listed in `toc-enrichment.json`: one Wiley
+Linear Algebra title and five Operating Systems titles from Wiley or reviewed catalog pages.
+Canonical validation succeeded after every collection. Raw responses and the temporary dataset
+remain outside Git. Forty selected books still lack TOCs, so this is a bounded improvement rather
+than sufficient evidence coverage for a representative 50-book ML gold evaluation.

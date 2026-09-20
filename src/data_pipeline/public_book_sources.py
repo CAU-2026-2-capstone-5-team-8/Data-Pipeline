@@ -16,13 +16,67 @@ class PublicBookSourceSpec:
     title: str
     edition: int
     url: str
-    toc_format: Literal["indented_table", "heading_sequence"]
+    toc_format: Literal["indented_table", "heading_sequence", "flat_bold"]
     expected_toc_count: int
     expected_root_titles: tuple[str, ...]
     expected_chapter_labels: tuple[str, ...]
 
 
 PUBLIC_BOOK_SOURCES = {
+    "ecampus-tanenbaum-distributed1": PublicBookSourceSpec(
+        slug="ecampus-tanenbaum-distributed1",
+        provider="ecampus",
+        topic="operating-systems",
+        book_id="isbn13:9780132199087",
+        isbn_13="9780132199087",
+        title="Distributed Operating Systems",
+        edition=1,
+        url="https://cincinnatistate.ecampus.com/distributed-operating-systems-1st/bk/9780132199087",
+        toc_format="flat_bold",
+        expected_toc_count=12,
+        expected_root_titles=(
+            "Preface.",
+            "Introduction to Distributed Systems.",
+            "Communication in Distributed Systems.",
+            "Synchronization in Distributed Systems.",
+            "Processes and Processors in Distributed Systems.",
+            "Distributed File Systems.",
+            "Distributed Shared Memory.",
+            "Case Study I: Amoeba.",
+            "Case Study II: Mach.",
+            "Case Study III: Chorus.",
+            "Case Study IV: DCE.",
+            "Index.",
+        ),
+        expected_chapter_labels=tuple(str(number) for number in range(1, 11)),
+    ),
+    "ecampus-bach-unix1": PublicBookSourceSpec(
+        slug="ecampus-bach-unix1",
+        provider="ecampus",
+        topic="operating-systems",
+        book_id="isbn13:9780132017992",
+        isbn_13="9780132017992",
+        title="Design of the UNIX Operating System",
+        edition=1,
+        url="https://wright.ecampus.com/design-unix-operating-system-1st-bach/bk/9780132017992",
+        toc_format="flat_bold",
+        expected_toc_count=12,
+        expected_root_titles=(
+            "General Review of the System.",
+            "Introduction to the Kernel.",
+            "The Buffer Cache.",
+            "Internal Representation of Files.",
+            "System Calls for the File System.",
+            "The System Representation of Processes.",
+            "Process Control.",
+            "Process Scheduling and Time.",
+            "Memory Management Policies.",
+            "Interprocess Communication.",
+            "Multiprocessor Systems.",
+            "Distributed UNIX System.",
+        ),
+        expected_chapter_labels=tuple(str(number) for number in range(1, 13)),
+    ),
     "ecampus-stallings-os4": PublicBookSourceSpec(
         slug="ecampus-stallings-os4",
         provider="ecampus",

@@ -451,16 +451,26 @@ def collect(
     limit: LimitOption = 5,
     provider: ProviderOption = "open-library",
     data_dir: Annotated[Path, typer.Option(help="Raw and processed data root.")] = Path("data"),
+    detail_limit: Annotated[
+        int | None,
+        typer.Option(
+            min=1, max=100, help="Open Library detail candidate budget; default limit + 3."
+        ),
+    ] = None,
 ) -> None:
     """Fetch one small response, preserve it, normalize it, and validate outputs."""
     _ensure_topic(topic)
+    if detail_limit is not None and provider != "open-library":
+        raise typer.BadParameter("--detail-limit is only supported for open-library")
     retrieved_at = datetime.now(UTC)
     candidate_limit = _metadata_candidate_limit(provider, limit)
     payload, request_parameters = _collect_payload(
         provider,
         topic,
         candidate_limit,
-        edition_detail_limit=min(limit + 3, candidate_limit),
+        edition_detail_limit=min(
+            detail_limit if detail_limit is not None else limit + 3, candidate_limit
+        ),
     )
     artifact = RawArtifact(
         provider=provider,
@@ -622,6 +632,92 @@ def collect_public_page(
     typer.echo(f"Public-page documents collected: {len(evidence.documents)}")
     typer.echo(f"Public-page TOC entries collected: {len(evidence.toc)}")
     typer.echo(format_coverage(dataset))
+
+
+@app.command("enrich-toc")
+def enrich_toc(
+    data_dir: Annotated[Path, typer.Option(help="Existing raw and processed data root.")] = Path(
+        "data"
+    ),
+    max_sources: Annotated[int, typer.Option(min=1, max=20)] = 4,
+    dry_run: Annotated[
+        bool, typer.Option(help="Show exact-edition plan without fetching.")
+    ] = False,
+) -> None:
+    """Fill missing TOCs using existing reviewed publisher/catalog sources only."""
+    processed = data_dir / "processed"
+    if not dataset_exists(processed):
+        raise typer.BadParameter("enrich-toc requires an existing canonical dataset")
+    original = read_dataset(processed)
+    errors = validate_dataset(original)
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+    books = {book.book_id: book for book in original.books}
+    before = {entry.book_id for entry in original.toc}
+    plan = [
+        (kind, spec)
+        for kind, registry in (
+            ("publisher-page", PUBLISHER_SOURCES),
+            ("public-book-page", PUBLIC_BOOK_SOURCES),
+        )
+        for spec in sorted(registry.values(), key=lambda item: item.slug)
+        if spec.book_id in books
+        and spec.book_id not in before
+        and spec.topic in books[spec.book_id].topics
+    ]
+    if dry_run:
+        typer.echo(
+            json.dumps(
+                [
+                    {"provider": kind, "source": spec.slug, "book_id": spec.book_id}
+                    for kind, spec in plan[:max_sources]
+                ],
+                indent=2,
+            )
+        )
+        return
+
+    attempts = []
+    for kind, spec in plan:
+        if len(attempts) >= max_sources:
+            break
+        current = read_dataset(processed)
+        if any(entry.book_id == spec.book_id for entry in current.toc):
+            continue
+        attempt = {"provider": kind, "source": spec.slug, "book_id": spec.book_id}
+        try:
+            if kind == "publisher-page":
+                collect_publisher(source=spec.slug, data_dir=data_dir)
+            else:
+                collect_public_page(source=spec.slug, data_dir=data_dir)
+        except (typer.BadParameter, typer.Exit, ValueError) as exc:
+            attempt.update(status="failed", error=str(exc) or type(exc).__name__)
+        else:
+            attempt["status"] = "collected"
+        attempts.append(attempt)
+
+    final = read_dataset(processed)
+    after = {entry.book_id for entry in final.toc}
+    report = {
+        "retrieved_at": datetime.now(UTC).isoformat(),
+        "book_count": len(books),
+        "toc_books_before": len(before),
+        "toc_books_after": len(after),
+        "added_book_ids": sorted(after - before),
+        "remaining_book_ids": sorted(set(books) - after),
+        "eligible_source_count": len(plan),
+        "max_sources": max_sources,
+        "attempts": attempts,
+    }
+    report_path = data_dir / "reports" / "toc-enrichment.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    typer.echo(f"TOC coverage: {len(before)}/{len(books)} -> {len(after)}/{len(books)}")
+    typer.echo(f"Enrichment report: {report_path}")
+    if any(attempt["status"] == "failed" for attempt in attempts):
+        raise typer.Exit(code=1)
 
 
 @app.command("collect-publisher-document")

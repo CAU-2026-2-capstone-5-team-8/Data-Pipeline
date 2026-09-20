@@ -3253,6 +3253,35 @@ def _heading_sequence_toc_entries(html: str, book_id: str, source_id: str) -> li
     return entries
 
 
+def _flat_bold_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Preserve a catalog's flat bold/line-break TOC without inventing hierarchy."""
+    content = _public_page_section(HTMLParser(html), "Table of Contents")
+    headings = content.css("b")
+    titles = [heading.text(separator=" ", strip=True) for heading in headings]
+    if not titles or any(not title for title in titles):
+        raise InvalidProviderResponse("flat TOC is empty or contains empty headings")
+    full_text = " ".join(content.text(separator=" ", strip=True).split())
+    if full_text != " ".join(" ".join(title.split()) for title in titles):
+        raise InvalidProviderResponse("flat TOC contains unsupported text outside headings")
+    entries = []
+    for index, text in enumerate(titles):
+        match = re.fullmatch(r"(\d+)\.\s+(.+)", text)
+        label, title = (match.group(1), match.group(2)) if match else (None, text)
+        entries.append(
+            TocEntry(
+                toc_entry_id=stable_id("toc", book_id, source_id, str(index), text),
+                book_id=book_id,
+                parent_entry_id=None,
+                level=1,
+                order_index=index,
+                label=label,
+                title=title,
+                source_id=source_id,
+            )
+        )
+    return entries
+
+
 def normalize_public_book_page_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -3294,6 +3323,8 @@ def normalize_public_book_page_response(
     source_id = stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
     if source_spec.toc_format == "indented_table":
         toc = _indented_table_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "flat_bold":
+        toc = _flat_bold_toc_entries(html, source_spec.book_id, source_id)
     else:
         toc = _heading_sequence_toc_entries(html, source_spec.book_id, source_id)
     if len(toc) != source_spec.expected_toc_count:
@@ -3305,7 +3336,10 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed top-level structure"
         )
-    chapter_labels = tuple(entry.label for entry in toc if entry.level == 2 and entry.label)
+    chapter_level = 1 if source_spec.toc_format == "flat_bold" else 2
+    chapter_labels = tuple(
+        entry.label for entry in toc if entry.level == chapter_level and entry.label
+    )
     if (
         source_spec.expected_chapter_labels
         and chapter_labels != source_spec.expected_chapter_labels

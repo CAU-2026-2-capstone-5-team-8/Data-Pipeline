@@ -5,6 +5,7 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import normalize_bibliographic_text
@@ -162,6 +163,52 @@ def _author_conflicts(book: Book) -> list[str]:
     return conflicts
 
 
+def _missing_toc_reason(row: dict[str, Any], artifacts: list[RawArtifact]) -> str:
+    """Do not equate an unrequested or failed edition fetch with absent provider TOC."""
+    edition_keys = {
+        urlsplit(url).path.removesuffix(".json")
+        for url in row["source_urls"]
+        if urlsplit(url).hostname == "openlibrary.org" and urlsplit(url).path.startswith("/books/")
+    }
+    for artifact in sorted(artifacts, key=lambda item: item.retrieved_at, reverse=True):
+        if artifact.provider != "open-library" or artifact.topic != row["topic"]:
+            continue
+        payload = artifact.response
+        details = payload.get("edition_details", {})
+        failures = payload.get("collection_failures", [])
+        for key in sorted(edition_keys):
+            if isinstance(details, dict) and key in details:
+                detail = details[key]
+                if not isinstance(detail, dict):
+                    return "invalid_provider_response"
+                toc = detail.get("table_of_contents")
+                if toc is None or toc == []:
+                    return "provider_returned_no_evidence"
+                return "toc_parse_failure"
+            if isinstance(failures, list):
+                for failure in failures:
+                    if (
+                        isinstance(failure, dict)
+                        and failure.get("stage") == "edition_detail"
+                        and failure.get("external_id") == key
+                    ):
+                        reason = failure.get("reason")
+                        return (
+                            reason
+                            if reason
+                            in {
+                                "rate_limit",
+                                "network_failure",
+                                "provider_http_error",
+                                "invalid_provider_response",
+                            }
+                            else "edition_detail_fetch_failed"
+                        )
+    if edition_keys:
+        return "edition_detail_not_fetched"
+    return "unsupported_source"
+
+
 def _failure_analysis(
     rows: list[dict[str, Any]],
     artifacts: list[RawArtifact],
@@ -197,8 +244,8 @@ def _failure_analysis(
             missing[evidence_type] = reason
             counts[reason] += 1
         if not row["toc"]:
-            missing["toc"] = "provider_returned_no_evidence"
-            counts["provider_returned_no_evidence"] += 1
+            missing["toc"] = _missing_toc_reason(row, artifacts)
+            counts[missing["toc"]] += 1
         if not row["other_prose"]:
             missing["other_prose"] = (
                 "unsupported_source" if metadata_only else "provider_returned_no_evidence"
@@ -419,6 +466,10 @@ def write_scale_artifacts(
 
     audit_path = output_directory / "scale-audit.csv"
     books_by_id = {book.book_id: book for book in dataset.books}
+    missing_toc_by_book = {
+        row["book_id"]: row["missing"].get("toc", "")
+        for row in report["failure_analysis"]["by_book"]
+    }
     fieldnames = [
         "book_id",
         "title",
@@ -432,6 +483,7 @@ def write_scale_artifacts(
         "source_urls",
         "prose_character_count",
         "toc_entry_count",
+        "missing_toc_reason",
         "warnings",
         "suspected_identity_or_edition_conflicts",
         "identity_ok",
@@ -467,6 +519,7 @@ def write_scale_artifacts(
                 "source_urls": " | ".join(row["source_urls"]),
                 "prose_character_count": row["prose_character_count"],
                 "toc_entry_count": row["toc_entry_count"],
+                "missing_toc_reason": missing_toc_by_book.get(book.book_id, ""),
                 "warnings": " | ".join(_audit_warnings(book, row)),
                 "suspected_identity_or_edition_conflicts": " | ".join(
                     row["suspected_identity_or_edition_conflicts"]
