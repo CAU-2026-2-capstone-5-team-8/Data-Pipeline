@@ -136,6 +136,28 @@ fixtures. A borrow link, scan identifier, preview URL, or TOC heading named `Pre
 treated as public book text. The pipeline does not fetch restricted scans or infer unavailable
 preface, introduction, preview, or sample content.
 
+Internet Archive is also implemented (`--provider internet-archive`). It queries the unauthenticated
+`advancedsearch.php` endpoint with a quoted title-phrase query restricted to `mediatype:(texts)` and
+normalizes identity (title, creator, ISBN, publisher, date), language, and any catalog `description`
+text directly from the returned search rows; no separate per-item detail fetch is needed because
+those fields are already present on the search response when requested. Many Internet Archive items
+are controlled-digital-lending items (`"access-restricted-item": true`); the collector never fetches
+an item's files (scans, OCR text, PDFs) to read its actual text, and instead records that
+restriction in the source's `rights_note` while leaving `license` `null`. A live 5-book search for
+`linear-algebra` collected metadata for 5/5 candidates and description text for 4/5.
+
+HathiTrust's free Bibliographic API is implemented differently from the other providers because it
+has no topic or subject search: it only accepts an exact ISBN and returns catalog identity plus a
+rights code, never item text or a table of contents. Every ISBN checked during development
+(`9780132017992`, `9780070575721`, `9780201633610`) returned `rightsCode: "ic"` and
+`"Limited (search-only)"`, confirming it cannot supply new evidence types. Because of this, it is
+not wired into `search`/`collect`; instead `enrich-bibliography --isbn <isbn>` looks up one ISBN
+already present in the canonical dataset and adds one corroborating `Source`
+(`provider: hathitrust`, `source_type: other`) recording the HathiTrust record URL and rights code,
+without asserting a license or emitting any `Document`/TOC evidence. Running it twice for the same
+book is a no-op the second time, and an ISBN with no HathiTrust record still preserves the raw
+response but leaves the canonical dataset unchanged (exit code 1).
+
 ## Real-data evidence experiment
 
 The combined public-source experiment on 2026-09-15 produced the following coverage for the

@@ -188,7 +188,7 @@ curated 데이터셋에 새 분야를 넣는 건 별도 작업(사람이 각 책
 `configs/sources/`에 allowlist 항목을 추가하는 과정, `docs/data-pipeline-guide.md`
 8절 참고)이 필요하다.
 
-### Phase 4 — 미착수
+### Phase 4 — ✅ 완료: Internet Archive 검색과 HathiTrust 서지 보강
 
 아래 "남은 작업" 참고.
 
@@ -206,30 +206,52 @@ JSONL만 만들고, 조회는 Backend가 가져갈 서비스 DB나 필요시 `jq
 
 ### Phase 3 — ✅ 완료. 위 "현재 상태 > Phase 3" 참고.
 
-### Phase 4 — 신규 provider collector 추가 (Internet Archive, HathiTrust)
+### Phase 4 — ✅ 완료. 실제 API를 직접 호출해보고 계획을 두 번 수정했다.
 
-- 신규 `collectors/internet_archive.py`: `open_library.py`와 동일 구조(httpx.Client
-  + User-Agent, tenacity retry, `InvalidProviderResponse`, `detail_failures`).
-  `https://archive.org/advancedsearch.php`(키 불필요)로 topic 검색,
-  `https://archive.org/metadata/<identifier>`로 상세 메타데이터/가능한 경우
-  TOC·설명 수집.
-- 신규 `collectors/hathitrust.py`:
-  `https://catalog.hathitrust.org/api/volumes/brief/json/isbn:<isbn>` 서지 조회
-  (키 불필요). 저작권 있는 책은 본문 접근이 제한적이므로 **주로 서지/edition 정보
-  보강**(서정민님이 남긴 "edition resolver 고도화" 과제에 직접 도움)에 기여하고,
-  preface/sample 커버리지 향상은 기대하지 않는다 — README에 이 한계를 명시할 것.
-- 두 provider 모두 `normalizers.py`에 기존 `_normalize_<provider>_response` 패턴으로
-  추가, `identifiers.py`의 ISBN 검증과 기존 edition-mismatch 방어 로직 재사용
-  (약화 금지).
-- `cli.py`의 `--provider` 옵션과 `_collect_payload`/`_normalize` 분기에 6줄 내외 추가.
-- 신규 테스트: `tests/test_internet_archive.py`, `tests/test_hathitrust.py`
-  (`test_collectors.py`의 `httpx.MockTransport` 패턴 재사용).
-- 추가 후보(이번엔 미포함, 추천만): **DOAB**(Directory of Open Access Books — OER
-  전문 텍스트 확보에 유리), **Library of Congress loc.gov API**(무료 서지 메타데이터).
+**설계 변경 1 (Internet Archive)**: 원래 계획은 `search` + 상세 fetch(`/metadata/<id>`)
+2단계였다. 그런데 실제로 `advancedsearch.php`를 `fl[]`로 필요한 필드(`language`,
+`description`, `access-restricted-item` 포함)를 요청해보니 **검색 결과 행 자체에
+이미 다 들어있었다** — 상세 fetch가 불필요했다. Google Books와 동일하게 한 번의
+검색 응답만으로 정규화하도록 단순화했다(`fetch_item_metadata`/상세 bounded-fetch
+로직을 만들었다가 실제 API 응답을 보고 전부 제거함). 또한 많은 Internet Archive
+항목이 `"access-restricted-item": true`(controlled digital lending, 본문 비공개)
+임을 실제 응답으로 확인했고, 이 collector는 **item의 파일(스캔본/PDF/OCR 텍스트)을
+전혀 요청하지 않는다** — 카탈로그 메타데이터(제목/저자/ISBN/출판사/연도)와 제공되는
+경우의 `description` 필드만 수집한다.
+
+**설계 변경 2 (HathiTrust)**: 계획에는 "주로 서지 정보 보강"이라고만 적었지만, 실제로
+여러 ISBN(`9780132017992`, `9780070575721`, `9780201633610`)으로 라이브 조회해보니
+HathiTrust 무료 Bibliographic API는 **topic/subject 검색 자체가 없고**(ISBN 단건
+조회 전용), 모든 결과가 `rightsCode: "ic"`(저작권 있음) +
+`"Limited (search-only)"`(본문 비공개)였다. 즉 `search`/`collect --topic`과 같은
+"많은 후보 중 topic에 맞는 것을 고른다"는 패턴 자체가 이 API에 맞지 않는다. 그래서
+`--provider hathitrust`로 만들지 않고, **이미 canonical dataset에 있는 책을 정확한
+ISBN으로 조회해 서지 확인용 `Source` 레코드 하나만 추가하는 별도 명령**
+`enrich-bibliography --isbn <isbn>`으로 구현했다. Document/TOC는 만들지 않고,
+license는 항상 `null`(권리 코드는 `rights_note`에 기록), 이미 추가된 책은 재실행 시
+멱등적으로 스킵한다.
+
+구현 파일: `collectors/internet_archive.py`, `collectors/hathitrust.py`,
+`normalizers.py`의 `normalize_internet_archive_response`/
+`normalize_hathitrust_response`, `cli.py`의 `--provider internet-archive` 지원 +
+신규 `enrich-bibliography` 명령, `manifest.py`의 `MetadataProvider`에
+`internet-archive` 추가. `topics.py`에 `topic_title_phrase()`(현재는
+`topic_open_library_title()`의 별칭, IA collector가 OL 전용 이름을 직접 import하지
+않게 하기 위함) 추가.
+
+검증: `tests/test_internet_archive.py`(24개), `tests/test_hathitrust.py`(13개)와 공통
+collector 회귀 테스트를 추가해 전체 246개 테스트가 통과했다. 실제 네트워크로
+`search`/`collect --provider internet-archive`, `build`(오프라인 재빌드),
+`enrich-bibliography`의 성공/중복/
+불일치/무응답 4가지 경로 모두 라이브로 확인함(테스트 디렉터리는 커밋 안 됨).
+README에 두 provider의 실제 커버리지·한계를 기록.
+
+추가 후보(이번엔 미포함, 추천만): **DOAB**(Directory of Open Access Books — OER
+전문 텍스트 확보에 유리), **Library of Congress loc.gov API**(무료 서지 메타데이터).
 
 ## 실행 순서
 
-Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3(완료) → Phase 4(다음)
+Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3(완료) → Phase 4(완료)
 
 ## 검증 방법 (매 phase 공통 + phase별)
 
@@ -246,9 +268,10 @@ Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3(완료) 
 - Phase 3(완료): 신규 4개 topic을 `search --limit 5`로 관련성 확인 →
   `collect --limit 5`로 실제 수집 → `report`에서 기존 2개와 함께 coverage row로
   나오는지 확인. 4개 전부 통과, 코드 변경 없음.
-- Phase 4: 신규 collector로 실제 네트워크 1회 수집 → `report`에서 metadata
-  coverage가 0이 아닌지 확인. 기존 10권 MVP/50권 scale pilot의 `report-scale`
-  byte-identical 오프라인 재현 테스트가 그대로 통과하는지(회귀) 확인.
+- Phase 4(완료): `search`/`collect --provider internet-archive`를 실제 네트워크로
+  실행해 metadata/description coverage 확인, `build`로 오프라인 재빌드 확인,
+  `enrich-bibliography`를 성공/멱등/책없음/HathiTrust무응답 4가지 경로 전부 라이브로
+  확인. provider 관련 신규 38개를 포함한 전체 246개 테스트도 통과.
 
 ## 참고: 인수 시점 코드 리뷰에서 나온 이슈 (이 로드맵과 별개, 언젠가 처리)
 

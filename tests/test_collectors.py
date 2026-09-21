@@ -3,6 +3,7 @@ import pytest
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
+from data_pipeline.collectors.internet_archive import InternetArchiveCollector
 from data_pipeline.collectors.open_library import OpenLibraryCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
@@ -23,7 +24,9 @@ def _google_item(index: int) -> dict:
     }
 
 
-@pytest.mark.parametrize("collector_class", [GoogleBooksCollector, OpenLibraryCollector])
+@pytest.mark.parametrize(
+    "collector_class", [GoogleBooksCollector, OpenLibraryCollector, InternetArchiveCollector]
+)
 def test_collector_reports_malformed_success_response(collector_class) -> None:
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, text="not-json", request=request)

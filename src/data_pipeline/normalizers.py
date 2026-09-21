@@ -286,6 +286,246 @@ def normalize_google_books_response(
     return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
 
 
+def _internet_archive_records(response: dict[str, Any]) -> list[Any]:
+    response_block = response.get("response", {})
+    if not isinstance(response_block, dict):
+        raise InvalidProviderResponse("internet-archive response missing 'response' object")
+    return _provider_records(response_block, "docs", "internet-archive")
+
+
+def _archive_string_list(value: Any) -> list[str]:
+    """Normalize Internet Archive's scalar-or-list metadata fields into a list.
+
+    A field with exactly one value serializes as a bare string; the same field with
+    multiple values serializes as a list. Both shapes are observed in real responses.
+    """
+    if isinstance(value, list):
+        return _string_list(value)
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _archive_authors(value: Any) -> list[str]:
+    """Treat a single `creator` string as one "Last, First" name, never split it."""
+    if isinstance(value, list):
+        return _deduplicate_authors(value)
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _archive_isbns(record: dict[str, Any]) -> tuple[str | None, str | None]:
+    candidates = _archive_string_list(record.get("isbn"))
+    isbn_10_values = sorted(filter(None, (normalize_isbn(value, 10) for value in candidates)))
+    isbn_13_values = sorted(filter(None, (normalize_isbn(value, 13) for value in candidates)))
+    isbn_13 = isbn_13_values[0] if isbn_13_values else None
+    if isbn_13 is None:
+        return (isbn_10_values[0] if isbn_10_values else None, None)
+
+    isbn_10 = next(
+        (candidate for candidate in isbn_10_values if _isbn_10_matches_13(candidate, isbn_13)),
+        None,
+    )
+    return isbn_10, isbn_13
+
+
+def _isbn_10_matches_13(isbn_10: str, isbn_13: str) -> bool:
+    """Return whether two already-validated ISBNs identify the same edition."""
+    body = f"978{isbn_10[:9]}"
+    total = sum((1 if index % 2 == 0 else 3) * int(digit) for index, digit in enumerate(body))
+    converted = f"{body}{(10 - total % 10) % 10}"
+    return converted == isbn_13
+
+
+def _normalize_internet_archive_item(
+    record: dict[str, Any], topic: str, retrieved_at: datetime
+) -> tuple[Book, Source, Document | None] | None:
+    """Normalize one advancedsearch result row (identity + optional description only)."""
+    identifier_value = record.get("identifier")
+    if not isinstance(identifier_value, str) or not identifier_value.strip():
+        return None
+    identifier = identifier_value.strip()
+    languages = {value.casefold() for value in _archive_string_list(record.get("language"))}
+    if not languages.intersection({"eng", "en"}):
+        return None
+    title_value = record.get("title")
+    if not isinstance(title_value, str) or not title_value.strip():
+        return None
+    title = title_value.strip()
+
+    authors = _archive_authors(record.get("creator"))
+    isbn_10, isbn_13 = _archive_isbns(record)
+    book_id = _book_id(isbn_10, isbn_13, title, authors, "internet_archive", identifier)
+    source_id = stable_id(
+        "source", "internet_archive", identifier, book_id, retrieved_at.isoformat()
+    )
+    publisher_values = _archive_string_list(record.get("publisher"))
+    publisher = publisher_values[0] if publisher_values else None
+    published_year = _published_year(str(record.get("date", "")))
+
+    book = Book(
+        book_id=book_id,
+        isbn_10=isbn_10,
+        isbn_13=isbn_13,
+        title=title,
+        subtitle=None,
+        authors=authors,
+        publisher=publisher,
+        published_year=published_year,
+        language="en",
+        topics=TOPICS[topic],
+    )
+    restricted = str(record.get("access-restricted-item", "")).strip().lower() == "true"
+    rights_note = (
+        "Access-restricted controlled-digital-lending item; only public catalog metadata "
+        "was collected, not item text."
+        if restricted
+        else None
+    )
+    source = Source(
+        source_id=source_id,
+        book_id=book_id,
+        provider="internet_archive",
+        source_type="metadata_api",
+        url=f"https://archive.org/details/{identifier}",
+        external_id=identifier,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=sha256_json(record),
+    )
+    description_text = "\n\n".join(_archive_string_list(record.get("description"))).strip()
+    document = None
+    if description_text:
+        document = Document(
+            document_id=stable_id("doc", book_id, "description", source_id),
+            book_id=book_id,
+            document_type="description",
+            text=description_text,
+            source_id=source_id,
+            content_hash=sha256_text(description_text),
+        )
+    return book, source, document
+
+
+def normalize_internet_archive_response(
+    response: dict[str, Any],
+    *,
+    topic: str,
+    limit: int,
+    retrieved_at: datetime,
+    diagnostics: NormalizationDiagnostics | None = None,
+) -> CanonicalDataset:
+    """Normalize one Internet Archive advancedsearch response."""
+    if topic not in TOPICS:
+        raise ValueError(f"unsupported topic: {topic}")
+
+    books: list[Book] = []
+    documents: list[Document] = []
+    sources: list[Source] = []
+    seen_books: set[str] = set()
+
+    records = _internet_archive_records(response)
+    if diagnostics is not None:
+        diagnostics.candidate_count += len(records)
+    for record in records:
+        if not isinstance(record, dict):
+            logger.warning(
+                "event=normalization_skipped provider=internet_archive reason=record_not_object"
+            )
+            if diagnostics is not None:
+                diagnostics.fail("invalid_provider_response")
+            continue
+        try:
+            result = _normalize_internet_archive_item(record, topic, retrieved_at)
+        except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+            logger.warning(
+                "event=normalization_skipped provider=internet_archive identifier=%s error=%s",
+                record.get("identifier"),
+                exc,
+            )
+            if diagnostics is not None:
+                diagnostics.fail("parse_failure")
+            continue
+        if result is None:
+            if diagnostics is not None:
+                diagnostics.fail("ineligible_candidate")
+            continue
+        book, source, document = result
+        book_id = book.book_id
+        if book_id in seen_books:
+            if diagnostics is not None:
+                diagnostics.duplicate_candidate_count += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.normalized_candidate_count += 1
+        seen_books.add(book_id)
+        if len(books) >= limit:
+            continue
+        if document is not None:
+            documents.append(document)
+        books.append(book)
+        sources.append(source)
+        if len(books) >= limit and diagnostics is None:
+            break
+
+    return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
+
+
+def normalize_hathitrust_response(
+    response: dict[str, Any], *, isbn: str, book_id: str, retrieved_at: datetime
+) -> Source | None:
+    """Build one corroborating bibliographic Source from a HathiTrust ISBN lookup.
+
+    Returns None when HathiTrust has no record for this ISBN. Never asserts a license
+    or emits Document/TocEntry evidence: the free Bibliographic API confirms catalog
+    identity only, and every observed item so far reports a restricted rights code
+    (item text is not publicly readable through this API).
+    """
+    key = f"isbn:{isbn}"
+    entry = response.get(key)
+    if not isinstance(entry, dict):
+        raise InvalidProviderResponse(f"hathitrust response is missing the queried key {key!r}")
+    records = entry.get("records")
+    if not isinstance(records, dict) or not records:
+        return None
+    record_id, record = min(records.items())
+    if not isinstance(record, dict):
+        raise InvalidProviderResponse("hathitrust record is not an object")
+    record_url = record.get("recordURL")
+    if not isinstance(record_url, str) or not record_url:
+        raise InvalidProviderResponse("hathitrust record is missing recordURL")
+
+    items = entry.get("items")
+    rights_codes = sorted(
+        {
+            str(item["rightsCode"])
+            for item in items
+            if isinstance(item, dict) and item.get("rightsCode")
+        }
+        if isinstance(items, list)
+        else []
+    )
+    rights_summary = f" (rights: {', '.join(rights_codes)})" if rights_codes else ""
+    rights_note = (
+        f"HathiTrust catalog confirmation only{rights_summary}; no item text or table of "
+        "contents is available through this API."
+    )
+    return Source(
+        source_id=stable_id("source", "hathitrust", record_id, book_id, retrieved_at.isoformat()),
+        book_id=book_id,
+        provider="hathitrust",
+        source_type="other",
+        url=record_url,
+        external_id=record_id,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=sha256_json(entry),
+    )
+
+
 def _open_library_isbns(record: dict[str, Any]) -> tuple[str | None, str | None]:
     values = set(_string_list(record.get("isbn")))
     isbn_10_values = sorted(filter(None, (normalize_isbn(value, 10) for value in values)))

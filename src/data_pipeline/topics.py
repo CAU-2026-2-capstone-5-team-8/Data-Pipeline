@@ -74,6 +74,15 @@ def topic_open_library_title(topic: str) -> str:
     return _spec(topic).open_library_title
 
 
+def topic_title_phrase(topic: str) -> str:
+    """Return the natural-language topic title phrase shared by title-search providers.
+
+    Currently the same value as topic_open_library_title(); a separate accessor keeps
+    non-Open-Library callers (e.g. Internet Archive) from importing an OL-named function.
+    """
+    return topic_open_library_title(topic)
+
+
 def topic_google_books_query(topic: str) -> str:
     """Return the Google Books `subject:"..."` query for a topic."""
     return f'subject:"{_spec(topic).google_books_subject}"'
