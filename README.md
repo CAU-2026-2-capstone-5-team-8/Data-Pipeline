@@ -683,3 +683,22 @@ eligible reviewed sources without failures. Coverage increased from 4/50 to 13/5
 2/25 to 5/25 and Operating Systems 2/25 to 8/25. Relative to the preceding expansion, this source
 adds one Linear Algebra book and 65 TOC entries. Raw HTML, raw artifacts, and generated canonical
 data remain outside Git. Thirty-seven selected books still lack TOCs.
+
+### Scale-50 v2 deep OS hierarchy expansion (2026-09-21 KST)
+
+The reviewed catalog registry includes Gary Nutt, *Operating Systems: A Modern Perspective*, third
+edition (ISBN 9780201741964):
+https://campusstore.miamioh.edu/operating-systems-modern-perspective-3rd/bk/9780201741964
+
+The exact-edition page exposes 429 entries at four observed indentation values. For this source,
+indentation 0 is front or back matter, 20 is a chapter, 40 is a section, and 60 is a lower-level
+entry. Treating only indentation 0 as a root would incorrectly attach every chapter to *To the
+Instructor*, so the reviewed format explicitly treats indentation 20 and below as roots. It
+validates 24 ordered root titles, direct-child counts, descendant counts, and the total entry count
+before merging the hierarchy.
+
+A live run against a temporary copy of the same Scale-50 v2 baseline collected all ten eligible
+reviewed sources without failures. Coverage increased from 4/50 to 14/50: Linear Algebra 2/25 to
+5/25 and Operating Systems 2/25 to 9/25. Relative to the preceding expansion, this source adds one
+Operating Systems book and 429 TOC entries. Raw HTML, raw artifacts, and generated canonical data
+remain outside Git. Thirty-six selected books still lack TOCs.

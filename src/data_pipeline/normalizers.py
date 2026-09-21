@@ -3157,7 +3157,13 @@ def _direct_table_rows(table: Any) -> list[Any]:
     return [row for row in table.css("tr") if row.parent.mem_id == body.mem_id]
 
 
-def _indented_table_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+def _indented_table_toc_entries(
+    html: str,
+    book_id: str,
+    source_id: str,
+    *,
+    root_indent_threshold: int = 0,
+) -> list[TocEntry]:
     """Parse eCampus TOC indentation into explicit canonical parent relationships."""
     tree = HTMLParser(html)
     content = _public_page_section(tree, "Table of Contents")
@@ -3192,6 +3198,8 @@ def _indented_table_toc_entries(html: str, book_id: str, source_id: str) -> list
         # this catalog page renders them one indentation step deeper.
         if re.match(r"^Appendix\s+\d+[A-Z]\b", title, flags=re.IGNORECASE):
             indent = 40
+        if indent <= root_indent_threshold:
+            hierarchy.clear()
         while hierarchy and hierarchy[-1][0] >= indent:
             hierarchy.pop()
         parent = hierarchy[-1][1] if hierarchy else None
@@ -3482,6 +3490,13 @@ def normalize_public_book_page_response(
     source_id = stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
     if source_spec.toc_format == "indented_table":
         toc = _indented_table_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "indented_table_chapter_roots":
+        toc = _indented_table_toc_entries(
+            html,
+            source_spec.book_id,
+            source_id,
+            root_indent_threshold=20,
+        )
     elif source_spec.toc_format == "flat_bold":
         toc = _flat_bold_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "flat_table":
@@ -3512,7 +3527,11 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed chapter sequence"
         )
-    if source_spec.expected_child_label_groups or source_spec.expected_child_counts:
+    if (
+        source_spec.expected_child_label_groups
+        or source_spec.expected_child_counts
+        or source_spec.expected_descendant_counts
+    ):
         roots = tuple(entry for entry in toc if entry.parent_entry_id is None)
         child_groups = tuple(
             tuple(
@@ -3535,6 +3554,22 @@ def normalize_public_book_page_response(
         if source_spec.expected_child_counts and child_counts != source_spec.expected_child_counts:
             raise InvalidProviderResponse(
                 "public book page TOC does not match the reviewed child counts"
+            )
+        root_positions = tuple(
+            index for index, entry in enumerate(toc) if entry.parent_entry_id is None
+        )
+        descendant_counts = tuple(
+            (root_positions[index + 1] if index + 1 < len(root_positions) else len(toc))
+            - position
+            - 1
+            for index, position in enumerate(root_positions)
+        )
+        if (
+            source_spec.expected_descendant_counts
+            and descendant_counts != source_spec.expected_descendant_counts
+        ):
+            raise InvalidProviderResponse(
+                "public book page TOC does not match the reviewed descendant counts"
             )
 
     description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)
