@@ -319,25 +319,40 @@ def _archive_isbns(record: dict[str, Any]) -> tuple[str | None, str | None]:
     candidates = _archive_string_list(record.get("isbn"))
     isbn_10_values = sorted(filter(None, (normalize_isbn(value, 10) for value in candidates)))
     isbn_13_values = sorted(filter(None, (normalize_isbn(value, 13) for value in candidates)))
-    return (
-        isbn_10_values[0] if isbn_10_values else None,
-        isbn_13_values[0] if isbn_13_values else None,
+    isbn_13 = isbn_13_values[0] if isbn_13_values else None
+    if isbn_13 is None:
+        return (isbn_10_values[0] if isbn_10_values else None, None)
+
+    isbn_10 = next(
+        (candidate for candidate in isbn_10_values if _isbn_10_matches_13(candidate, isbn_13)),
+        None,
     )
+    return isbn_10, isbn_13
+
+
+def _isbn_10_matches_13(isbn_10: str, isbn_13: str) -> bool:
+    """Return whether two already-validated ISBNs identify the same edition."""
+    body = f"978{isbn_10[:9]}"
+    total = sum((1 if index % 2 == 0 else 3) * int(digit) for index, digit in enumerate(body))
+    converted = f"{body}{(10 - total % 10) % 10}"
+    return converted == isbn_13
 
 
 def _normalize_internet_archive_item(
     record: dict[str, Any], topic: str, retrieved_at: datetime
 ) -> tuple[Book, Source, Document | None] | None:
     """Normalize one advancedsearch result row (identity + optional description only)."""
-    identifier = str(record.get("identifier", "")).strip()
-    if not identifier:
+    identifier_value = record.get("identifier")
+    if not isinstance(identifier_value, str) or not identifier_value.strip():
         return None
+    identifier = identifier_value.strip()
     languages = {value.casefold() for value in _archive_string_list(record.get("language"))}
     if not languages.intersection({"eng", "en"}):
         return None
-    title = str(record.get("title", "")).strip()
-    if not title:
+    title_value = record.get("title")
+    if not isinstance(title_value, str) or not title_value.strip():
         return None
+    title = title_value.strip()
 
     authors = _archive_authors(record.get("creator"))
     isbn_10, isbn_13 = _archive_isbns(record)

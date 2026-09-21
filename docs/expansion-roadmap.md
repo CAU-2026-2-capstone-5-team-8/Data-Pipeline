@@ -239,8 +239,8 @@ license는 항상 `null`(권리 코드는 `rights_note`에 기록), 이미 추�
 `topic_open_library_title()`의 별칭, IA collector가 OL 전용 이름을 직접 import하지
 않게 하기 위함) 추가.
 
-검증: `tests/test_internet_archive.py`(19개), `tests/test_hathitrust.py`(13개)와 공통
-collector 회귀 테스트를 추가해 전체 241개 테스트가 통과했다. 실제 네트워크로
+검증: `tests/test_internet_archive.py`(24개), `tests/test_hathitrust.py`(13개)와 공통
+collector 회귀 테스트를 추가해 전체 246개 테스트가 통과했다. 실제 네트워크로
 `search`/`collect --provider internet-archive`, `build`(오프라인 재빌드),
 `enrich-bibliography`의 성공/중복/
 불일치/무응답 4가지 경로 모두 라이브로 확인함(테스트 디렉터리는 커밋 안 됨).
@@ -271,7 +271,7 @@ Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3(완료) 
 - Phase 4(완료): `search`/`collect --provider internet-archive`를 실제 네트워크로
   실행해 metadata/description coverage 확인, `build`로 오프라인 재빌드 확인,
   `enrich-bibliography`를 성공/멱등/책없음/HathiTrust무응답 4가지 경로 전부 라이브로
-  확인. provider 관련 신규 33개를 포함한 전체 241개 테스트도 통과.
+  확인. provider 관련 신규 38개를 포함한 전체 246개 테스트도 통과.
 
 ## 참고: 인수 시점 코드 리뷰에서 나온 이슈 (이 로드맵과 별개, 언젠가 처리)
 

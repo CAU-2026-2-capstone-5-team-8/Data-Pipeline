@@ -152,6 +152,20 @@ def test_normalize_accepts_list_shaped_creator_isbn_and_description() -> None:
     assert dataset.documents[0].text == "single scalar description"
 
 
+def test_normalize_does_not_combine_isbns_from_different_editions() -> None:
+    dataset = normalize_internet_archive_response(
+        _response(_record(isbn=["9781439080115", "0442247389"])),
+        topic="operating-systems",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    book = dataset.books[0]
+    assert book.isbn_13 == "9781439080115"
+    assert book.isbn_10 is None
+    assert book.book_id == "isbn13:9781439080115"
+
+
 def test_normalize_accepts_list_shaped_language() -> None:
     dataset = normalize_internet_archive_response(
         _response(_record(language=["eng", "ger"])),
@@ -174,7 +188,17 @@ def test_normalize_skips_non_english_items(language: str) -> None:
     assert dataset.books == []
 
 
-@pytest.mark.parametrize("overrides", [{"identifier": ""}, {"title": ""}])
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"identifier": ""},
+        {"identifier": None},
+        {"identifier": ["unexpected"]},
+        {"title": ""},
+        {"title": None},
+        {"title": {"unexpected": "shape"}},
+    ],
+)
 def test_normalize_requires_identifier_and_title(overrides: dict) -> None:
     dataset = normalize_internet_archive_response(
         _response(_record(**overrides)),
