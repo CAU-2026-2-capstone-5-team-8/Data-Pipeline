@@ -9,44 +9,27 @@ moves here. Adding one book is therefore a config file addition/PR, not a code c
 
 import dataclasses
 import json
-import types
-import typing
 from pathlib import Path
 from typing import Any
 
-
-def _coerce(value: Any, annotation: Any) -> Any:
-    """Convert one JSON-decoded value into the shape a dataclass field expects."""
-    if value is None:
-        return None
-    origin = typing.get_origin(annotation)
-    if origin is tuple:
-        if not isinstance(value, list):
-            raise TypeError(f"expected a JSON array for {annotation!r}, got {type(value).__name__}")
-        args = typing.get_args(annotation)
-        if len(args) == 2 and args[1] is Ellipsis:
-            return tuple(_coerce(item, args[0]) for item in value)
-        if len(args) != len(value):
-            raise TypeError(f"expected {len(args)} items for {annotation!r}, got {len(value)}")
-        return tuple(_coerce(item, arg) for item, arg in zip(value, args, strict=True))
-    if origin in (typing.Union, types.UnionType):
-        non_none = [arg for arg in typing.get_args(annotation) if arg is not type(None)]
-        return _coerce(value, non_none[0]) if len(non_none) == 1 else value
-    if dataclasses.is_dataclass(annotation) and isinstance(value, dict):
-        return _build(annotation, value)
-    return value
+from pydantic import TypeAdapter
 
 
 def _build[T](cls: type[T], data: dict[str, Any]) -> T:
-    """Construct one frozen dataclass instance from its JSON-decoded field dict."""
-    hints = typing.get_type_hints(cls)
-    kwargs = {
-        name: _coerce(data[name], annotation) for name, annotation in hints.items() if name in data
-    }
-    unknown = set(data) - set(hints)
+    """Validate and construct one dataclass from its JSON-decoded field dict."""
+    fields = {field.name for field in dataclasses.fields(cls)}
+    unknown = set(data) - fields
     if unknown:
         raise ValueError(f"{cls.__name__} config has unknown fields: {sorted(unknown)}")
-    return cls(**kwargs)
+    return TypeAdapter(cls).validate_python(data)
+
+
+def config_path(*parts: str) -> Path:
+    """Resolve configuration in a source checkout or an installed wheel."""
+    package_root = Path(__file__).resolve().parent / "configs"
+    repository_root = Path(__file__).resolve().parents[2] / "configs"
+    root = package_root if package_root.is_dir() else repository_root
+    return root.joinpath(*parts)
 
 
 def load_registry_dir[T](cls: type[T], directory: Path) -> dict[str, T]:
@@ -55,6 +38,8 @@ def load_registry_dir[T](cls: type[T], directory: Path) -> dict[str, T]:
     The dataclass must declare a `slug` field. Each file's stem must equal that
     field's value, so a rename is never silently ignored.
     """
+    if not directory.is_dir():
+        raise FileNotFoundError(f"source config directory not found: {directory}")
     registry: dict[str, T] = {}
     for path in sorted(directory.glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -65,4 +50,6 @@ def load_registry_dir[T](cls: type[T], directory: Path) -> dict[str, T]:
         if slug in registry:
             raise ValueError(f"duplicate source slug: {slug}")
         registry[slug] = spec
+    if not registry:
+        raise ValueError(f"source config directory has no entries: {directory}")
     return registry

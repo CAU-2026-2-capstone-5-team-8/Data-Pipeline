@@ -96,9 +96,9 @@ diff hunk 위치가 서로 멀리 떨어져 있어(로컬은 파일 맨 앞 impo
 전환 대상인 `public_book_sources.py`는 이번 pull로 오히려 280줄 더 늘어났으므로,
 allowlist를 config로 옮기는 작업의 필요성이 더 커졌다.
 
-### Phase 0 — Topic Registry를 config로 통합 — ✅ 완료 (커밋 전, 워킹트리에 존재, origin/main 최신 기준으로 리베이스됨)
+### Phase 0 — Topic Registry를 config로 통합 — ✅ 이번 변경에서 완료됨
 
-`git status`에 아직 반영됨(커밋되지 않음). 변경/신규 파일:
+반영된 변경/신규 파일:
 
 - 신규 `configs/topics.json` — topic별 domain, provider별 검색어 템플릿
   (`open_library_title`, `google_books_subject`), `relevance_term_pattern`,
@@ -127,9 +127,9 @@ allowlist를 config로 옮기는 작업의 필요성이 더 커졌다.
   title-only 매칭) 동작 동일, manifest topic 검증 동일하게 동작.
 - **아직 하지 않은 것**: 실제 네트워크로 `collect --topic operating-systems`/
   `linear-algebra` 커맨드를 돌려보는 end-to-end 회귀(정적 파라미터 비교로 충분하다고
-  판단해 생략했음 — 필요하면 재개 시 수행). Phase 0 변경분은 여전히 커밋되지 않음.
+  판단해 생략했음 — 필요하면 재개 시 수행).
 
-### Phase 2 — Allowlist를 config 파일로 전환 — ✅ 완료 (커밋 전, 워킹트리에 존재)
+### Phase 2 — Allowlist를 config 파일로 전환 — ✅ 이번 변경에서 완료됨
 
 **설계 변경 사항 (계획 대비)**: 계획에서는 YAML을 가정했지만, 이 저장소는 이미
 `configs/mvp.json`/`configs/topics.json`처럼 JSON만 쓰고 있고 `pyproject.toml`에
@@ -154,9 +154,9 @@ AGENTS.md 15절 원칙과 기존 관례를 따름). 나머지 설계(책 1권 = 
 
 마이그레이션 방법(수작업 전사로 인한 오타 위험 제거): 기존 하드코딩된 dict를
 `dataclasses.asdict()`로 JSON 덤프 → 새 `load_registry_dir()`로 다시 읽어 **원본과
-`==` 비교(frozen dataclass 자동 `__eq__`)로 18개 항목 전부 byte-for-byte 동일함을
-스크립트로 확인한 뒤에만** 원본 `.py` 파일의 dict 리터럴을 제거함(스크립트는
-scratchpad의 일회성 도구, 저장소에는 포함하지 않음).
+`==` 비교(frozen dataclass 자동 `__eq__`)로 당시 이관한 18개 항목의 dataclass 필드
+값이 모두 동일함을 스크립트로 확인한 뒤에만** 원본 `.py` 파일의 dict 리터럴을
+제거함(스크립트는 scratchpad의 일회성 도구, 저장소에는 포함하지 않음).
 
 검증 완료:
 
@@ -166,7 +166,7 @@ scratchpad의 일회성 도구, 저장소에는 포함하지 않음).
   `publisher_document_source`) 전부 실제 slug로 스팟 체크: 중첩 `documents` tuple,
   `preface_page_range` 같은 `tuple[int, int]`, 존재하지 않는 slug에 대한
   `ValueError` 메시지까지 리팩터링 전과 동일하게 동작 확인.
-- Phase 2 변경분도 Phase 0과 마찬가지로 **아직 커밋되지 않음**.
+- Phase 2 변경분은 이번 변경에 포함됨.
 
 ### Phase 1 — ❌ 드롭됨 (위 "Phase 1(로컬 SQLite) 드롭 결정" 참고, 재논의 불필요)
 

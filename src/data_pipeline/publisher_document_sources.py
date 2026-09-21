@@ -5,11 +5,10 @@ loaded at import time. Adding a source is a config file addition, not a code cha
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 
-from data_pipeline.source_registry import load_registry_dir
+from data_pipeline.source_registry import config_path, load_registry_dir
 
-CONFIG_DIR = Path(__file__).resolve().parents[2] / "configs" / "sources" / "publisher-document"
+CONFIG_DIR = config_path("sources", "publisher-document")
 
 
 @dataclass(frozen=True)

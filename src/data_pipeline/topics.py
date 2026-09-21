@@ -8,11 +8,13 @@ and manifest.py.
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-# Repo-relative, matching how configs/mvp.json is already referenced from this checkout.
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs" / "topics.json"
+from data_pipeline.source_registry import config_path
+
+CONFIG_PATH = config_path("topics.json")
 
 
 class TopicSpec(BaseModel):
@@ -30,7 +32,18 @@ class TopicSpec(BaseModel):
 
 
 def _load_registry(path: Path) -> dict[str, TopicSpec]:
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    """Load unique topic slugs from one JSON registry."""
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        """Reject duplicate keys before JSON decoding can overwrite them."""
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key in topic registry: {key}")
+            result[key] = value
+        return result
+
+    raw = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
     return {slug: TopicSpec(slug=slug, **fields) for slug, fields in raw.items()}
 
 
@@ -47,6 +60,7 @@ def topic_choices() -> list[str]:
 
 
 def _spec(topic: str) -> TopicSpec:
+    """Return one configured topic or reject unsupported values."""
     try:
         return TOPIC_REGISTRY[topic]
     except KeyError as exc:
