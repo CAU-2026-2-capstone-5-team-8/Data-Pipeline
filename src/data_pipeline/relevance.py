@@ -1,8 +1,9 @@
 """Transparent, metadata-only relevance decisions for opt-in scale experiments."""
 
-import re
 from dataclasses import dataclass
 from typing import Any
+
+from data_pipeline.topics import topic_conflicting_subjects_pattern, topic_relevance_pattern
 
 
 @dataclass(frozen=True)
@@ -10,20 +11,6 @@ class RelevanceDecision:
     accepted: bool
     reason: str
     evidence: list[dict[str, str]]
-
-
-TOPIC_TERMS = {
-    "operating-systems": re.compile(r"\boperating\s+systems?\b", re.IGNORECASE),
-    "linear-algebra": re.compile(r"\blinear\s+algebra\b", re.IGNORECASE),
-}
-
-# Broad competing disciplines, not specific titles, identifiers, or providers.
-CONFLICTING_SUBJECTS = {
-    "operating-systems": re.compile(
-        r"\b(?:robotics?|electric\s+power|political\s+science|anarchism)\b",
-        re.IGNORECASE,
-    ),
-}
 
 
 def open_library_relevance(
@@ -68,10 +55,10 @@ def open_library_relevance(
     title = title if isinstance(title, str) else ""
     subjects = " | ".join(item["value"] for item in subject_evidence)
     if subjects:
-        conflict = CONFLICTING_SUBJECTS.get(topic)
+        conflict = topic_conflicting_subjects_pattern(topic)
         if conflict is not None and conflict.search(subjects):
             return RelevanceDecision(False, "conflicting_subject", subject_evidence)
-        if TOPIC_TERMS[topic].search(subjects):
+        if topic_relevance_pattern(topic).search(subjects):
             return RelevanceDecision(True, "matching_subject", subject_evidence)
     title_evidence = [
         {
@@ -84,7 +71,7 @@ def open_library_relevance(
             "value": title,
         }
     ]
-    if TOPIC_TERMS[topic].search(title):
+    if topic_relevance_pattern(topic).search(title):
         return RelevanceDecision(
             True, "title_only_unverified", [*subject_evidence, *title_evidence]
         )

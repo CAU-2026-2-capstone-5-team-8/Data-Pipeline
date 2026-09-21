@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from data_pipeline.models import CanonicalDataset
 from data_pipeline.storage import RawArtifact, read_raw_response
+from data_pipeline.topics import topic_choices
 
 SourceSpecificProvider = Literal[
     "open-textbook",
@@ -31,11 +32,19 @@ class RawArtifactSelector(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     provider: ManifestProvider
-    topic: Literal["linear-algebra", "operating-systems"]
+    topic: str
     requested_limit: int = Field(ge=1, le=100)
     source: str | None = None
     content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     retrieved_at: datetime | None = None
+
+    @field_validator("topic")
+    @classmethod
+    def topic_must_be_configured(cls, value: str) -> str:
+        choices = topic_choices()
+        if value not in choices:
+            raise ValueError(f"topic must be one of: {', '.join(choices)}")
+        return value
 
     @field_validator("retrieved_at")
     @classmethod

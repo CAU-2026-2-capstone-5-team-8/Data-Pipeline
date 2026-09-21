@@ -12,14 +12,11 @@ from data_pipeline.collectors.base import (
     is_transient_http_error,
     parse_json_object,
 )
+from data_pipeline.topics import topic_open_library_title
 
 API_URL = "https://openlibrary.org/search.json"
 BASE_URL = "https://openlibrary.org"
 logger = logging.getLogger(__name__)
-TOPIC_TITLES = {
-    "operating-systems": "operating systems",
-    "linear-algebra": "linear algebra",
-}
 FIELDS = ",".join(
     [
         "key",
@@ -193,10 +190,7 @@ class OpenLibraryCollector:
     @staticmethod
     def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
         """Return the exact public API parameters used for a topic search."""
-        try:
-            title = TOPIC_TITLES[topic]
-        except KeyError as exc:
-            raise ValueError(f"unsupported topic: {topic}") from exc
+        title = topic_open_library_title(topic)
         return {
             "title": title,
             "language": "eng",
