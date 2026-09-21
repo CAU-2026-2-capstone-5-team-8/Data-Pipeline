@@ -550,15 +550,19 @@ validated evidence. It never substitutes an OER book or a different edition to r
 This connects the already-reviewed sources to the scale workflow; it is not a new generic
 web crawler or a claim that all books now have a supported source.
 
-Existing TOCs are skipped, including on a second invocation. The source-attempt budget is
-bounded (default 4, maximum 20). Fetch/identity/parser failures are recorded and subsequent
-sources are attempted; successful prior enrichments remain saved. Exit status is 1 if any
-attempt failed, even if others succeeded. Missing sources are listed as remaining books,
-not treated as network failures. A dry run neither fetches nor writes anything.
+Existing TOCs are skipped unless the registry explicitly marks a reviewed exact-edition source
+as preferred for that book. A preferred source replaces the book's canonical TOC tree instead of
+merging and double-counting two trees; the older source provenance remains retained. A second
+invocation skips an already selected preferred source. The source-attempt budget is bounded
+(default 4, maximum 20). Fetch/identity/parser failures are recorded and subsequent sources are
+attempted; successful prior enrichments remain saved. Exit status is 1 if any attempt failed,
+even if others succeeded. Missing sources are listed as remaining books, not treated as network
+failures. A dry run neither fetches nor writes anything.
 
-`reports/toc-enrichment.json` contains before/after book counts, added and remaining book IDs,
-source-level attempts and errors. It describes the latest invocation and is replaced on rerun;
-immutable raw artifacts remain retained separately. The canonical four-JSONL schema is unchanged.
+`reports/toc-enrichment.json` contains before/after book and TOC-entry counts, added, replaced,
+and remaining book IDs, plus source-level attempts and errors. It describes the latest invocation
+and is replaced on rerun; immutable raw artifacts remain retained separately. The canonical
+four-JSONL schema is unchanged.
 To reproduce the exact output order offline, pass original metadata and enrichment raw artifacts
 to `build --raw ... --raw ...` in collection timestamp order. An old metadata-only manifest will
 still reproduce the baseline; explicitly include the enrichment artifacts when rebuilding.
@@ -644,8 +648,8 @@ dataset remain outside Git. Thirty-nine selected books still lack TOCs.
 
 The same investigation found a richer exact-edition page for *Operating System Concepts
 Essentials*, 2nd edition, but the selected record already contains a three-entry provider TOC.
-`enrich-toc` therefore skips it rather than merging two source trees and double-counting headings.
-Replacing or preferring a more complete TOC is a separate source-selection policy decision.
+At this stage `enrich-toc` skipped it rather than merging two source trees and double-counting
+headings. The explicit source-selection policy documented below now handles that case.
 
 ### Scale-50 v2 Linear Algebra expansion (2026-09-21 KST)
 
@@ -702,3 +706,20 @@ reviewed sources without failures. Coverage increased from 4/50 to 14/50: Linear
 5/25 and Operating Systems 2/25 to 9/25. Relative to the preceding expansion, this source adds one
 Operating Systems book and 429 TOC entries. Raw HTML, raw artifacts, and generated canonical data
 remain outside Git. Thirty-six selected books still lack TOCs.
+
+### Preferred exact-edition TOC selection (2026-09-21 KST)
+
+The reviewed registry now marks the exact-edition eCampus page for *Operating System Concepts
+Essentials*, second edition (ISBN 9781118804926), as the canonical TOC source:
+https://centralmethodist.ecampus.com/operating-system-concepts-essentials-2nd/bk/9781118804926
+
+Its 22-entry hierarchy contains seven part roots and fifteen ordered chapters. Exact ISBN, title,
+edition, total count, root titles, chapter labels, per-root child-label sequences, and child counts
+must all match before the preference takes effect. Dataset merge order does not affect the result.
+
+A live Scale-50 v2 run retained coverage at 14/50 but replaced this book's sparse three-entry Open
+Library TOC with the reviewed 22-entry tree, adding 19 canonical entries without discarding the
+older source records. The enrichment report classified the change in `replaced_book_ids`. An
+immediate second run made no network attempts and left raw-file counts and canonical file hashes
+unchanged. Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six
+selected books still lack TOCs.

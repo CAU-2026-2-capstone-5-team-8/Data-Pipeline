@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from data_pipeline.identifiers import stable_id
+
 
 @dataclass(frozen=True)
 class PublicBookSourceSpec:
@@ -31,6 +33,7 @@ class PublicBookSourceSpec:
     expected_child_label_groups: tuple[tuple[str, ...], ...] = ()
     expected_child_counts: tuple[int, ...] = ()
     expected_descendant_counts: tuple[int, ...] = ()
+    preferred_toc: bool = False
 
 
 PUBLIC_BOOK_SOURCES = {
@@ -77,6 +80,42 @@ PUBLIC_BOOK_SOURCES = {
             ("20", "21"),
             ("A", "B", "C", "D", "E"),
         ),
+    ),
+    "ecampus-osc-essentials2": PublicBookSourceSpec(
+        slug="ecampus-osc-essentials2",
+        provider="ecampus",
+        topic="operating-systems",
+        book_id="isbn13:9781118804926",
+        isbn_13="9781118804926",
+        title="Operating System Concepts Essentials",
+        edition=2,
+        url=(
+            "https://centralmethodist.ecampus.com/"
+            "operating-system-concepts-essentials-2nd/bk/9781118804926"
+        ),
+        toc_format="paragraph_sequence",
+        expected_toc_count=22,
+        expected_root_titles=(
+            "OVERVIEW.",
+            "PROCESS MANAGEMENT.",
+            "MEMORY MANAGEMENT.",
+            "STORAGE MANAGEMENT.",
+            "PROTECTION AND SECURITY.",
+            "CASE STUDIES.",
+            "APPENDICES.",
+        ),
+        expected_chapter_labels=tuple(str(number) for number in range(1, 16)),
+        expected_child_label_groups=(
+            ("1", "2"),
+            ("3", "4", "5", "6"),
+            ("7", "8"),
+            ("9", "10", "11", "12"),
+            ("13", "14"),
+            ("15",),
+            (),
+        ),
+        expected_child_counts=(2, 4, 2, 4, 2, 1, 0),
+        preferred_toc=True,
     ),
     "ecampus-penney-linear-algebra4": PublicBookSourceSpec(
         slug="ecampus-penney-linear-algebra4",
@@ -463,3 +502,20 @@ def public_book_source(source_slug: str) -> PublicBookSourceSpec:
     except KeyError as exc:
         choices = ", ".join(sorted(PUBLIC_BOOK_SOURCES))
         raise ValueError(f"public book source must be one of: {choices}") from exc
+
+
+def public_book_source_id(source_spec: PublicBookSourceSpec) -> str:
+    """Return the deterministic canonical source ID for a reviewed catalog page."""
+    return stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
+
+
+def preferred_public_toc_source_ids() -> dict[str, str]:
+    """Map each explicitly reviewed replacement book to its preferred TOC source."""
+    preferred: dict[str, str] = {}
+    for source_spec in PUBLIC_BOOK_SOURCES.values():
+        if not source_spec.preferred_toc:
+            continue
+        if source_spec.book_id in preferred:
+            raise ValueError(f"multiple preferred TOC sources configured for {source_spec.book_id}")
+        preferred[source_spec.book_id] = public_book_source_id(source_spec)
+    return preferred

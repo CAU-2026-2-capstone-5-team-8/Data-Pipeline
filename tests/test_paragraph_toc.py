@@ -164,6 +164,59 @@ def test_operating_system_concepts_rejects_chapter_under_wrong_part() -> None:
         )
 
 
+def test_operating_system_concepts_essentials_reviewed_sequence() -> None:
+    source = public_book_source("ecampus-osc-essentials2")
+    parts = (
+        ("PART ONE. OVERVIEW.", ("1. Introduction.", "2. Operating-System Structures.")),
+        (
+            "PART TWO. PROCESS MANAGEMENT.",
+            (
+                "3. Processes",
+                "4. Threads.",
+                "5. Process Synchronization.",
+                "6. CPU Scheduling.",
+            ),
+        ),
+        ("PART THREE. MEMORY MANAGEMENT.", ("7. Main Memory.", "8. Virtual Memory.")),
+        (
+            "PART FOUR. STORAGE MANAGEMENT.",
+            (
+                "9. . Mass-Storage Structure.",
+                "10. File-System Interface.",
+                "11. File-System Implementation",
+                "12. I/O Systems.",
+            ),
+        ),
+        ("PART FIVE. PROTECTION AND SECURITY.", ("13. Protection.", "14. Security.")),
+        ("PART SIX. CASE STUDIES.", ("15. The Linux/System.",)),
+        ("PART SEVEN. APPENDICES.", ()),
+    )
+    toc_html = "".join(
+        f"<p><b>{part}</b></p>" + "".join(f"<p>Chapter {chapter}</p>" for chapter in chapters)
+        for part, chapters in parts
+    )
+    html = (
+        f'<h1 class="title">{source.title}</h1>'
+        f'<span itemprop="isbn">{source.isbn_13}</span>'
+        f'<span itemprop="bookEdition">{source.edition}nd</span>'
+        '<div class="summary">'
+        '<h2>Summary</h2><div class="content">Reviewed description.</div>'
+        f'<h2>Table of Contents</h2><div class="content">{toc_html}</div>'
+        "</div>"
+    )
+
+    dataset = normalize_public_book_page_response(
+        {"source_slug": source.slug, "url": source.url, "html": html},
+        topic=source.topic,
+        retrieved_at=datetime(2026, 9, 21, tzinfo=UTC),
+    )
+
+    assert len(dataset.toc) == 22
+    assert tuple(entry.title for entry in dataset.toc if entry.level == 1) == (
+        source.expected_root_titles
+    )
+
+
 @pytest.mark.parametrize(
     "content",
     [
