@@ -64,3 +64,11 @@ def test_topic_registry_rejects_duplicate_json_keys(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="duplicate JSON key.*linear-algebra"):
         _load_registry(path)
+
+
+def test_topic_registry_rejects_non_object_root(tmp_path) -> None:
+    path = tmp_path / "topics.json"
+    path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        _load_registry(path)

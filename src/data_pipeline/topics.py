@@ -44,6 +44,8 @@ def _load_registry(path: Path) -> dict[str, TopicSpec]:
         return result
 
     raw = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    if not isinstance(raw, dict):
+        raise ValueError("topic registry must be a JSON object")
     return {slug: TopicSpec(slug=slug, **fields) for slug, fields in raw.items()}
 
 
