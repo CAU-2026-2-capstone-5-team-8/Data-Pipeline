@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 import typer
@@ -34,7 +34,11 @@ from data_pipeline.normalizers import (
     normalize_publisher_page_response,
 )
 from data_pipeline.open_textbook_sources import OPEN_TEXTBOOK_SOURCES, open_textbook_source
-from data_pipeline.public_book_sources import PUBLIC_BOOK_SOURCES, public_book_source
+from data_pipeline.public_book_sources import (
+    PUBLIC_BOOK_SOURCES,
+    public_book_source,
+    public_book_source_id,
+)
 from data_pipeline.publisher_document_sources import (
     PUBLISHER_DOCUMENT_SOURCES,
     publisher_document_source,
@@ -654,6 +658,20 @@ def enrich_toc(
         raise typer.BadParameter("; ".join(errors))
     books = {book.book_id: book for book in original.books}
     before = {entry.book_id for entry in original.toc}
+    before_toc_sources = {
+        book_id: sorted({entry.source_id for entry in original.toc if entry.book_id == book_id})
+        for book_id in before
+    }
+
+    def source_needed(kind: str, spec: Any, dataset: CanonicalDataset) -> bool:
+        entries = [entry for entry in dataset.toc if entry.book_id == spec.book_id]
+        if not entries:
+            return True
+        if kind != "public-book-page" or not spec.preferred_toc:
+            return False
+        preferred_source_id = public_book_source_id(spec)
+        return all(entry.source_id != preferred_source_id for entry in entries)
+
     plan = [
         (kind, spec)
         for kind, registry in (
@@ -662,8 +680,8 @@ def enrich_toc(
         )
         for spec in sorted(registry.values(), key=lambda item: item.slug)
         if spec.book_id in books
-        and spec.book_id not in before
         and spec.topic in books[spec.book_id].topics
+        and source_needed(kind, spec, original)
     ]
     if dry_run:
         typer.echo(
@@ -682,7 +700,7 @@ def enrich_toc(
         if len(attempts) >= max_sources:
             break
         current = read_dataset(processed)
-        if any(entry.book_id == spec.book_id for entry in current.toc):
+        if not source_needed(kind, spec, current):
             continue
         attempt = {"provider": kind, "source": spec.slug, "book_id": spec.book_id}
         try:
@@ -698,12 +716,23 @@ def enrich_toc(
 
     final = read_dataset(processed)
     after = {entry.book_id for entry in final.toc}
+    after_toc_sources = {
+        book_id: sorted({entry.source_id for entry in final.toc if entry.book_id == book_id})
+        for book_id in after
+    }
     report = {
         "retrieved_at": datetime.now(UTC).isoformat(),
         "book_count": len(books),
         "toc_books_before": len(before),
         "toc_books_after": len(after),
+        "toc_entries_before": len(original.toc),
+        "toc_entries_after": len(final.toc),
         "added_book_ids": sorted(after - before),
+        "replaced_book_ids": sorted(
+            book_id
+            for book_id in before & after
+            if before_toc_sources[book_id] != after_toc_sources[book_id]
+        ),
         "remaining_book_ids": sorted(set(books) - after),
         "eligible_source_count": len(plan),
         "max_sources": max_sources,
