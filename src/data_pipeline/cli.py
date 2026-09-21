@@ -1,6 +1,7 @@
 """Command-line entry point for the small MVP collection slice."""
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +13,8 @@ import typer
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
+from data_pipeline.collectors.hathitrust import HathiTrustCollector
+from data_pipeline.collectors.internet_archive import InternetArchiveCollector
 from data_pipeline.collectors.open_library import OpenLibraryCollector
 from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
@@ -27,6 +30,8 @@ from data_pipeline.models import CanonicalDataset
 from data_pipeline.normalizers import (
     TOPICS,
     normalize_google_books_response,
+    normalize_hathitrust_response,
+    normalize_internet_archive_response,
     normalize_open_library_response,
     normalize_open_textbook_response,
     normalize_public_book_page_response,
@@ -63,7 +68,7 @@ app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book 
 TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
 LimitOption = Annotated[int, typer.Option(min=1, max=100, help="Books to normalize.")]
 ProviderOption = Annotated[
-    str, typer.Option(help="Metadata provider: open-library or google-books.")
+    str, typer.Option(help="Metadata provider: open-library, google-books, or internet-archive.")
 ]
 PublisherSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition publisher source slug.")
@@ -104,11 +109,14 @@ def _collect_payload(
     collectors = {
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
+        "internet-archive": InternetArchiveCollector,
     }
     try:
         collector_class = collectors[provider]
     except KeyError as exc:
-        raise typer.BadParameter("provider must be open-library or google-books") from exc
+        raise typer.BadParameter(
+            "provider must be open-library, google-books, or internet-archive"
+        ) from exc
     try:
         with collector_class() as collector:
             request_parameters = collector.search_parameters(topic, candidate_limit)
@@ -259,6 +267,7 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
     collectors = {
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
+        "internet-archive": InternetArchiveCollector,
     }
     try:
         collector_class = collectors[provider]
@@ -355,6 +364,10 @@ def _normalize(
                 retrieved_at=retrieved_at,
                 relevance_gate=relevance_gate,
             )
+        if provider == "internet-archive":
+            return normalize_internet_archive_response(
+                payload, topic=topic, limit=limit, retrieved_at=retrieved_at
+            )
         if provider == "publisher-page":
             return normalize_publisher_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
@@ -370,8 +383,8 @@ def _normalize(
         if provider == "open-textbook":
             return normalize_open_textbook_response(payload, topic=topic, retrieved_at=retrieved_at)
         raise typer.BadParameter(
-            "provider must be open-library, google-books, publisher-page, public-book-page, "
-            "publisher-document, or open-textbook"
+            "provider must be open-library, google-books, internet-archive, publisher-page, "
+            "public-book-page, publisher-document, or open-textbook"
         )
     except InvalidProviderResponse as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -747,6 +760,93 @@ def enrich_toc(
     typer.echo(f"Enrichment report: {report_path}")
     if any(attempt["status"] == "failed" for attempt in attempts):
         raise typer.Exit(code=1)
+
+
+@app.command("enrich-bibliography")
+def enrich_bibliography(
+    isbn: Annotated[str, typer.Option(help="ISBN-10 or ISBN-13 of an existing canonical book.")],
+    data_dir: Annotated[Path, typer.Option(help="Existing raw and processed data root.")] = Path(
+        "data"
+    ),
+) -> None:
+    """Add one corroborating HathiTrust bibliographic Source to an existing book.
+
+    HathiTrust's free Bibliographic API has no topic search and returns no item
+    text or table of contents, so it cannot discover books the way collect does.
+    It can only confirm/cross-reference a book that is already in the canonical
+    dataset, by exact ISBN.
+    """
+    processed = data_dir / "processed"
+    if not dataset_exists(processed):
+        raise typer.BadParameter("enrich-bibliography requires an existing canonical dataset")
+    dataset = read_dataset(processed)
+    errors = validate_dataset(dataset)
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+
+    normalized_isbn = re.sub(r"[^0-9Xx]", "", isbn).upper()
+    book = next(
+        (b for b in dataset.books if normalized_isbn in {b.isbn_10, b.isbn_13}),
+        None,
+    )
+    if book is None:
+        raise typer.BadParameter(f"no canonical book has ISBN {isbn}")
+    if any(
+        source.book_id == book.book_id and source.provider == "hathitrust"
+        for source in dataset.sources
+    ):
+        typer.echo(f"HathiTrust source already recorded for {book.book_id}")
+        return
+
+    retrieved_at = datetime.now(UTC)
+    try:
+        with HathiTrustCollector() as collector:
+            payload = collector.lookup_isbn(normalized_isbn)
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
+    except httpx.HTTPStatusError as exc:
+        raise typer.BadParameter(
+            f"hathitrust returned HTTP {exc.response.status_code}; no data was written"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise typer.BadParameter(f"hathitrust network failure; no data was written: {exc}") from exc
+
+    artifact = RawArtifact(
+        provider="hathitrust",
+        topic=book.topics[-1],
+        requested_limit=1,
+        retrieved_at=retrieved_at,
+        request_parameters={"isbn": normalized_isbn},
+        response=payload,
+    )
+    raw_path = raw_artifact_path(data_dir, artifact)
+    write_raw_response(artifact, raw_path)
+
+    try:
+        source = normalize_hathitrust_response(
+            payload, isbn=normalized_isbn, book_id=book.book_id, retrieved_at=retrieved_at
+        )
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
+    if source is None:
+        typer.echo(f"HathiTrust has no record for ISBN {isbn}")
+        typer.echo(f"Raw response was preserved at: {raw_path}")
+        raise typer.Exit(code=1)
+
+    updated = CanonicalDataset(
+        books=dataset.books,
+        documents=dataset.documents,
+        toc=dataset.toc,
+        sources=[*dataset.sources, source],
+    )
+    errors = validate_dataset(updated)
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR {error}", err=True)
+        raise typer.Exit(code=1)
+    write_dataset(updated, processed)
+    typer.echo(f"HathiTrust source added for {book.book_id}: {source.url}")
+    typer.echo(source.rights_note or "")
 
 
 @app.command("collect-publisher-document")
