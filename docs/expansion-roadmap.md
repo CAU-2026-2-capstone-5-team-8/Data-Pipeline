@@ -96,7 +96,7 @@ diff hunk 위치가 서로 멀리 떨어져 있어(로컬은 파일 맨 앞 impo
 전환 대상인 `public_book_sources.py`는 이번 pull로 오히려 280줄 더 늘어났으므로,
 allowlist를 config로 옮기는 작업의 필요성이 더 커졌다.
 
-### Phase 0 — Topic Registry를 config로 통합 — ✅ 완료 (커밋 전, 워킹트리에 존재, origin/main 최신 기준으로 리베이스됨)
+### Phase 0 — Topic Registry를 config로 통합 — ✅ 완료, PR #26으로 제출됨
 
 `git status`에 아직 반영됨(커밋되지 않음). 변경/신규 파일:
 
@@ -129,7 +129,7 @@ allowlist를 config로 옮기는 작업의 필요성이 더 커졌다.
   `linear-algebra` 커맨드를 돌려보는 end-to-end 회귀(정적 파라미터 비교로 충분하다고
   판단해 생략했음 — 필요하면 재개 시 수행). Phase 0 변경분은 여전히 커밋되지 않음.
 
-### Phase 2 — Allowlist를 config 파일로 전환 — ✅ 완료 (커밋 전, 워킹트리에 존재)
+### Phase 2 — Allowlist를 config 파일로 전환 — ✅ 완료, PR #26으로 제출됨
 
 **설계 변경 사항 (계획 대비)**: 계획에서는 YAML을 가정했지만, 이 저장소는 이미
 `configs/mvp.json`/`configs/topics.json`처럼 JSON만 쓰고 있고 `pyproject.toml`에
@@ -166,11 +166,31 @@ scratchpad의 일회성 도구, 저장소에는 포함하지 않음).
   `publisher_document_source`) 전부 실제 slug로 스팟 체크: 중첩 `documents` tuple,
   `preface_page_range` 같은 `tuple[int, int]`, 존재하지 않는 slug에 대한
   `ValueError` 메시지까지 리팩터링 전과 동일하게 동작 확인.
-- Phase 2 변경분도 Phase 0과 마찬가지로 **아직 커밋되지 않음**.
+- PR #26(`feat/topic-registry-and-source-config`)으로 제출됨. 도중에 서정민님의
+  PR #25(Nutt OS TOC 추가)이 같은 `public_book_sources.py`를 건드려서 먼저 머지 →
+  rebase → 충돌 해결(새 책 1권을 JSON으로 변환) 과정을 거쳤다. rebase 후 PR #25가
+  추가한 테스트까지 포함해 195개 전체 통과 확인.
 
 ### Phase 1 — ❌ 드롭됨 (위 "Phase 1(로컬 SQLite) 드롭 결정" 참고, 재논의 불필요)
 
-### Phase 3~4 — 미착수
+### Phase 3 — ✅ 완료, 별도 스택 브랜치(`feat/new-topics`, PR #26 위에 쌓음)로 진행 중
+
+`configs/topics.json`에 `algorithms`/`databases`/`discrete-mathematics`/
+`probability-statistics` 4개 추가. 각 topic을 실제 Open Library `search`로
+5권씩 검증: databases/discrete-mathematics/probability-statistics는 5/5 정확히
+관련 있는 교과서, algorithms는 5개 중 3개가 교과서급이고 나머지 2개는 대중서(추후
+50권 규모로 늘릴 때 relevance gate로 걸러질 부분, 지금 당장 문제 아님). 이어서
+4개 topic 전부 `collect --limit 5`까지 실행해 canonical 데이터 생성·병합·`report`
+출력까지 코드 변경 없이 정상 동작 확인(195개 테스트 + 이 실사용 검증 모두 통과).
+`README.md`에 새 "Topic taxonomy" 절로 이 4개 topic과 검증 결과를 기록.
+
+**중요**: 이 4개는 아직 `configs/mvp.json`이나 scale pilot 매니페스트에는 포함되지
+않았다 — `search`/`collect`로 바로 쓸 수 있는 topic만 추가된 것이고, 10권/50권
+curated 데이터셋에 새 분야를 넣는 건 별도 작업(사람이 각 책을 검토해
+`configs/sources/`에 allowlist 항목을 추가하는 과정, `docs/data-pipeline-guide.md`
+8절 참고)이 필요하다.
+
+### Phase 4 — 미착수
 
 아래 "남은 작업" 참고.
 
@@ -186,15 +206,7 @@ JSONL만 만들고, 조회는 Backend가 가져갈 서비스 DB나 필요시 `jq
 
 ### Phase 2 — ✅ 완료. 위 "현재 상태 > Phase 2" 참고 (YAML 대신 JSON으로 진행됨).
 
-### Phase 3 — 신규 topic 4개 추가
-
-- `configs/topics.json`에 추가: `algorithms`(computer-science),
-  `databases`(computer-science), `discrete-mathematics`(mathematics),
-  `probability-statistics`(mathematics).
-- 각 topic의 Open Library/Google Books 검색어가 실제로 관련 결과를 주는지
-  소규모로 먼저 확인 (README의 기존 2-topic 검증 방식과 동일).
-- AGENTS.md의 점진적 검증 순서(5권 테스트 → coverage report)를 그대로 따른다.
-- 이 phase는 config 추가 + 기존 명령 실행만 필요 — Phase 0 리팩터링 검증도 겸한다.
+### Phase 3 — ✅ 완료. 위 "현재 상태 > Phase 3" 참고.
 
 ### Phase 4 — 신규 provider collector 추가 (Internet Archive, HathiTrust)
 
@@ -219,7 +231,7 @@ JSONL만 만들고, 조회는 Backend가 가져갈 서비스 DB나 필요시 `jq
 
 ## 실행 순서
 
-Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3 → Phase 4
+Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3(완료) → Phase 4(다음)
 
 ## 검증 방법 (매 phase 공통 + phase별)
 
@@ -233,8 +245,9 @@ Phase 0(완료) → ~~Phase 1~~(드롭) → Phase 2(완료) → Phase 3 → Phas
   확인(완료 — 위 "현재 상태 > Phase 2" 참고). 새 소스를 추가할 때는
   `configs/sources/<kind>/<slug>.json` 파일 하나만 추가하고 `slug` 필드와 파일명이
   일치하는지 확인.
-- Phase 3: `uv run data-pipeline report`에 신규 4개 topic이 기존 2개와 함께
-  coverage row로 나오는지 확인.
+- Phase 3(완료): 신규 4개 topic을 `search --limit 5`로 관련성 확인 →
+  `collect --limit 5`로 실제 수집 → `report`에서 기존 2개와 함께 coverage row로
+  나오는지 확인. 4개 전부 통과, 코드 변경 없음.
 - Phase 4: 신규 collector로 실제 네트워크 1회 수집 → `report`에서 metadata
   coverage가 0이 아닌지 확인. 기존 10권 MVP/50권 scale pilot의 `report-scale`
   byte-identical 오프라인 재현 테스트가 그대로 통과하는지(회귀) 확인.
