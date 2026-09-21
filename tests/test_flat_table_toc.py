@@ -70,3 +70,27 @@ def test_larson_source_contract_covers_every_reviewed_row() -> None:
 
     assert len(dataset.toc) == source.expected_toc_count
     assert tuple(entry.title for entry in dataset.toc) == source.expected_root_titles
+
+
+def test_anton_source_contract_covers_every_reviewed_row() -> None:
+    source = public_book_source("ecampus-anton-linear-algebra10")
+    rows = tuple((title, "") for title in source.expected_root_titles) + ((FOOTER, ""),)
+    toc_page = page(rows)
+    toc_section = toc_page.removeprefix('<div class="summary">').removesuffix("</div>")
+    html = (
+        f'<h1 class="title">{source.title}</h1>'
+        f'<span itemprop="isbn">{source.isbn_13}</span>'
+        f'<span itemprop="bookEdition">{source.edition}th</span>'
+        '<div class="summary">'
+        '<h2>Summary</h2><div class="content">Reviewed description.</div>'
+        f"{toc_section}</div>"
+    )
+
+    dataset = normalize_public_book_page_response(
+        {"source_slug": source.slug, "url": source.url, "html": html},
+        topic=source.topic,
+        retrieved_at=datetime(2026, 9, 21, tzinfo=UTC),
+    )
+
+    assert len(dataset.toc) == source.expected_toc_count
+    assert tuple(entry.title for entry in dataset.toc) == source.expected_root_titles

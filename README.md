@@ -723,3 +723,21 @@ older source records. The enrichment report classified the change in `replaced_b
 immediate second run made no network attempts and left raw-file counts and canonical file hashes
 unchanged. Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six
 selected books still lack TOCs.
+
+### Preferred Anton Linear Algebra TOC (2026-09-21 KST)
+
+The preferred-source policy also covers Howard Anton and Chris Rorres, *Elementary Linear
+Algebra*, tenth edition (ISBN 9780470458211):
+https://drake.ecampus.com/elementary-linear-algebra-10th-edition/bk/9780470458211
+
+The exact-edition catalog page exposes 64 content rows plus a verified publisher-rights footer.
+The parser excludes only that footer and preserves all content rows in source order at level 1;
+the page supplies no hierarchy, so the pipeline does not invent one. Exact ISBN, title, edition,
+entry count, and the complete ordered title sequence must match before replacement.
+
+A live run on the previously enriched Scale-50 v2 copy replaced the nine-entry Wiley chapter TOC
+with the 64-entry catalog TOC. Coverage remained 14/50, while canonical TOC entries increased by
+55, from 1,163 to 1,218. The Wiley and Open Library source records remain retained. An immediate
+second run made no network attempts and left raw-file counts and canonical file hashes unchanged.
+Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six selected
+books still lack TOCs.
