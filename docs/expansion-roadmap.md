@@ -179,7 +179,7 @@ AGENTS.md 15절 원칙과 기존 관례를 따름). 나머지 설계(책 1권 = 
 관련 있는 교과서, algorithms는 5개 중 3개가 교과서급이고 나머지 2개는 대중서(추후
 50권 규모로 늘릴 때 relevance gate로 걸러질 부분, 지금 당장 문제 아님). 이어서
 4개 topic 전부 `collect --limit 5`까지 실행해 canonical 데이터 생성·병합·`report`
-출력까지 코드 변경 없이 정상 동작 확인(195개 테스트 + 이 실사용 검증 모두 통과).
+출력까지 코드 변경 없이 정상 동작 확인. 최신 main 통합 후 208개 테스트도 통과했다.
 `README.md`에 새 "Topic taxonomy" 절로 이 4개 topic과 검증 결과를 기록.
 
 **중요**: 이 4개는 아직 `configs/mvp.json`이나 scale pilot 매니페스트에는 포함되지

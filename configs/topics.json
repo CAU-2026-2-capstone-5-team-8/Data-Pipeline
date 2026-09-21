@@ -44,7 +44,7 @@
     "title": "Probability and Statistics",
     "open_library_title": "probability and statistics",
     "google_books_subject": "Probabilities",
-    "relevance_term_pattern": "\\bprobability\\b",
+    "relevance_term_pattern": "\\b(?:probabilit(?:y|ies)|statistics?)\\b",
     "conflicting_subjects_pattern": null
   }
 }
