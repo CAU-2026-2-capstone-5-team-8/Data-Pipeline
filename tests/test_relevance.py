@@ -16,8 +16,14 @@ from data_pipeline.normalizers import normalize_open_library_response
 from data_pipeline.relevance import open_library_relevance
 from data_pipeline.scale_comparison import compare_scale_reports
 from data_pipeline.storage import RawArtifact, raw_artifact_path, read_dataset, write_raw_response
+from data_pipeline.topics import topic_relevance_pattern
 
 RETRIEVED_AT = datetime(2026, 9, 16, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("term", ["probability", "probabilities", "statistic", "statistics"])
+def test_probability_statistics_topic_matches_configured_terms(term: str) -> None:
+    assert topic_relevance_pattern("probability-statistics").fullmatch(term)
 
 
 def test_v2_manifest_pins_same_two_topic_raw_snapshots_as_v1() -> None:

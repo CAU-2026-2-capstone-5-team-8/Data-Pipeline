@@ -475,6 +475,20 @@ but no public preface/introduction. Optional gaps do not invalidate otherwise so
 Supported MVP topics are `operating-systems` and `linear-algebra`. Generated raw and processed
 data are intentionally ignored by Git; only small test fixtures should be committed.
 
+## Topic taxonomy
+
+Every topic's identity (domain, Open Library/Google Books search terms, and the
+`topic-evidence-v1` relevance pattern) is declared in
+[`configs/topics.json`](configs/topics.json) and loaded by
+[`src/data_pipeline/topics.py`](src/data_pipeline/topics.py); adding a topic is a config change,
+not a code change. Beyond the two curated MVP topics above, `configs/topics.json` also declares
+`algorithms`, `databases`, `discrete-mathematics`, and `probability-statistics` for generic
+`search`/`collect` use. Each was validated with a live 5-book Open Library search before being
+added: `databases`, `discrete-mathematics`, and `probability-statistics` returned five directly
+relevant textbooks each; `algorithms` returned three relevant textbooks and two adjacent
+popular-science titles, which is why a relevance gate exists for scale experiments. None of these
+four are part of the curated MVP or Scale Pilot manifests yet.
+
 ## Verification
 
 ```bash
