@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from data_pipeline.models import Book, CanonicalDataset, Source
+from data_pipeline.public_book_sources import preferred_public_toc_source_ids
 
 
 class DatasetMergeError(ValueError):
@@ -82,18 +83,31 @@ def _records_from_selected_sources[Record: BaseModel](
 
 
 def merge_datasets(datasets: Iterable[CanonicalDataset]) -> CanonicalDataset:
-    """Merge datasets without silently resolving conflicting deterministic IDs."""
+    """Merge datasets and apply explicit reviewed TOC source preferences."""
     items = list(datasets)
     sources = _merge_sources(source for dataset in items for source in dataset.sources)
     sources_by_id = {source.source_id: source for source in sources}
+    toc = _merge_records(
+        _records_from_selected_sources(items, "toc", sources_by_id), "toc_entry_id"
+    )
+    preferred_by_book = preferred_public_toc_source_ids()
+    active_preferences = {
+        book_id: source_id
+        for book_id, source_id in preferred_by_book.items()
+        if any(entry.book_id == book_id and entry.source_id == source_id for entry in toc)
+    }
+    selected_toc = [
+        entry
+        for entry in toc
+        if entry.book_id not in active_preferences
+        or entry.source_id == active_preferences[entry.book_id]
+    ]
     return CanonicalDataset(
         books=_merge_books(book for dataset in items for book in dataset.books),
         documents=_merge_records(
             _records_from_selected_sources(items, "documents", sources_by_id), "document_id"
         ),
-        toc=_merge_records(
-            _records_from_selected_sources(items, "toc", sources_by_id), "toc_entry_id"
-        ),
+        toc=selected_toc,
         sources=sources,
     )
 

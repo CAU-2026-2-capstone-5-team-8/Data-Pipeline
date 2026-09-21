@@ -7,8 +7,8 @@ import pytest
 from typer.testing import CliRunner
 
 from data_pipeline.cli import app
-from data_pipeline.models import Book, CanonicalDataset, Source
-from data_pipeline.public_book_sources import public_book_source
+from data_pipeline.models import Book, CanonicalDataset, Source, TocEntry
+from data_pipeline.public_book_sources import public_book_source, public_book_source_id
 from data_pipeline.storage import read_dataset, write_dataset
 from data_pipeline.validation import validate_dataset
 
@@ -180,3 +180,108 @@ def test_enrich_does_not_match_title_from_a_different_edition(enrichment_dataset
     assert result.exit_code == 0, result.output
     assert calls == []
     assert read_dataset(root / "processed").toc == []
+
+
+def test_enrich_replaces_partial_toc_with_reviewed_preferred_source(tmp_path, monkeypatch):
+    spec = public_book_source("ecampus-osc-essentials2")
+    book = Book(
+        book_id=spec.book_id,
+        isbn_13=spec.isbn_13,
+        title=spec.title,
+        authors=["Abraham Silberschatz"],
+        language="en",
+        topics=["operating-systems"],
+    )
+    old_source = Source(
+        source_id="partial-source",
+        book_id=book.book_id,
+        provider="open_library",
+        source_type="metadata_api",
+        url="https://openlibrary.org/books/example.json",
+        retrieved_at=datetime(2026, 9, 20, tzinfo=UTC),
+        content_hash="sha256:" + "b" * 64,
+    )
+    old_toc = [
+        TocEntry(
+            toc_entry_id=f"partial-{index}",
+            book_id=book.book_id,
+            level=1,
+            order_index=index,
+            title=title,
+            source_id=old_source.source_id,
+        )
+        for index, title in enumerate(("Overview", "Contents", "Index"))
+    ]
+    write_dataset(
+        CanonicalDataset(books=[book], sources=[old_source], documents=[], toc=old_toc),
+        tmp_path / "processed",
+    )
+    parts = (
+        ("PART ONE. OVERVIEW.", ("1. Introduction.", "2. Operating-System Structures.")),
+        (
+            "PART TWO. PROCESS MANAGEMENT.",
+            (
+                "3. Processes",
+                "4. Threads.",
+                "5. Process Synchronization.",
+                "6. CPU Scheduling.",
+            ),
+        ),
+        ("PART THREE. MEMORY MANAGEMENT.", ("7. Main Memory.", "8. Virtual Memory.")),
+        (
+            "PART FOUR. STORAGE MANAGEMENT.",
+            (
+                "9. . Mass-Storage Structure.",
+                "10. File-System Interface.",
+                "11. File-System Implementation",
+                "12. I/O Systems.",
+            ),
+        ),
+        ("PART FIVE. PROTECTION AND SECURITY.", ("13. Protection.", "14. Security.")),
+        ("PART SIX. CASE STUDIES.", ("15. The Linux/System.",)),
+        ("PART SEVEN. APPENDICES.", ()),
+    )
+    toc_html = "".join(
+        f"<p><b>{part}</b></p>" + "".join(f"<p>Chapter {chapter}</p>" for chapter in chapters)
+        for part, chapters in parts
+    )
+    html = (
+        f'<h1 class="title">{spec.title}</h1>'
+        f'<span itemprop="isbn">{spec.isbn_13}</span>'
+        f'<span itemprop="bookEdition">{spec.edition}nd</span>'
+        '<div class="summary">'
+        '<h2>Summary</h2><div class="content">Reviewed description.</div>'
+        f'<h2>Table of Contents</h2><div class="content">{toc_html}</div>'
+        "</div>"
+    )
+    calls = []
+
+    def fetch(slug):
+        calls.append(slug)
+        return (
+            {"source_slug": slug, "url": spec.url, "html": html},
+            {"source": slug, "url": spec.url},
+        )
+
+    monkeypatch.setattr("data_pipeline.cli._collect_public_book_payload", fetch)
+    result = CliRunner().invoke(app, ["enrich-toc", "--data-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+    dataset = read_dataset(tmp_path / "processed")
+    preferred_source_id = public_book_source_id(spec)
+    assert len(dataset.toc) == 22
+    assert {entry.source_id for entry in dataset.toc} == {preferred_source_id}
+    assert {source.source_id for source in dataset.sources} == {
+        "partial-source",
+        preferred_source_id,
+    }
+    report = json.loads((tmp_path / "reports/toc-enrichment.json").read_text(encoding="utf-8"))
+    assert report["toc_books_before"] == report["toc_books_after"] == 1
+    assert report["toc_entries_before"] == 3
+    assert report["toc_entries_after"] == 22
+    assert report["added_book_ids"] == []
+    assert report["replaced_book_ids"] == [spec.book_id]
+
+    second = CliRunner().invoke(app, ["enrich-toc", "--data-dir", str(tmp_path)])
+    assert second.exit_code == 0, second.output
+    assert calls == [spec.slug]
