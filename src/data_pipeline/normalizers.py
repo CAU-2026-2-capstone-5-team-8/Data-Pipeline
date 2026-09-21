@@ -32,14 +32,11 @@ from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
+from data_pipeline.topics import TOPICS
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
-TOPICS: dict[str, list[str]] = {
-    "operating-systems": ["computer-science", "operating-systems"],
-    "linear-algebra": ["mathematics", "linear-algebra"],
-}
 MAX_AUTHORS_PER_BOOK = 8
 EDITION_WORDS = {
     "first": 1,

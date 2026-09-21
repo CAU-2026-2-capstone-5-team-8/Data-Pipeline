@@ -1,0 +1,101 @@
+{
+  "slug": "ecampus-osc10",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9781119800361",
+  "isbn_13": "9781119800361",
+  "title": "Operating System Concepts",
+  "edition": 10,
+  "url": "https://umass.ecampus.com/operating-system-concepts-10th/bk/9781119800361",
+  "toc_format": "paragraph_sequence",
+  "expected_toc_count": 36,
+  "expected_root_titles": [
+    "Overview",
+    "Process Management",
+    "Process Synchronization",
+    "Memory Management",
+    "Storage Management",
+    "File System",
+    "Security and Protection",
+    "Advanced Topics",
+    "Case Studies",
+    "Appendices"
+  ],
+  "expected_chapter_labels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "expected_child_label_groups": [
+    [
+      "1",
+      "2"
+    ],
+    [
+      "3",
+      "4",
+      "5"
+    ],
+    [
+      "6",
+      "7",
+      "8"
+    ],
+    [
+      "9",
+      "10"
+    ],
+    [
+      "11",
+      "12"
+    ],
+    [
+      "13",
+      "14",
+      "15"
+    ],
+    [
+      "16",
+      "17"
+    ],
+    [
+      "18",
+      "19"
+    ],
+    [
+      "20",
+      "21"
+    ],
+    [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E"
+    ]
+  ],
+  "expected_child_counts": []
+}

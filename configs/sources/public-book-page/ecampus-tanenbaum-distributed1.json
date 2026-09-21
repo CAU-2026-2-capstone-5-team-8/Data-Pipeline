@@ -1,0 +1,40 @@
+{
+  "slug": "ecampus-tanenbaum-distributed1",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9780132199087",
+  "isbn_13": "9780132199087",
+  "title": "Distributed Operating Systems",
+  "edition": 1,
+  "url": "https://cincinnatistate.ecampus.com/distributed-operating-systems-1st/bk/9780132199087",
+  "toc_format": "flat_bold",
+  "expected_toc_count": 12,
+  "expected_root_titles": [
+    "Preface.",
+    "Introduction to Distributed Systems.",
+    "Communication in Distributed Systems.",
+    "Synchronization in Distributed Systems.",
+    "Processes and Processors in Distributed Systems.",
+    "Distributed File Systems.",
+    "Distributed Shared Memory.",
+    "Case Study I: Amoeba.",
+    "Case Study II: Mach.",
+    "Case Study III: Chorus.",
+    "Case Study IV: DCE.",
+    "Index."
+  ],
+  "expected_chapter_labels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+  ],
+  "expected_child_label_groups": [],
+  "expected_child_counts": []
+}

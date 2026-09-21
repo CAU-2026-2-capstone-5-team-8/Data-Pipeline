@@ -1,0 +1,42 @@
+{
+  "slug": "ecampus-bach-unix1",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9780132017992",
+  "isbn_13": "9780132017992",
+  "title": "Design of the UNIX Operating System",
+  "edition": 1,
+  "url": "https://wright.ecampus.com/design-unix-operating-system-1st-bach/bk/9780132017992",
+  "toc_format": "flat_bold",
+  "expected_toc_count": 12,
+  "expected_root_titles": [
+    "General Review of the System.",
+    "Introduction to the Kernel.",
+    "The Buffer Cache.",
+    "Internal Representation of Files.",
+    "System Calls for the File System.",
+    "The System Representation of Processes.",
+    "Process Control.",
+    "Process Scheduling and Time.",
+    "Memory Management Policies.",
+    "Interprocess Communication.",
+    "Multiprocessor Systems.",
+    "Distributed UNIX System."
+  ],
+  "expected_chapter_labels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12"
+  ],
+  "expected_child_label_groups": [],
+  "expected_child_counts": []
+}

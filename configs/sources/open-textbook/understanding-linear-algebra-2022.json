@@ -1,0 +1,153 @@
+{
+  "slug": "understanding-linear-algebra-2022",
+  "provider": "understanding_linear_algebra",
+  "topic": "linear-algebra",
+  "replaces_book_id": "isbn13:9780135370193",
+  "book_id": "book_a1364d52179f6fca0403",
+  "isbn_10": null,
+  "isbn_13": null,
+  "title": "Understanding Linear Algebra",
+  "authors": [
+    "David Austin"
+  ],
+  "publisher": null,
+  "published_year": 2022,
+  "version": null,
+  "home_url": "https://understandinglinearalgebra.org/home.html",
+  "documents": [
+    {
+      "document_type": "metadata",
+      "external_id": "gvsu-open-textbooks:26",
+      "url": "https://scholarworks.gvsu.edu/books/26/",
+      "expected_text_markers": [
+        "Understanding Linear Algebra",
+        "David Austin",
+        "2022",
+        "Creative Commons Attribution 4.0 International License"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "toc",
+      "external_id": "understanding-linear-algebra:toc",
+      "url": "https://understandinglinearalgebra.org/ula.html",
+      "expected_text_markers": [
+        "Systems of equations",
+        "Singular value decompositions"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "preface",
+      "external_id": "understanding-linear-algebra:preface",
+      "url": "https://understandinglinearalgebra.org/frontmatter-7.html",
+      "expected_text_markers": [
+        "This is a textbook for a first-year course in linear algebra",
+        "reason mathematically"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "preview",
+      "external_id": "understanding-linear-algebra:chapter-1",
+      "url": "https://understandinglinearalgebra.org/chap1.html",
+      "expected_text_markers": [
+        "Chapter 1 Systems of equations",
+        "Pivots and their influence on solution spaces"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "preview",
+      "external_id": "understanding-linear-algebra:section-1.1",
+      "url": "https://understandinglinearalgebra.org/sec-expect.html",
+      "expected_text_markers": [
+        "sets of two or more linear equations",
+        "Some simple examples"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "preview",
+      "external_id": "understanding-linear-algebra:section-1.2",
+      "url": "https://understandinglinearalgebra.org/sec-finding-solutions.html",
+      "expected_text_markers": [
+        "Gaussian elimination",
+        "reduced row echelon"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "preview",
+      "external_id": "understanding-linear-algebra:section-1.3",
+      "url": "https://understandinglinearalgebra.org/sec-sage-introduction.html",
+      "expected_text_markers": [
+        "Computation with Sage",
+        "No serious application of linear algebra"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "preview",
+      "external_id": "understanding-linear-algebra:section-1.4",
+      "url": "https://understandinglinearalgebra.org/sec-pivots.html",
+      "expected_text_markers": [
+        "Pivots and their influence on solution spaces",
+        "leading entry"
+      ],
+      "media_type": "text/html",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    }
+  ],
+  "source_format": "pretext_html",
+  "license_url": null,
+  "license_media_type": "text/html",
+  "license_reference_url": "https://creativecommons.org/licenses/by/4.0/",
+  "license": "Creative Commons Attribution 4.0 International License",
+  "max_resource_bytes": 1048576,
+  "expected_page_count": null,
+  "preface_page_range": null,
+  "home_license_reference_url": null,
+  "home_license": null,
+  "document_reference_url": null,
+  "sample_page_range": null
+}

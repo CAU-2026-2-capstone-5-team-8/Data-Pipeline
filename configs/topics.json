@@ -1,0 +1,18 @@
+{
+  "operating-systems": {
+    "domain": "computer-science",
+    "title": "Operating Systems",
+    "open_library_title": "operating systems",
+    "google_books_subject": "Operating systems",
+    "relevance_term_pattern": "\\boperating\\s+systems?\\b",
+    "conflicting_subjects_pattern": "\\b(?:robotics?|electric\\s+power|political\\s+science|anarchism)\\b"
+  },
+  "linear-algebra": {
+    "domain": "mathematics",
+    "title": "Linear Algebra",
+    "open_library_title": "linear algebra",
+    "google_books_subject": "Linear algebra",
+    "relevance_term_pattern": "\\blinear\\s+algebra\\b",
+    "conflicting_subjects_pattern": null
+  }
+}

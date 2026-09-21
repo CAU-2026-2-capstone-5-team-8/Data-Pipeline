@@ -10,13 +10,10 @@ from data_pipeline.collectors.base import (
     is_transient_http_error,
     parse_json_object,
 )
+from data_pipeline.topics import topic_google_books_query
 
 API_URL = "https://www.googleapis.com/books/v1/volumes"
 MAX_PAGE_SIZE = 40
-TOPIC_QUERIES = {
-    "operating-systems": 'subject:"Operating systems"',
-    "linear-algebra": 'subject:"Linear algebra"',
-}
 
 
 class GoogleBooksCollector:
@@ -90,10 +87,7 @@ class GoogleBooksCollector:
         """Return the exact ordered page requests for one bounded search."""
         if candidate_limit < 1:
             raise ValueError("candidate_limit must be at least 1")
-        try:
-            query = TOPIC_QUERIES[topic]
-        except KeyError as exc:
-            raise ValueError(f"unsupported topic: {topic}") from exc
+        query = topic_google_books_query(topic)
         pages = []
         for start_index in range(0, candidate_limit, MAX_PAGE_SIZE):
             pages.append(

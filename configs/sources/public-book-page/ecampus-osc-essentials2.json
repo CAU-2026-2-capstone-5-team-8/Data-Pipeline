@@ -1,0 +1,49 @@
+{
+  "slug": "ecampus-osc-essentials2",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9781118804926",
+  "isbn_13": "9781118804926",
+  "title": "Operating System Concepts Essentials",
+  "edition": 2,
+  "url": "https://centralmethodist.ecampus.com/operating-system-concepts-essentials-2nd/bk/9781118804926",
+  "toc_format": "paragraph_sequence",
+  "expected_toc_count": 22,
+  "expected_root_titles": [
+    "OVERVIEW.",
+    "PROCESS MANAGEMENT.",
+    "MEMORY MANAGEMENT.",
+    "STORAGE MANAGEMENT.",
+    "PROTECTION AND SECURITY.",
+    "CASE STUDIES.",
+    "APPENDICES."
+  ],
+  "expected_chapter_labels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15"
+  ],
+  "expected_child_label_groups": [
+    ["1", "2"],
+    ["3", "4", "5", "6"],
+    ["7", "8"],
+    ["9", "10", "11", "12"],
+    ["13", "14"],
+    ["15"],
+    []
+  ],
+  "expected_child_counts": [2, 4, 2, 4, 2, 1, 0],
+  "preferred_toc": true
+}

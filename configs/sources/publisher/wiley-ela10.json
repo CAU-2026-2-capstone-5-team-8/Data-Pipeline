@@ -1,0 +1,22 @@
+{
+  "slug": "wiley-ela10",
+  "provider": "wiley",
+  "topic": "linear-algebra",
+  "book_id": "isbn13:9780470458211",
+  "isbn_10": "0470458216",
+  "title": "Elementary Linear Algebra",
+  "edition": 10,
+  "home_url": "https://bcs.wiley.com/he-bcs/Books?action=index&bcsId=5557&itemId=0470458216",
+  "toc_url": "https://bcs.wiley.com/he-bcs/Books?action=contents&bcsId=5557&itemId=0470458216",
+  "expected_toc_labels": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9"
+  ]
+}
