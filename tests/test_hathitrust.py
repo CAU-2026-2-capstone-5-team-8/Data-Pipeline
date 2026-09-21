@@ -279,3 +279,23 @@ def test_enrich_bibliography_reports_no_match_and_preserves_raw(tmp_path, monkey
     assert not any(s.provider == "hathitrust" for s in dataset.sources)
     raw_files = list((tmp_path / "raw" / "hathitrust").rglob("*.json"))
     assert len(raw_files) == 1
+
+
+def test_enrich_bibliography_reports_normalization_failure_and_preserves_raw(
+    tmp_path, monkeypatch
+) -> None:
+    _seed_dataset(tmp_path / "processed", isbn_13="9780132017992", book_id="isbn13:9780132017992")
+    malformed = _match_response()
+    del malformed["isbn:9780132017992"]["records"]["000556966"]["recordURL"]
+    monkeypatch.setattr(
+        "data_pipeline.cli.HathiTrustCollector",
+        lambda: _FakeHathiTrustCollector(malformed),
+    )
+
+    result = CliRunner().invoke(
+        app, ["enrich-bibliography", "--isbn", "9780132017992", "--data-dir", str(tmp_path)]
+    )
+
+    assert result.exit_code != 0
+    assert "preserved" in result.output
+    assert len(list((tmp_path / "raw" / "hathitrust").rglob("*.json"))) == 1

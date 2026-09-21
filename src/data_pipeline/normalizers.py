@@ -332,8 +332,8 @@ def _normalize_internet_archive_item(
     identifier = str(record.get("identifier", "")).strip()
     if not identifier:
         return None
-    language = str(record.get("language", "")).strip().lower()
-    if language not in {"eng", "en"}:
+    languages = {value.casefold() for value in _archive_string_list(record.get("language"))}
+    if not languages.intersection({"eng", "en"}):
         return None
     title = str(record.get("title", "")).strip()
     if not title:

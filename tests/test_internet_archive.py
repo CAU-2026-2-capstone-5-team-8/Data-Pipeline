@@ -152,6 +152,17 @@ def test_normalize_accepts_list_shaped_creator_isbn_and_description() -> None:
     assert dataset.documents[0].text == "single scalar description"
 
 
+def test_normalize_accepts_list_shaped_language() -> None:
+    dataset = normalize_internet_archive_response(
+        _response(_record(language=["eng", "ger"])),
+        topic="operating-systems",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert len(dataset.books) == 1
+
+
 @pytest.mark.parametrize("language", ["fre", "", "spa"])
 def test_normalize_skips_non_english_items(language: str) -> None:
     dataset = normalize_internet_archive_response(

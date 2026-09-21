@@ -827,7 +827,7 @@ def enrich_bibliography(
             payload, isbn=normalized_isbn, book_id=book.book_id, retrieved_at=retrieved_at
         )
     except InvalidProviderResponse as exc:
-        raise typer.BadParameter(f"{exc}; no data was written") from exc
+        raise typer.BadParameter(f"{exc}; raw response was preserved at: {raw_path}") from exc
     if source is None:
         typer.echo(f"HathiTrust has no record for ISBN {isbn}")
         typer.echo(f"Raw response was preserved at: {raw_path}")
