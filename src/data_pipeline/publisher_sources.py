@@ -1,6 +1,15 @@
-"""Small allowlist of exact-edition public publisher evidence sources."""
+"""Small allowlist of exact-edition public publisher evidence sources.
+
+Entries live in configs/sources/publisher/<slug>.json (one file per book), loaded at
+import time. Adding a source is a config file addition, not a code change.
+"""
 
 from dataclasses import dataclass
+from pathlib import Path
+
+from data_pipeline.source_registry import load_registry_dir
+
+CONFIG_DIR = Path(__file__).resolve().parents[2] / "configs" / "sources" / "publisher"
 
 
 @dataclass(frozen=True)
@@ -19,35 +28,9 @@ class PublisherSourceSpec:
     expected_toc_labels: tuple[str, ...]
 
 
-PUBLISHER_SOURCES = {
-    "wiley-osc7": PublisherSourceSpec(
-        slug="wiley-osc7",
-        provider="wiley",
-        topic="operating-systems",
-        book_id="isbn13:9780471694663",
-        isbn_10="0471694665",
-        title="Operating System Concepts",
-        edition=7,
-        home_url=(
-            "https://bcs.wiley.com/he-bcs/Books?"
-            "action=index&bcsId=2217&itemId=0471694665&itemTypeId=BKS"
-        ),
-        toc_url=("https://bcs.wiley.com/he-bcs/Books?action=contents&itemId=0471694665&bcsId=2217"),
-        expected_toc_labels=tuple(str(number) for number in range(1, 24)) + ("A", "B", "C"),
-    ),
-    "wiley-ela10": PublisherSourceSpec(
-        slug="wiley-ela10",
-        provider="wiley",
-        topic="linear-algebra",
-        book_id="isbn13:9780470458211",
-        isbn_10="0470458216",
-        title="Elementary Linear Algebra",
-        edition=10,
-        home_url=("https://bcs.wiley.com/he-bcs/Books?action=index&bcsId=5557&itemId=0470458216"),
-        toc_url=("https://bcs.wiley.com/he-bcs/Books?action=contents&bcsId=5557&itemId=0470458216"),
-        expected_toc_labels=tuple(str(number) for number in range(1, 10)),
-    ),
-}
+PUBLISHER_SOURCES: dict[str, PublisherSourceSpec] = load_registry_dir(
+    PublisherSourceSpec, CONFIG_DIR
+)
 
 
 def publisher_source(source_slug: str) -> PublisherSourceSpec:

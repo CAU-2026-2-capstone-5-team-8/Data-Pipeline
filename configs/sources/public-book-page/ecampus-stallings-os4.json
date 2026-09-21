@@ -1,0 +1,30 @@
+{
+  "slug": "ecampus-stallings-os4",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9780130319999",
+  "isbn_13": "9780130319999",
+  "title": "Operating Systems: Internals and Design Principles",
+  "edition": 4,
+  "url": "https://cincinnatistate.ecampus.com/operating-systems-internals-design/bk/9780130319999",
+  "toc_format": "indented_table",
+  "expected_toc_count": 201,
+  "expected_root_titles": [
+    "Web Site for Operating Systems: Internals and Design Principles",
+    "Preface",
+    "PART ONE BACKGROUND",
+    "PART TWO PROCESSES",
+    "PART THREE MEMORY",
+    "PART FOUR SCHEDULING",
+    "PART FIVE INPUT/OUTPUT AND FILES",
+    "PART SIX DISTRIBUTED SYSTEMS",
+    "PART SEVEN SECURITY",
+    "APPENDICES",
+    "Glossary",
+    "References",
+    "Index"
+  ],
+  "expected_chapter_labels": [],
+  "expected_child_label_groups": [],
+  "expected_child_counts": []
+}

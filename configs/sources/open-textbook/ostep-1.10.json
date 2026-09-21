@@ -1,0 +1,80 @@
+{
+  "slug": "ostep-1.10",
+  "provider": "ostep",
+  "topic": "operating-systems",
+  "replaces_book_id": "isbn13:9780070394551",
+  "book_id": "isbn13:9781985086593",
+  "isbn_10": "198508659X",
+  "isbn_13": "9781985086593",
+  "title": "Operating Systems: Three Easy Pieces",
+  "authors": [
+    "Remzi H. Arpaci-Dusseau",
+    "Andrea C. Arpaci-Dusseau"
+  ],
+  "publisher": "Arpaci-Dusseau Books",
+  "published_year": 2023,
+  "version": "1.10",
+  "home_url": "https://pages.cs.wisc.edu/~remzi/OSTEP/",
+  "documents": [
+    {
+      "document_type": "preface",
+      "external_id": "ostep-1.10:preface",
+      "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/preface.pdf",
+      "expected_text_markers": [
+        "Preface",
+        "Welcome to this book",
+        "three easy pieces"
+      ],
+      "media_type": "application/pdf",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "introduction",
+      "external_id": "ostep-1.10:introduction",
+      "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/intro.pdf",
+      "expected_text_markers": [
+        "Introduction to Operating Systems",
+        "virtualization",
+        "resource manager"
+      ],
+      "media_type": "application/pdf",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    },
+    {
+      "document_type": "sample_chapter",
+      "external_id": "ostep-1.10:chapter-4",
+      "url": "https://pages.cs.wisc.edu/~remzi/OSTEP/cpu-intro.pdf",
+      "expected_text_markers": [
+        "The Abstraction",
+        "The Process",
+        "virtualizing the CPU"
+      ],
+      "media_type": "application/pdf",
+      "identity_text_markers": [],
+      "preface_text_markers": [],
+      "sample_text_markers": [],
+      "license": null,
+      "allowed_redirect_hosts": []
+    }
+  ],
+  "source_format": "ostep_chapter_pdfs",
+  "license_url": null,
+  "license_media_type": "text/html",
+  "license_reference_url": null,
+  "license": null,
+  "max_resource_bytes": 5242880,
+  "expected_page_count": null,
+  "preface_page_range": null,
+  "home_license_reference_url": null,
+  "home_license": null,
+  "document_reference_url": null,
+  "sample_page_range": null
+}
