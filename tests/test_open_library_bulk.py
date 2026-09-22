@@ -99,6 +99,61 @@ def test_dump_candidate_prefilter_only_parses_matching_rows(
     assert [record.key for record in records] == ["/books/OL-TARGET-M"]
 
 
+def test_targeted_prefilter_and_index_normalize_formatted_isbn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "formatted-edition.txt.gz"
+    record = {
+        "key": "/books/OL-FORMATTED-M",
+        "title": "Formatted ISBN Book",
+        "isbn_10": ["013359162x"],
+        "isbn_13": ["978-1-292-02577-3"],
+        "works": [{"key": "/works/OL-FORMATTED-W"}],
+        "table_of_contents": [
+            {"level": 0, "title": "One"},
+            {"level": 0, "title": "Two"},
+            {"level": 0, "title": "Three"},
+        ],
+    }
+    with gzip.open(path, "wt", encoding="utf-8") as stream:
+        stream.write(
+            "\t".join(
+                [
+                    EDITION_TYPE,
+                    record["key"],
+                    "1",
+                    "2026-08-31T00:00:00.000000",
+                    json.dumps(record, separators=(",", ":")),
+                ]
+            )
+            + "\n"
+        )
+    monkeypatch.setattr(ol_bulk.shutil, "which", lambda _command: None)
+
+    candidates = list(
+        iter_dump_candidates(path, expected_type=EDITION_TYPE, needles={"9781292025773"})
+    )
+    index = tmp_path / "formatted.sqlite"
+    counts = build_targeted_open_library_index(
+        editions_dump=path,
+        output_path=index,
+        manifest=load_dump_manifest(MANIFEST),
+        target_isbns={"9781292025773"},
+    )
+
+    assert [candidate.key for candidate in candidates] == ["/books/OL-FORMATTED-M"]
+    assert counts["matched_target_isbns"] == 1
+    assert resolve_toc(index, "978-1-292-02577-3") is not None
+    with ol_bulk._connect_index(index) as connection:
+        indexed_isbns = [
+            row[0] for row in connection.execute("SELECT isbn FROM edition_isbns ORDER BY isbn")
+        ]
+        assert indexed_isbns == [
+            "013359162X",
+            "9781292025773",
+        ]
+
+
 @pytest.mark.parametrize(
     "line",
     [

@@ -177,8 +177,8 @@ def iter_dump_candidates(
     JSON object is avoidable. The exact ISBN/Work checks after parsing remain authoritative;
     this byte prefilter only discards rows that cannot possibly match.
     """
-    encoded_needles = tuple(value.encode("utf-8") for value in sorted(needles) if value)
-    if not encoded_needles:
+    patterns = tuple(_candidate_pattern(value) for value in sorted(needles) if value)
+    if not patterns:
         return
 
     ripgrep = shutil.which("rg")
@@ -186,14 +186,12 @@ def iter_dump_candidates(
         command = [
             ripgrep,
             "--search-zip",
-            "--fixed-strings",
             "--text",
             "--no-filename",
             "--no-heading",
         ]
-        for needle in sorted(needles):
-            if needle:
-                command.extend(("-e", needle))
+        for pattern in patterns:
+            command.extend(("-e", pattern))
         command.extend(("--", str(path)))
         process = subprocess.Popen(  # noqa: S603 - fixed executable and arguments only
             command,
@@ -227,7 +225,7 @@ def iter_dump_candidates(
             raise ValueError(f"ripgrep could not scan Open Library dump {path}: {stderr.strip()}")
         return
 
-    candidate_pattern = re.compile(b"|".join(re.escape(value) for value in encoded_needles))
+    candidate_pattern = re.compile("|".join(patterns).encode("ascii"))
 
     def matching_lines(block: bytes, first_line_number: int) -> Iterator[DumpRecord]:
         spans: set[tuple[int, int]] = set()
@@ -260,6 +258,24 @@ def iter_dump_candidates(
             first_line_number += complete.count(b"\n")
         if carry:
             yield from matching_lines(carry, first_line_number)
+
+
+def _normalized_isbn(value: str) -> str:
+    """Normalize dump ISBN spelling before matching or indexing."""
+    return re.sub(r"[^0-9Xx]", "", value).upper()
+
+
+def _candidate_pattern(value: str) -> str:
+    """Allow common ISBN punctuation/case variants without weakening other key matches."""
+    normalized = _normalized_isbn(value)
+    if (
+        re.fullmatch(r"[0-9Xx -]+", value)
+        and len(normalized) in {10, 13}
+        and re.fullmatch(r"[0-9]{9}[0-9X]|[0-9]{13}", normalized)
+    ):
+        characters = ["[Xx]" if character == "X" else character for character in normalized]
+        return "[- ]*".join(characters)
+    return re.escape(value)
 
 
 def _reference_keys(value: Any, *, nested: str | None = None) -> list[str]:
@@ -401,9 +417,12 @@ def _insert_edition(
     counts["toc_editions"] += bool(toc)
     for kind in ("isbn_10", "isbn_13"):
         for isbn in _string_list(record.get(kind)):
+            normalized_isbn = _normalized_isbn(isbn)
+            if not normalized_isbn:
+                continue
             cursor = connection.execute(
                 "INSERT OR IGNORE INTO edition_isbns VALUES (?, ?, ?)",
-                (isbn, envelope.key, kind),
+                (normalized_isbn, envelope.key, kind),
             )
             counts["isbns"] += cursor.rowcount
     return True
@@ -477,7 +496,8 @@ def build_targeted_open_library_index(
     """Build a small benchmark index with two compressed scans and no full projection."""
     if output_path.exists():
         raise FileExistsError(f"refusing to overwrite existing index: {output_path}")
-    normalized_targets = {re.sub(r"[^0-9Xx]", "", value).upper() for value in target_isbns if value}
+    normalized_targets = {_normalized_isbn(value) for value in target_isbns if value}
+    normalized_targets.discard("")
     if not normalized_targets:
         raise ValueError("at least one target ISBN is required")
 
@@ -489,12 +509,12 @@ def build_targeted_open_library_index(
         expected_type=EDITION_TYPE,
         needles=normalized_targets,
     ):
-        record_isbns = set(
-            [
-                *_string_list(envelope.value.get("isbn_10")),
-                *_string_list(envelope.value.get("isbn_13")),
-            ]
-        )
+        record_isbns = {
+            normalized
+            for kind in ("isbn_10", "isbn_13")
+            for value in _string_list(envelope.value.get(kind))
+            if (normalized := _normalized_isbn(value))
+        }
         matches = record_isbns & normalized_targets
         if not matches:
             continue
@@ -684,7 +704,7 @@ def _title_matches(target: dict[str, Any], candidate: dict[str, Any]) -> bool:
 
 def resolve_toc(index_path: Path, isbn: str) -> TocResolution | None:
     """Resolve exact first, then a validated TOC from the provider-native Work."""
-    normalized_isbn = re.sub(r"[^0-9Xx]", "", isbn).upper()
+    normalized_isbn = _normalized_isbn(isbn)
     with _connect_index(index_path) as connection:
         exact_rows = connection.execute(
             """
@@ -806,7 +826,7 @@ def resolve_toc(index_path: Path, isbn: str) -> TocResolution | None:
 
 def inspect_toc_resolution(index_path: Path, isbn: str) -> TocResolutionInspection:
     """Report lookup coverage without treating rejected editions as usable evidence."""
-    normalized_isbn = re.sub(r"[^0-9Xx]", "", isbn).upper()
+    normalized_isbn = _normalized_isbn(isbn)
     with _connect_index(index_path) as connection:
         exact_rows = connection.execute(
             """
