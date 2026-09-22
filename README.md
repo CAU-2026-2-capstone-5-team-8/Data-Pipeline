@@ -903,3 +903,84 @@ with the 64-entry catalog TOC. Coverage remained 14/50, while canonical TOC entr
 second run made no network attempts and left raw-file counts and canonical file hashes unchanged.
 Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six selected
 books still lack TOCs.
+
+### Unresolved-book TOC sweep (2026-09-23 KST)
+
+Every one of the thirty Scale-50 books that the
+[2026-09-22 acquisition report](docs/experiments/scale-50-toc-acquisition-2026-09-22.json)
+left at `metadata_fallback` was re-checked against the already-allowlisted eCampus catalog by
+searching for its canonical target ISBN. The sweep was read-only reconnaissance; nothing was
+imported without a reviewed source entry.
+
+| Outcome | Books |
+| --- | --- |
+| Exact-ISBN catalog page found | 7 |
+| Page found and TOC section present | 4 |
+| Added as a reviewed source | 3 |
+| Rejected: page declares no edition and its title is a different SKU | 1 |
+| No exact-ISBN catalog page | 19 |
+| No ISBN on the canonical record, so exact-edition lookup is impossible | 4 |
+
+The three added sources are:
+
+| Book | ISBN | Format | Entries |
+| --- | --- | --- | --- |
+| Axler, *Linear Algebra Done Right*, 2nd | 9780387982588 | `flat_table` | 10 |
+| Harris, *Schaum's Outline of Operating Systems*, 1st | 9780071364355 | `indented_table` | 50 |
+| Sinha, *Distributed Operating Systems: Concepts and Design*, 1st | 9780780311190 | `indented_table_chapter_roots` | 168 |
+
+No parser changed. Each source reuses an existing `toc_format` and pins the reviewed ISBN,
+title, edition, entry count, root titles, per-root child counts, and descendant counts, so a
+later catalog change fails loudly instead of importing a different book's contents.
+
+`9780131907294` was rejected on purpose. Its catalog page carries no `bookEdition` marker and
+its title is *Linear Algebra with Applications (2-Download)*, a distinct digital SKU rather than
+the exact edition of the canonical record. Relaxing the edition check to gain one book would
+weaken the identity guard for every source, so it stays unresolved.
+
+Four canonical records carry no ISBN at all. They cannot be resolved by exact-edition lookup in
+any provider and need a selection fix, not another collector.
+
+#### Library of Congress `catdir` pages are not retrievable
+
+The acquisition report lists six MARC 856 `loc.gov/catdir` TOC links with
+`loc_856_usable_count = 0` and no recorded reason. Direct retrieval of three of them on
+2026-09-23 returned HTTP 403 with a Cloudflare interactive challenge body
+(`cType: "interactive"`, "Enable JavaScript and cookies to continue") rather than TOC HTML.
+This is an access control, so the pipeline does not work around it and the LOC tier stays at
+zero. The zero is a measured platform limit, not an unimplemented collector.
+
+#### Live verification
+
+The two Operating Systems sources were collected live against a copy of the 25-book
+`toc-enriched-20260920` canonical set:
+
+```bash
+uv run data-pipeline collect-public-page --source ecampus-sinha-distributed-os1  --data-dir <copy>
+uv run data-pipeline collect-public-page --source ecampus-harris-schaum-os1      --data-dir <copy>
+```
+
+TOC coverage rose from 7/25 to 9/25 and canonical TOC entries from 318 to 536. An immediate
+second run of both commands left `books.jsonl`, `documents.jsonl`, and `toc.jsonl` byte
+identical; only `sources.jsonl` changed, because a repeated retrieval updates its source
+snapshot as documented above.
+
+Applied to the Scale-50 selection these three sources project 20/50 to 23/50 usable TOCs. That
+projection has not been run against the Scale-50 dataset, which is not checked in; only the
+25-book result above was measured.
+
+#### Downstream effect
+
+The enriched 25-book set was scored with the ML repository's concept-difficulty comparison.
+Books with enough concept evidence to receive an intrinsic difficulty score rose from 6 to 8:
+
+| Book | Intrinsic score | Band | Concepts | Matched TOC entries |
+| --- | --- | --- | --- | --- |
+| Schaum's Outline of Operating Systems | 0.390 | intermediate | 9 | 23 / 50 |
+| Distributed Operating Systems | 0.424 | intermediate | 8 | 18 / 168 |
+
+Those scores come from the ML repository's uncalibrated proposed rubric. They demonstrate that
+the new evidence flows through concept matching into difficulty scoring; they are not evidence
+that either score is correct. The low match rate on the Sinha TOC reflects distributed-systems
+headings such as *Remote Procedure Calls*, *Distributed Shared Memory*, and *Naming* that the
+current ML concept list does not cover.
