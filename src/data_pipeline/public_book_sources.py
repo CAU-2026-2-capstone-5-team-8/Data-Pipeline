@@ -33,14 +33,17 @@ class PublicBookSourceSpec:
         "flat_table",
         "paragraph_sequence",
         "bold_chapter_paragraphs",
+        "flat_periods",
     ]
     expected_toc_count: int
     expected_root_titles: tuple[str, ...]
     expected_chapter_labels: tuple[str, ...]
+    authors: tuple[str, ...] = ()
     expected_child_label_groups: tuple[tuple[str, ...], ...] = ()
     expected_child_counts: tuple[int, ...] = ()
     expected_descendant_counts: tuple[int, ...] = ()
     preferred_toc: bool = False
+    root_indent_threshold: int = 0
 
 
 PUBLIC_BOOK_SOURCES: dict[str, PublicBookSourceSpec] = load_registry_dir(

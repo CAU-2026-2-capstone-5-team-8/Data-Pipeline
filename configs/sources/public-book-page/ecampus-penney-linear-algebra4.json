@@ -5,6 +5,7 @@
   "book_id": "isbn13:9781118909584",
   "isbn_13": "9781118909584",
   "title": "Linear Algebra Ideas and Applications",
+  "authors": ["Richard C. Penney"],
   "edition": 4,
   "url": "https://wright.ecampus.com/linear-algebra-ideas-applications-4th/bk/9781118909584",
   "toc_format": "bold_chapter_paragraphs",

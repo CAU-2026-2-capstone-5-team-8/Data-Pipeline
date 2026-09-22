@@ -5,6 +5,7 @@
   "book_id": "isbn13:9780132017992",
   "isbn_13": "9780132017992",
   "title": "Design of the UNIX Operating System",
+  "authors": ["Maurice J. Bach"],
   "edition": 1,
   "url": "https://wright.ecampus.com/design-unix-operating-system-1st-bach/bk/9780132017992",
   "toc_format": "flat_bold",

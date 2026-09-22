@@ -5,6 +5,7 @@
   "book_id": "isbn13:9780470458211",
   "isbn_13": "9780470458211",
   "title": "Elementary Linear Algebra, 10th Edition",
+  "authors": ["Howard Anton", "Chris Rorres"],
   "edition": 10,
   "url": "https://drake.ecampus.com/elementary-linear-algebra-10th-edition/bk/9780470458211",
   "toc_format": "flat_table",

@@ -5,6 +5,7 @@
   "book_id": "isbn13:9780201741964",
   "isbn_13": "9780201741964",
   "title": "Operating Systems: A Modern Perspective",
+  "authors": ["Gary J. Nutt"],
   "edition": 3,
   "url": "https://campusstore.miamioh.edu/operating-systems-modern-perspective-3rd/bk/9780201741964",
   "toc_format": "indented_table_chapter_roots",

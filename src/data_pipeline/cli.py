@@ -2,6 +2,8 @@
 
 import json
 import re
+import shutil
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -38,6 +40,14 @@ from data_pipeline.normalizers import (
     normalize_publisher_document_response,
     normalize_publisher_page_response,
 )
+from data_pipeline.open_library_bulk import (
+    build_targeted_open_library_index,
+    canonical_toc_evidence,
+    download_dump_file,
+    load_dump_manifest,
+    resolve_toc,
+    verify_dump_file,
+)
 from data_pipeline.open_textbook_sources import OPEN_TEXTBOOK_SOURCES, open_textbook_source
 from data_pipeline.public_book_sources import (
     PUBLIC_BOOK_SOURCES,
@@ -53,6 +63,7 @@ from data_pipeline.relevance_review import finalize_relevance_review, prepare_re
 from data_pipeline.reporting import format_book_coverage, format_coverage
 from data_pipeline.scale_comparison import compare_scale_reports
 from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
+from data_pipeline.source_registry import config_path
 from data_pipeline.storage import (
     RawArtifact,
     dataset_exists,
@@ -62,6 +73,7 @@ from data_pipeline.storage import (
     write_dataset,
     write_raw_response,
 )
+from data_pipeline.toc_acquisition_report import build_toc_acquisition_report
 from data_pipeline.validation import validate_dataset
 
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book evidence.")
@@ -83,6 +95,7 @@ OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public ope
 ManifestOption = Annotated[
     Path, typer.Option(exists=True, dir_okay=False, help="Versioned dataset JSON manifest.")
 ]
+DEFAULT_OPEN_LIBRARY_DUMP_MANIFEST = config_path("external", "open-library-2026-08-31.json")
 
 
 def _ensure_topic(topic: str) -> None:
@@ -1180,6 +1193,265 @@ def finalize_relevance_review_command(
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Reviewed v1 audit: {v1_output}")
     typer.echo(f"Reviewed v2 audit: {v2_output}")
+
+
+@app.command("bulk-status")
+def bulk_status(
+    manifest_path: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, help="Pinned external dump manifest.")
+    ] = DEFAULT_OPEN_LIBRARY_DUMP_MANIFEST,
+    data_dir: Annotated[Path, typer.Option(help="External data and index root.")] = Path("data"),
+    verify: Annotated[
+        bool, typer.Option(help="Hash complete local files; this can take several minutes.")
+    ] = False,
+) -> None:
+    """Show pinned Open Library inputs without downloading anything."""
+    manifest = load_dump_manifest(manifest_path)
+    external = data_dir / "external" / "open_library" / manifest.dump_date
+    rows = []
+    for specification in manifest.files:
+        path = external / specification.filename
+        partial = path.with_suffix(path.suffix + ".part")
+        if path.exists():
+            errors = verify_dump_file(path, specification) if verify else []
+            status = "invalid" if errors else ("verified" if verify else "present_unverified")
+        elif partial.exists():
+            errors = []
+            status = "partial"
+        else:
+            errors = []
+            status = "missing"
+        rows.append(
+            {
+                "kind": specification.kind,
+                "dump_date": manifest.dump_date,
+                "path": str(path),
+                "expected_bytes": specification.compressed_size,
+                "local_bytes": path.stat().st_size
+                if path.exists()
+                else partial.stat().st_size
+                if partial.exists()
+                else 0,
+                "status": status,
+                "errors": errors,
+            }
+        )
+    typer.echo(json.dumps(rows, indent=2, sort_keys=True))
+
+
+@app.command("fetch-open-library-dump")
+def fetch_open_library_dump(
+    kind: Annotated[
+        str, typer.Option(help="Pinned dump to fetch: editions, works, or all.")
+    ] = "editions",
+    manifest_path: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, help="Pinned external dump manifest.")
+    ] = DEFAULT_OPEN_LIBRARY_DUMP_MANIFEST,
+    data_dir: Annotated[Path, typer.Option(help="External data and index root.")] = Path("data"),
+    accept_large_download: Annotated[
+        bool,
+        typer.Option(help="Required acknowledgement for the multi-GB public dataset download."),
+    ] = False,
+) -> None:
+    """Fetch pinned dumps with range resume, checksum, and atomic publication."""
+    if kind not in {"editions", "works", "all"}:
+        raise typer.BadParameter("kind must be editions, works, or all")
+    if not accept_large_download:
+        raise typer.BadParameter("--accept-large-download is required")
+    manifest = load_dump_manifest(manifest_path)
+    selected = [item for item in manifest.files if kind == "all" or item.kind == kind]
+    external = data_dir / "external" / "open_library" / manifest.dump_date
+    missing_bytes = 0
+    for specification in selected:
+        final_path = external / specification.filename
+        partial_path = final_path.with_suffix(final_path.suffix + ".part")
+        if final_path.exists():
+            continue
+        partial_size = partial_path.stat().st_size if partial_path.exists() else 0
+        missing_bytes += max(specification.compressed_size - partial_size, 0)
+    free_bytes = shutil.disk_usage(data_dir if data_dir.exists() else Path(".")).free
+    safety_margin = 2 * 1024**3
+    if free_bytes < missing_bytes + safety_margin:
+        raise typer.BadParameter(
+            "insufficient free space for pinned downloads plus a 2 GiB safety margin"
+        )
+    results = {}
+    for specification in selected:
+        results[specification.kind] = download_dump_file(specification, external)
+    typer.echo(json.dumps(results, indent=2, sort_keys=True))
+
+
+@app.command("build-open-library-target-index")
+def build_open_library_target_index(
+    dataset_dir: Annotated[
+        Path,
+        typer.Option(
+            exists=True,
+            file_okay=False,
+            help="Canonical benchmark directory containing books.jsonl.",
+        ),
+    ],
+    manifest_path: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, help="Pinned external dump manifest.")
+    ] = DEFAULT_OPEN_LIBRARY_DUMP_MANIFEST,
+    data_dir: Annotated[Path, typer.Option(help="External data and index root.")] = Path("data"),
+) -> None:
+    """Build a small two-pass Edition index for canonical benchmark ISBNs."""
+    dataset = read_dataset(dataset_dir)
+    errors = validate_dataset(dataset)
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+    target_isbns = {
+        isbn for book in dataset.books for isbn in (book.isbn_10, book.isbn_13) if isbn is not None
+    }
+    manifest = load_dump_manifest(manifest_path)
+    edition_spec = next(item for item in manifest.files if item.kind == "editions")
+    edition_path = (
+        data_dir / "external" / "open_library" / manifest.dump_date / edition_spec.filename
+    )
+    # Downloads are checksum-verified before atomic publication. Avoid a redundant
+    # 12+ GB hash pass here; both streaming passes still validate the gzip CRC.
+    verification_errors = verify_dump_file(edition_path, edition_spec, checksum=False)
+    if verification_errors:
+        raise typer.BadParameter(f"editions dump is not ready: {', '.join(verification_errors)}")
+    output = data_dir / "indexes" / "open_library" / f"scale-targets-{manifest.dump_date}.sqlite"
+    started = perf_counter()
+    counts = build_targeted_open_library_index(
+        editions_dump=edition_path,
+        output_path=output,
+        manifest=manifest,
+        target_isbns=target_isbns,
+    )
+    counts["build_seconds"] = round(perf_counter() - started, 3)
+    counts["index_bytes"] = output.stat().st_size
+    typer.echo(f"Open Library targeted index: {output}")
+    typer.echo(json.dumps(counts, indent=2, sort_keys=True))
+
+
+@app.command("inspect-open-library-index")
+def inspect_open_library_index(
+    isbn: Annotated[str, typer.Option(help="Target ISBN-10 or ISBN-13.")],
+    index: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+) -> None:
+    """Inspect an exact/alternate TOC resolution without changing canonical data."""
+    resolution = resolve_toc(index, isbn)
+    typer.echo(
+        json.dumps(asdict(resolution) if resolution is not None else None, indent=2, sort_keys=True)
+    )
+
+
+@app.command("enrich-open-library-bulk")
+def enrich_open_library_bulk(
+    dataset_dir: Annotated[
+        Path,
+        typer.Option(
+            exists=True,
+            file_okay=False,
+            help="Canonical dataset to enrich only where TOC evidence is missing.",
+        ),
+    ],
+    index: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, help="Targeted Open Library SQLite index.")
+    ],
+    manifest_path: Annotated[
+        Path, typer.Option(exists=True, dir_okay=False, help="Pinned external dump manifest.")
+    ] = DEFAULT_OPEN_LIBRARY_DUMP_MANIFEST,
+) -> None:
+    """Merge exact/same-Work bulk TOCs into missing canonical books."""
+    original = read_dataset(dataset_dir)
+    errors = validate_dataset(original)
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+    manifest = load_dump_manifest(manifest_path)
+    retrieved_at = datetime.fromisoformat(manifest.dump_date).replace(tzinfo=UTC)
+    existing_toc_books = {entry.book_id for entry in original.toc}
+    result = original
+    additions = []
+    for book in original.books:
+        if book.book_id in existing_toc_books:
+            continue
+        isbn = book.isbn_13 or book.isbn_10
+        if isbn is None:
+            continue
+        resolution = resolve_toc(index, isbn)
+        if resolution is None:
+            continue
+        evidence = canonical_toc_evidence(
+            resolution,
+            target_book=book,
+            retrieved_at=retrieved_at,
+            dump_date=manifest.dump_date,
+        )
+        result = merge_datasets([result, evidence])
+        additions.append(
+            {
+                "book_id": book.book_id,
+                "target_isbn": isbn,
+                "tier": resolution.tier,
+                "source_edition": resolution.source_edition_key,
+                "source_isbns": list(resolution.source_isbns),
+                "toc_entries": len(evidence.toc),
+            }
+        )
+    errors = validate_dataset(result)
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+    write_dataset(result, dataset_dir)
+    total_books = len(original.books)
+    report_path = dataset_dir.parent / "reports" / "open-library-bulk-enrichment.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "dump_date": manifest.dump_date,
+                "index": str(index),
+                "before_toc_books": len(existing_toc_books),
+                "after_toc_books": len({entry.book_id for entry in result.toc}),
+                "additions": additions,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    typer.echo(f"Canonical output: {dataset_dir}")
+    typer.echo(
+        f"Open Library bulk enrichment: {len(existing_toc_books)}/{total_books} -> "
+        f"{len({entry.book_id for entry in result.toc})}/{total_books}"
+    )
+    typer.echo(f"Enrichment report: {report_path}")
+
+
+@app.command("report-toc-acquisition")
+def report_toc_acquisition(
+    baseline_dir: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    final_dir: Annotated[Path, typer.Option(exists=True, file_okay=False)],
+    index: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    loc_result: Annotated[Path, typer.Option(exists=True, dir_okay=False)],
+    experiment: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = Path(
+        "configs/experiments/scale-50-toc-acquisition.json"
+    ),
+    output: Annotated[Path, typer.Option(dir_okay=False)] = Path(
+        "docs/experiments/scale-50-toc-acquisition-2026-09-22.json"
+    ),
+) -> None:
+    """Write a unique-gain Scale-50 TOC acquisition report."""
+    try:
+        result = build_toc_acquisition_report(
+            baseline_dir=baseline_dir,
+            final_dir=final_dir,
+            index_path=index,
+            loc_result_path=loc_result,
+            experiment_path=experiment,
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    typer.echo(json.dumps(result["coverage"], indent=2, sort_keys=True))
+    typer.echo(f"TOC acquisition report: {output}")
 
 
 if __name__ == "__main__":

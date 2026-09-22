@@ -5,6 +5,7 @@
   "book_id": "isbn13:9780130319999",
   "isbn_13": "9780130319999",
   "title": "Operating Systems: Internals and Design Principles",
+  "authors": ["William Stallings"],
   "edition": 4,
   "url": "https://cincinnatistate.ecampus.com/operating-systems-internals-design/bk/9780130319999",
   "toc_format": "indented_table",

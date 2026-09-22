@@ -5,6 +5,7 @@
   "book_id": "isbn13:9780618335671",
   "isbn_13": "9780618335671",
   "title": "Elementary Linear Algebra",
+  "authors": ["Ron Larson"],
   "edition": 5,
   "url": "https://cincinnatistate.ecampus.com/elementary-linear-algebra-5th-larson-ron/bk/9780618335671",
   "toc_format": "flat_table",

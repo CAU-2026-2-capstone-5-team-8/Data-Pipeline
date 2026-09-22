@@ -1,0 +1,29 @@
+{
+  "slug": "ecampus-hoffman-linear-algebra2",
+  "provider": "ecampus",
+  "topic": "linear-algebra",
+  "book_id": "isbn13:9780135367971",
+  "isbn_13": "9780135367971",
+  "title": "Linear Algebra",
+  "authors": ["Kenneth Hoffman", "Ray Kunze"],
+  "edition": 2,
+  "url": "https://umass.ecampus.com/linear-algebra-2nd-hoffman-kenneth-m-kunze/bk/9780135367971",
+  "toc_format": "indented_table",
+  "expected_toc_count": 78,
+  "expected_root_titles": [
+    "Linear Equations",
+    "Vector Spaces",
+    "Linear Transformations",
+    "Polynomials",
+    "Determinants",
+    "Elementary Canonical Forms",
+    "The Rational and Jordan Forms",
+    "Inner Product Spaces",
+    "Operators on Inner Product Spaces",
+    "Bilinear Forms",
+    "Appendix",
+    "Bibliography",
+    "Index"
+  ],
+  "expected_chapter_labels": []
+}

@@ -1,0 +1,20 @@
+{
+  "slug": "ecampus-chow-distributed-os1",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9780201498387",
+  "isbn_13": "9780201498387",
+  "title": "Distributed Operating Systems and Algorithm Analysis",
+  "authors": ["Randy Chow", "Theodore Johnson"],
+  "edition": 1,
+  "url": "https://www.ecampus.com/distributed-operating-systems-algorithm/bk/9780201498387",
+  "toc_format": "indented_table",
+  "expected_toc_count": 260,
+  "expected_root_titles": [
+    "PART I  Distributed Operating Systems",
+    "PART II  Distributed Algorithms",
+    "Bibliography",
+    "Index"
+  ],
+  "expected_chapter_labels": []
+}
