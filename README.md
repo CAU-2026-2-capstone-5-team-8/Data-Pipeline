@@ -903,3 +903,51 @@ with the 64-entry catalog TOC. Coverage remained 14/50, while canonical TOC entr
 second run made no network attempts and left raw-file counts and canonical file hashes unchanged.
 Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six selected
 books still lack TOCs.
+
+## Springer book landing pages
+
+Springer publishes a chapter-level table of contents on each book landing page, and
+`link.springer.com/robots.txt` allows `/book*`. `collect-springer-book` fetches one reviewed
+landing page and merges its chapter sequence as canonical TOC evidence.
+
+```bash
+uv run data-pipeline collect-springer-book \
+  --source springer-axler-linear-algebra-done-right3 \
+  --data-dir <dataset root>
+```
+
+A source is declared in `configs/sources/springer-book/<slug>.json`. Because Springer exposes
+the **eBook** ISBN rather than the print ISBN a canonical record usually carries, and keeps one
+landing page per edition, each spec states both identifiers plus `edition_relation`:
+
+| `edition_relation` | Recorded tier | `validation_status` |
+| --- | --- | --- |
+| `exact` | `exact_edition_toc` | `strong` |
+| `same_work` | `same_work_alternate_edition_toc` | `acceptable` |
+
+The first reviewed source is Axler's *Linear Algebra Done Right*. The canonical record is the
+print second edition (9780387982588) while Springer hosts the third, so it is recorded as
+`same_work_alternate_edition_toc`, never as that edition's own contents. Before a page is
+accepted its eBook ISBN, normalized title, declared edition label, and complete chapter
+sequence must all match the reviewed values. Only chapter titles are imported; chapter text
+stays behind the publisher.
+
+A live run on 2026-09-23 returned the reviewed 12-entry sequence (front matter, ten chapters,
+back matter). Springer renders a flat chapter list, so the pipeline stores level 1 entries and
+does not invent a hierarchy.
+
+### Springer Nature API: measured entitlement
+
+The page collector needs no API key. A Springer Nature API key was also tested on 2026-09-23:
+
+| Endpoint | Result |
+| --- | --- |
+| `meta/v2/json` | HTTP 401, "API key is invalid or missing" |
+| `metadata/json` | HTTP 401 |
+| `openaccess/json` | HTTP 200, 38,865 records |
+
+The key is valid but entitled only to the Open Access corpus. Querying that corpus for
+`"linear algebra" type:Book` and `"operating systems" type:Book` returned conference
+proceedings and research chapters, not teaching textbooks, so it does not supply the book
+catalog. Reaching Springer textbook metadata by API would need the Metadata API entitlement,
+which this key does not carry.
