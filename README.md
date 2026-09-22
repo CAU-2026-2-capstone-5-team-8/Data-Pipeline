@@ -108,6 +108,28 @@ bulk same-Work resolutions); reviewed public-web evidence raises the result to 2
 inputs, indexes, and fetched HTML remain ignored; the source audit, pinned manifest, experiment
 policy, machine-readable report, parsers, and tiny fixtures are committed.
 
+## ML evidence export
+
+TOC coverage is not required to reach 50/50 before downstream concept experiments can begin.
+`book-evidence-v1` exports one validated record for every canonical book while preserving whether
+the evidence is an exact structured TOC, reviewed public-web exact TOC, provider-native same-Work
+alternate TOC, description, subject/topic, or minimal title metadata. It contains no ML confidence
+or recommendation weight. See
+[`docs/ml-evidence-contract.md`](docs/ml-evidence-contract.md) for the contract and validation
+rules.
+
+```bash
+uv run data-pipeline export-ml-evidence \
+  --dataset-dir data/experiments/scale-50-bulk-web-20260922/processed \
+  --output data/experiments/scale-50-bulk-web-20260922/ml-evidence-v1/book-evidence.jsonl \
+  --report data/experiments/scale-50-bulk-web-20260922/ml-evidence-v1/summary.json
+```
+
+The measured Scale-50 export has 50 records: 20 books with TOC evidence, 30 metadata-fallback-only
+books, and zero books without evidence. The generated artifact is deterministic local data and is
+ignored by Git. Rebuilding it requires the canonical four-file input, not the 12.59 GB Open Library
+raw dump.
+
 ## Current vertical slice
 
 The implemented slices query public book APIs for a small topic search, preserve the full raw

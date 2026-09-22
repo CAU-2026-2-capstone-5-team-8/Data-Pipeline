@@ -28,6 +28,13 @@ from data_pipeline.manifest import (
     select_manifest_raw_paths,
     validate_manifest_books,
 )
+from data_pipeline.ml_evidence import (
+    export_ml_evidence,
+    summarize_ml_evidence,
+    validate_ml_evidence,
+    write_ml_evidence,
+    write_ml_evidence_summary,
+)
 from data_pipeline.models import CanonicalDataset
 from data_pipeline.normalizers import (
     TOPICS,
@@ -1452,6 +1459,47 @@ def report_toc_acquisition(
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     typer.echo(json.dumps(result["coverage"], indent=2, sort_keys=True))
     typer.echo(f"TOC acquisition report: {output}")
+
+
+@app.command("export-ml-evidence")
+def export_ml_evidence_command(
+    dataset_dir: Annotated[
+        Path,
+        typer.Option(
+            exists=True,
+            file_okay=False,
+            help="Validated canonical dataset directory.",
+        ),
+    ] = Path("data/processed"),
+    output: Annotated[
+        Path,
+        typer.Option(dir_okay=False, help="One-book-per-line ML evidence artifact."),
+    ] = Path("data/exports/ml-evidence-v1/book-evidence.jsonl"),
+    report: Annotated[
+        Path | None,
+        typer.Option(dir_okay=False, help="Coverage and evidence-type summary JSON."),
+    ] = None,
+) -> None:
+    """Export deterministic evidence without assigning ML confidence or weights."""
+    canonical = read_dataset(dataset_dir)
+    canonical_errors = validate_dataset(canonical)
+    if canonical_errors:
+        raise typer.BadParameter("; ".join(canonical_errors))
+
+    records = export_ml_evidence(canonical)
+    evidence_errors = validate_ml_evidence(records, canonical)
+    summary = summarize_ml_evidence(records, evidence_errors)
+    if evidence_errors:
+        raise typer.BadParameter("; ".join(evidence_errors))
+
+    report_path = report or output.with_name("summary.json")
+    if output.resolve() == report_path.resolve():
+        raise typer.BadParameter("--output and --report must be different paths")
+    write_ml_evidence(records, output)
+    write_ml_evidence_summary(summary, report_path)
+    typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+    typer.echo(f"ML evidence artifact: {output}")
+    typer.echo(f"ML evidence summary: {report_path}")
 
 
 if __name__ == "__main__":

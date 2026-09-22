@@ -259,6 +259,9 @@ def test_open_library_normalizes_descriptions_and_hierarchical_toc() -> None:
     assert len(dataset.sources) == 3
     assert dataset.sources[1].url == "https://openlibrary.org/books/OL1M.json"
     assert dataset.sources[1].content_hash == sha256_json(payload["edition_details"]["/books/OL1M"])
+    assert dataset.sources[1].evidence is not None
+    assert dataset.sources[1].evidence.tier == "exact_edition_toc"
+    assert dataset.sources[1].evidence.same_edition is True
     assert dataset.sources[2].url == "https://openlibrary.org/works/OL1W.json"
     assert dataset.documents[1].source_id == dataset.sources[2].source_id
     assert [entry.level for entry in dataset.toc] == [1, 2, 1]
@@ -365,6 +368,9 @@ def test_wiley_page_normalizes_exact_edition_toc() -> None:
     assert dataset.sources[0].content_hash == sha256_text(home_html)
     assert dataset.sources[1].url == source.toc_url
     assert dataset.sources[1].content_hash == sha256_text(toc_html)
+    assert dataset.sources[1].evidence is not None
+    assert dataset.sources[1].evidence.tier == "validated_public_web_toc"
+    assert dataset.sources[1].evidence.same_edition is True
     assert all(entry.source_id == dataset.sources[1].source_id for entry in dataset.toc)
 
 
