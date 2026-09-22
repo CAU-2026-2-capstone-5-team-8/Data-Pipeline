@@ -59,6 +59,13 @@ class Book(CanonicalModel):
             raise ValueError("title must not be blank")
         return value
 
+    @field_validator("topics")
+    @classmethod
+    def topics_must_not_contain_blanks(cls, value: list[str]) -> list[str]:
+        if any(not topic.strip() for topic in value):
+            raise ValueError("topics must not contain blank values")
+        return value
+
     @field_validator("isbn_10")
     @classmethod
     def isbn_10_must_be_valid(cls, value: str | None) -> str | None:

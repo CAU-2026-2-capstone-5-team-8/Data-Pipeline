@@ -201,6 +201,7 @@ def test_summary_counts_unique_books_and_zero_empty_records() -> None:
     assert summary["books_with_exact_toc"] == 2
     assert summary["books_with_same_work_alternate_toc"] == 1
     assert summary["books_with_public_web_toc"] == 1
+    assert summary["books_with_unspecified_toc"] == 0
     assert summary["metadata_fallback_only"] == 1
     assert summary["books_with_zero_evidence"] == 0
 
@@ -276,6 +277,37 @@ def test_validation_rejects_empty_artifact() -> None:
     assert validate_ml_evidence([], empty) == ["ML evidence artifact has zero books"]
 
 
+def test_source_type_alone_does_not_claim_exact_edition() -> None:
+    dataset = _dataset()
+    public_source = next(
+        source for source in dataset.sources if source.source_type == "publisher_page"
+    )
+    dataset.sources[dataset.sources.index(public_source)] = public_source.model_copy(
+        update={"evidence": None}
+    )
+
+    record = next(
+        record
+        for record in export_ml_evidence(dataset)
+        if record.book.title == "Public Web Textbook"
+    )
+    toc = [item for item in record.evidence if item.evidence_type.startswith("toc_")]
+
+    assert {item.evidence_type for item in toc} == {"toc_unspecified"}
+    assert {item.edition_relation for item in toc} == {"unspecified"}
+
+
+def test_book_rejects_blank_topic() -> None:
+    with pytest.raises(ValueError, match="topics must not contain blank"):
+        Book(
+            book_id=stable_id("book", "blank-topic"),
+            title="Invalid Topic Book",
+            authors=[],
+            language="en",
+            topics=[""],
+        )
+
+
 @pytest.mark.parametrize(
     "supplement_title",
     [
@@ -328,3 +360,24 @@ def test_cli_exports_valid_byte_stable_artifact(tmp_path) -> None:
     assert output.read_bytes() == first_bytes
     assert len(read_ml_evidence(output)) == 4
     assert '"books_with_zero_evidence": 0' in report.read_text(encoding="utf-8")
+
+
+def test_cli_rejects_identical_artifact_and_report_paths(tmp_path) -> None:
+    dataset_dir = tmp_path / "canonical"
+    output = tmp_path / "summary.json"
+    write_dataset(_dataset(), dataset_dir)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "export-ml-evidence",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must be different paths" in result.output
+    assert not output.exists()

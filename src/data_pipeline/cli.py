@@ -1493,6 +1493,8 @@ def export_ml_evidence_command(
         raise typer.BadParameter("; ".join(evidence_errors))
 
     report_path = report or output.with_name("summary.json")
+    if output.resolve() == report_path.resolve():
+        raise typer.BadParameter("--output and --report must be different paths")
     write_ml_evidence(records, output)
     write_ml_evidence_summary(summary, report_path)
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))

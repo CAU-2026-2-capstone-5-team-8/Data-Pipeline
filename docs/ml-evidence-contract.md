@@ -55,6 +55,7 @@ The evidence categories are deterministic provenance labels, not scores:
 | `toc_exact` | Exact-edition TOC from a structured source |
 | `toc_public_web_exact` | Reviewed exact-edition TOC from a public webpage |
 | `toc_same_work` | Provider-native same-Work TOC from another edition |
+| `toc_unspecified` | Legacy TOC without explicit edition provenance; never promoted to exact |
 | `description` | Collected description or publisher summary |
 | `document` | Other collected canonical document evidence |
 | `subject` | Canonical subject/topic metadata |
@@ -106,6 +107,7 @@ The 2026-09-22 export produced 50 records and passed validation with no errors:
 | Books with exact-edition TOC | 19 |
 | Books with reviewed public-web TOC | 16 |
 | Books with same-Work alternate TOC | 1 |
+| Books with unspecified-edition TOC | 0 |
 | Metadata-fallback-only books | 30 |
 | Books with zero evidence | 0 |
 

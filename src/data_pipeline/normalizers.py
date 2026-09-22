@@ -774,6 +774,26 @@ def _normalize_open_library_record(
         documents.append(document)
         description_hashes.add(document.content_hash)
     if edition_description is not None or toc:
+        toc_provenance = (
+            EvidenceProvenance(
+                evidence_type="toc",
+                tier="exact_edition_toc",
+                target_isbn=isbn_13 or isbn_10,
+                target_title=book.title,
+                target_authors=book.authors,
+                source_edition_id=external_id,
+                source_isbns=[isbn for isbn in (isbn_10, isbn_13) if isbn is not None],
+                source_title=book.title,
+                source_author_ids=_string_list(record.get("author_key")),
+                same_edition=True,
+                source_document_type="open_library_api",
+                discovery_method="open_library_edition_detail",
+                match_basis=["selected_edition_record", "exact_isbn"],
+                validation_status="strong",
+            )
+            if toc
+            else None
+        )
         sources.append(
             Source(
                 source_id=edition_source_id,
@@ -786,6 +806,7 @@ def _normalize_open_library_record(
                 license=None,
                 rights_note=None,
                 content_hash=sha256_json(edition_detail),
+                evidence=toc_provenance,
             )
         )
 
@@ -1063,6 +1084,21 @@ def normalize_publisher_page_response(
         license=None,
         rights_note=rights_note,
         content_hash=toc_hash,
+        evidence=EvidenceProvenance(
+            evidence_type="toc",
+            tier="validated_public_web_toc",
+            target_isbn=source_spec.isbn_10,
+            target_title=source_spec.title,
+            target_authors=[],
+            source_edition_id=source_spec.isbn_10,
+            source_isbns=[source_spec.isbn_10],
+            source_title=source_spec.title,
+            same_edition=True,
+            source_document_type="public_html",
+            discovery_method="reviewed_publisher_allowlist",
+            match_basis=["exact_isbn", "normalized_title", "edition", "reviewed_toc_shape"],
+            validation_status="strong",
+        ),
     )
     return CanonicalDataset(books=[], documents=[], toc=toc, sources=[home_source, toc_source])
 

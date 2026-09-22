@@ -25,11 +25,17 @@ from data_pipeline.models import (
 )
 
 CONTRACT_VERSION = "book-evidence-v1"
-TocEvidenceType = Literal["toc_exact", "toc_same_work", "toc_public_web_exact"]
+TocEvidenceType = Literal[
+    "toc_exact",
+    "toc_same_work",
+    "toc_public_web_exact",
+    "toc_unspecified",
+]
 MlEvidenceType = Literal[
     "toc_exact",
     "toc_same_work",
     "toc_public_web_exact",
+    "toc_unspecified",
     "description",
     "document",
     "subject",
@@ -183,6 +189,7 @@ def _metadata_source(sources: list[Source]) -> Source:
     return min(
         sources,
         key=lambda source: (
+            source.evidence is not None and source.evidence.evidence_type != "metadata",
             source.source_type != "metadata_api",
             source.provider,
             source.source_id,
@@ -200,10 +207,11 @@ def _toc_evidence_type(source: Source) -> TocEvidenceType:
     evidence = source.evidence
     if evidence is not None and evidence.tier == "same_work_alternate_edition_toc":
         return "toc_same_work"
+    if evidence is None or evidence.same_edition is not True:
+        return "toc_unspecified"
     if (
-        source.source_type in {"publisher_page", "author_page"}
-        or (evidence is not None and evidence.source_document_type == "public_html")
-        or (evidence is not None and evidence.tier == "validated_public_web_toc")
+        evidence.source_document_type == "public_html"
+        or evidence.tier == "validated_public_web_toc"
     ):
         return "toc_public_web_exact"
     return "toc_exact"
@@ -312,12 +320,19 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
         for entry, toc_path in _toc_entries_in_order(toc_by_book.get(book.book_id, [])):
             source = sources_by_id[entry.source_id]
             toc_type = _toc_evidence_type(source)
+            edition_relation: EditionRelation = (
+                "same_work"
+                if toc_type == "toc_same_work"
+                else "unspecified"
+                if toc_type == "toc_unspecified"
+                else "exact"
+            )
             evidence.append(
                 _evidence_item(
                     identity=f"{book.book_id}:toc:{entry.toc_entry_id}:{toc_type}",
                     evidence_type=toc_type,
                     text=entry.title,
-                    edition_relation="same_work" if toc_type == "toc_same_work" else "exact",
+                    edition_relation=edition_relation,
                     toc_entry_id=entry.toc_entry_id,
                     parent_entry_id=entry.parent_entry_id,
                     level=entry.level,
@@ -422,6 +437,8 @@ def validate_ml_evidence(records: list[MlBookEvidence], canonical: CanonicalData
                 item.edition_relation != "exact"
             ):
                 errors.append(f"exact TOC is not marked exact: {item.evidence_id}")
+            if item.evidence_type == "toc_unspecified" and item.edition_relation != "unspecified":
+                errors.append(f"unverified TOC is not marked unspecified: {item.evidence_id}")
             if item.evidence_type in {"description", "document"} and item.toc_entry_id:
                 errors.append(f"document mislabeled with TOC identity: {item.evidence_id}")
     for evidence_id, count in Counter(evidence_ids).items():
@@ -447,11 +464,12 @@ def summarize_ml_evidence(
         item.evidence_type for record in records for item in record.evidence
     )
     referenced_sources: dict[str, str] = {}
-    toc_types = {"toc_exact", "toc_same_work", "toc_public_web_exact"}
+    toc_types = {"toc_exact", "toc_same_work", "toc_public_web_exact", "toc_unspecified"}
     books_with_toc = 0
     books_with_exact = 0
     books_with_same_work = 0
     books_with_public_web = 0
+    books_with_unspecified = 0
     metadata_only = 0
     zero = 0
     for record in records:
@@ -461,6 +479,7 @@ def summarize_ml_evidence(
         books_with_exact += bool(types & {"toc_exact", "toc_public_web_exact"})
         books_with_same_work += "toc_same_work" in types
         books_with_public_web += "toc_public_web_exact" in types
+        books_with_unspecified += "toc_unspecified" in types
         metadata_only += not has_toc
         zero += not record.evidence
         for item in record.evidence:
@@ -473,6 +492,7 @@ def summarize_ml_evidence(
         "books_with_exact_toc": books_with_exact,
         "books_with_same_work_alternate_toc": books_with_same_work,
         "books_with_public_web_toc": books_with_public_web,
+        "books_with_unspecified_toc": books_with_unspecified,
         "metadata_fallback_only": metadata_only,
         "evidence_type_rows": dict(sorted(evidence_type_rows.items())),
         "provider_source_counts": dict(sorted(Counter(referenced_sources.values()).items())),
