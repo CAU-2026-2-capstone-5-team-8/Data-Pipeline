@@ -903,3 +903,60 @@ with the 64-entry catalog TOC. Coverage remained 14/50, while canonical TOC entr
 second run made no network attempts and left raw-file counts and canonical file hashes unchanged.
 Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six selected
 books still lack TOCs.
+
+## Selection audit
+
+TOC acquisition stalls on books no catalog describes, and a book from another field can
+supply confident but wrong concepts downstream. `audit-selection` reports, per selected
+book, the machine-checkable facts behind both problems. It never removes a book: dropping a
+title is a human decision, so the command writes a report plus a blank review sheet.
+
+```bash
+uv run data-pipeline audit-selection \
+  --data-dir <dataset root> \
+  --report selection-audit.json \
+  --review selection-review.csv
+```
+
+Findings are independent observations; the status names the most serious one.
+
+| Status | Meaning |
+| --- | --- |
+| `wrong_subject` | The topic's conflicting-subject pattern matched the title, subtitle, topics, or collected description |
+| `unresolvable` | No ISBN-13 and no ISBN-10, so no provider can resolve an exact edition |
+| `study_aid` | A reviewed title marker for a solutions manual, outline, or problem book |
+| `no_usable_evidence` | No TOC, no description, and no prose: title metadata only |
+| `toc_missing` | Some evidence exists but no TOC |
+| `usable` | A TOC is present |
+
+`wrong_subject` deliberately outranks having a TOC. A book about another field with a full
+TOC is worse than a book with none, because its chapter titles reach concept matching.
+`no_usable_evidence` and `toc_missing` are kept apart so a current edition awaiting
+collection is not confused with a record that has nothing to collect from.
+
+The review sheet leaves `human_decision`, `replacement_isbn_13`, and `notes` blank. The audit
+proposes nothing about replacement, because whether a title-only record should be replaced or
+simply collected from is a judgment about the benchmark, not a fact about the data.
+
+### Measured result: 25-book Operating Systems set (2026-09-23)
+
+| Status | Books |
+| --- | --- |
+| `usable` | 7 |
+| `toc_missing` | 3 |
+| `study_aid` | 1 |
+| `no_usable_evidence` | 13 |
+| `wrong_subject` | 1 |
+
+The `wrong_subject` book is *The Operating System* (9781849353878, AK Press, 2021), a work of
+anarchist political theory. It was selected because its title matches the topic phrase, and it
+had already contributed fourteen TOC entries, including *Toward an Anarchist Theory of the
+State* and *The State and COVID-19*. Its collected description matches the configured
+`anarchism` conflicting subject, which is how the audit catches it.
+
+Two `no_usable_evidence` books, *Power system operation* and *Computer aided power system
+operation and analysis*, also carry the `title_off_topic` finding.
+
+Every one of the 25 books carries `no_prose`. No book in this set has a preface, introduction,
+preview, or sample chapter, so the text difficulty half of a book profile cannot be computed
+for any of them.
