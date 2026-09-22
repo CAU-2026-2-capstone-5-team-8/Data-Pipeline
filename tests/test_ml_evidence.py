@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from data_pipeline.cli import app
 from data_pipeline.identifiers import sha256_text, stable_id
 from data_pipeline.ml_evidence import (
+    MlEvidenceItem,
     evidence_provenance_hash,
     export_ml_evidence,
     read_ml_evidence,
@@ -237,6 +238,42 @@ def test_validation_rejects_cross_book_source_and_duplicate_evidence() -> None:
     assert any("owned by" in error for error in errors)
     assert any("duplicate ML evidence ID" in error for error in errors)
     assert any("deterministic canonical projection" in error for error in errors)
+
+
+def test_rejects_provenance_type_that_conflicts_with_category() -> None:
+    records = export_ml_evidence(_dataset())
+    toc = next(
+        item
+        for record in records
+        for item in record.evidence
+        if item.evidence_type == "toc_public_web_exact"
+    )
+    payload = toc.model_dump(mode="json")
+    payload["source_evidence"]["evidence_type"] = "metadata"
+
+    with pytest.raises(ValueError, match="type does not match evidence category"):
+        MlEvidenceItem.model_validate(payload)
+
+
+@pytest.mark.parametrize("foreign_field", ["toc_path", "document_content_hash"])
+def test_rejects_fields_from_another_evidence_category(foreign_field: str) -> None:
+    records = export_ml_evidence(_dataset())
+    subject = next(
+        item for record in records for item in record.evidence if item.evidence_type == "subject"
+    )
+    payload = subject.model_dump(mode="json")
+    payload[foreign_field] = (
+        ["Not a subject path"] if foreign_field == "toc_path" else "sha256:" + "f" * 64
+    )
+
+    with pytest.raises(ValueError, match="metadata evidence cannot carry"):
+        MlEvidenceItem.model_validate(payload)
+
+
+def test_validation_rejects_empty_artifact() -> None:
+    empty = CanonicalDataset(books=[], documents=[], toc=[], sources=[])
+
+    assert validate_ml_evidence([], empty) == ["ML evidence artifact has zero books"]
 
 
 @pytest.mark.parametrize(

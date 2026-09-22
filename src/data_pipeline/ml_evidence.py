@@ -73,12 +73,53 @@ class MlEvidenceItem(CanonicalModel):
             raise ValueError("evidence text must not be blank")
         return value
 
+    @field_validator("source_retrieved_at")
+    @classmethod
+    def retrieval_time_must_include_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("source_retrieved_at must include a timezone")
+        return value
+
     @model_validator(mode="after")
     def type_specific_fields_must_be_consistent(self) -> "MlEvidenceItem":
+        if self.source_evidence is not None:
+            if self.source_evidence_tier != self.source_evidence.tier:
+                raise ValueError("source evidence tier does not match provenance")
+            expected_provenance_type = (
+                "toc"
+                if self.evidence_type.startswith("toc_")
+                else "metadata"
+                if self.evidence_type in {"subject", "metadata_minimal"}
+                else None
+            )
+            if (
+                expected_provenance_type is not None
+                and self.source_evidence.evidence_type != expected_provenance_type
+            ):
+                raise ValueError("source evidence type does not match evidence category")
+        elif self.source_evidence_tier is not None:
+            raise ValueError("source evidence tier requires source evidence provenance")
+
+        toc_fields = (
+            self.toc_entry_id,
+            self.parent_entry_id,
+            self.level,
+            self.order_index,
+            self.label,
+            self.toc_path,
+        )
+        document_fields = (
+            self.document_id,
+            self.document_type,
+            self.document_content_hash,
+        )
         if self.evidence_type.startswith("toc_"):
             if self.toc_entry_id is None or self.level is None or not self.toc_path:
                 raise ValueError("TOC evidence requires entry identity, level, and path")
-            if self.document_id is not None or self.metadata_field is not None:
+            if (
+                any(value is not None for value in document_fields)
+                or self.metadata_field is not None
+            ):
                 raise ValueError("TOC evidence cannot carry document or metadata identity")
         elif self.evidence_type in {"description", "document"}:
             if (
@@ -87,12 +128,12 @@ class MlEvidenceItem(CanonicalModel):
                 or self.document_content_hash is None
             ):
                 raise ValueError("document evidence requires document identity and type")
-            if self.toc_entry_id is not None or self.metadata_field is not None:
+            if any(value is not None for value in toc_fields) or self.metadata_field is not None:
                 raise ValueError("document evidence cannot carry TOC or metadata identity")
         else:
             if self.metadata_field is None:
                 raise ValueError("metadata evidence requires a metadata field")
-            if self.toc_entry_id is not None or self.document_id is not None:
+            if any(value is not None for value in (*toc_fields, *document_fields)):
                 raise ValueError("metadata evidence cannot carry TOC or document identity")
             if self.evidence_type == "subject" and self.metadata_field != "topics":
                 raise ValueError("subject evidence must identify the topics field")
@@ -300,6 +341,8 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
 def validate_ml_evidence(records: list[MlBookEvidence], canonical: CanonicalDataset) -> list[str]:
     """Validate evidence identity, provenance, source ownership, and tier semantics."""
     errors: list[str] = []
+    if not records:
+        errors.append("ML evidence artifact has zero books")
     canonical_books = {book.book_id: book for book in canonical.books}
     sources = {source.source_id: source for source in canonical.sources}
     documents = {document.document_id: document for document in canonical.documents}
