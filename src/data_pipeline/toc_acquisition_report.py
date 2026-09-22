@@ -91,6 +91,7 @@ def build_toc_acquisition_report(
             {key: candidate[key] for key in ("url", "status", "reason")}
         )
 
+    bulk_resolution_by_book = {}
     alternate_by_book = {}
     inspections = {}
     for book in baseline.books:
@@ -100,8 +101,10 @@ def build_toc_acquisition_report(
         inspection = inspect_toc_resolution(index_path, isbn)
         inspections[book.book_id] = inspection
         resolution = resolve_toc(index_path, isbn)
-        if resolution is not None and resolution.tier == "same_work_alternate_edition_toc":
-            alternate_by_book[book.book_id] = resolution
+        if resolution is not None:
+            bulk_resolution_by_book[book.book_id] = resolution
+            if resolution.tier == "same_work_alternate_edition_toc":
+                alternate_by_book[book.book_id] = resolution
 
     alternate_gain = set(alternate_by_book) - baseline_exact
     structured_resolved = baseline_exact | alternate_gain
@@ -112,6 +115,7 @@ def build_toc_acquisition_report(
     }
     loc_gain = loc_505_usable - structured_resolved
     structured_resolved |= loc_gain
+    structured_api_only = baseline_native_toc | set(bulk_resolution_by_book) | loc_505_usable
     public_web_gain = set(new_web_by_book) - structured_resolved
     usable_toc = structured_resolved | public_web_gain
     loc_856_usable_books = {
@@ -228,7 +232,7 @@ def build_toc_acquisition_report(
             "loc_856_candidate_count": loc_856_candidates,
             "loc_856_usable_count": len(loc_856_usable_books),
             "other_structured_unique_gain": 0,
-            "structured_api_only_toc": len(structured_resolved),
+            "structured_api_only_toc": len(structured_api_only),
             "public_web_candidate_count": sum(map(len, candidates_by_book.values())),
             "public_web_unique_usable_gain": len(public_web_gain),
             "final_usable_toc": len(usable_toc),

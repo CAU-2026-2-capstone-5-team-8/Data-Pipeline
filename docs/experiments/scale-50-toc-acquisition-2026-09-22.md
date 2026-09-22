@@ -9,9 +9,14 @@ they refer to the same book.
 | Open Library same-Work alternate | +1 |
 | LOC MARC 505 | +0 |
 | Other structured sources | +0 |
-| Structured/API result | 15/50 |
+| Coverage after mixed baseline + structured additions | 15/50 |
 | Reviewed public-web enrichment | +5 |
 | **Final usable TOC** | **20/50** |
+
+The existing 14-book baseline is deliberately retained for the before/after benchmark, but it
+already contains ten reviewed public/publisher pages. For the independent architecture comparison,
+the structured/API-only path resolves 6/50 (four original canonical TOCs plus two usable bulk
+same-Work resolutions), while structured sources plus reviewed public-web evidence resolve 20/50.
 
 All remaining 30 books have at least canonical title/author bibliographic metadata, so metadata
 fallback makes 50/50 analyzable for coarse concept evidence. This does not turn inferred metadata

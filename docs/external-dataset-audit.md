@@ -122,9 +122,12 @@ Of 92 target ISBN-10/ISBN-13 identifiers, 66 appeared in the dump.
 
 The bulk data found three usable exact-edition TOCs, all already present in the 14-book reviewed
 baseline. Provider-native ISBN -> Edition -> Work traversal added one unique alternate-edition TOC,
-raising structured coverage to 15/50. The earlier title-search API proxy had suggested three unique
-gains; two were correctly rejected once the dump showed no exact target-ISBN Edition from which to
-establish a provider-native Work relation.
+raising coverage after the mixed reviewed baseline to 15/50. That baseline already includes ten
+reviewed public/publisher pages, so it is not an API-only measure. Independently, the original four
+canonical structured TOCs plus both usable bulk alternate resolutions yield 6/50 for the
+structured/API-only path. The earlier title-search API proxy had suggested three unique gains; two
+were correctly rejected once the dump showed no exact target-ISBN Edition from which to establish
+a provider-native Work relation.
 
 LOC was evaluated through the current SRU catalog rather than its 2016 bulk snapshot. It returned
 32 exact records, one usable MARC 505 already covered by the baseline, and six MARC 856 candidates.

@@ -100,10 +100,13 @@ uv run data-pipeline report-toc-acquisition \
 ```
 
 The measured result is exact-edition baseline 14/50, Open Library alternate +1, LOC +0,
-and five new exact-edition public-web TOCs, for 20/50 usable TOCs. The remaining 30 books retain
-metadata fallback rather than being mislabeled as TOC-derived evidence. Large raw inputs,
-indexes, and fetched HTML remain ignored; the source audit, pinned manifest, experiment policy,
-machine-readable report, parsers, and tiny fixtures are committed.
+and five new exact-edition public-web TOCs, for 20/50 usable TOCs. Because the 14-book baseline
+already includes ten previously reviewed public/publisher pages, it is not an API-only number.
+The independent structured/API-only view is 6/50 (four original canonical TOCs plus two usable
+bulk same-Work resolutions); reviewed public-web evidence raises the result to 20/50. The remaining
+30 books retain metadata fallback rather than being mislabeled as TOC-derived evidence. Large raw
+inputs, indexes, and fetched HTML remain ignored; the source audit, pinned manifest, experiment
+policy, machine-readable report, parsers, and tiny fixtures are committed.
 
 ## Current vertical slice
 

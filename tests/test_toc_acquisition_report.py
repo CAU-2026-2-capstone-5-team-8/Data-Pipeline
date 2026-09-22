@@ -132,7 +132,7 @@ def test_report_counts_unique_web_gain_and_metadata_separately(tmp_path, monkeyp
         "loc_856_candidate_count": 0,
         "loc_856_usable_count": 0,
         "other_structured_unique_gain": 0,
-        "structured_api_only_toc": 1,
+        "structured_api_only_toc": 0,
         "public_web_candidate_count": 1,
         "public_web_unique_usable_gain": 1,
         "final_usable_toc": 2,
