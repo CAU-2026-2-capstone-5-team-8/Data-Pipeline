@@ -5,6 +5,7 @@
   "book_id": "isbn13:9780070575721",
   "isbn_13": "9780070575721",
   "title": "Advanced Concepts In Operating Systems",
+  "authors": ["Mukesh Singhal", "Niranjan G. Shivaratri"],
   "edition": 1,
   "url": "https://cincinnatistate.ecampus.com/advanced-concepts-operating-systems-1st/bk/9780070575721",
   "toc_format": "heading_sequence",

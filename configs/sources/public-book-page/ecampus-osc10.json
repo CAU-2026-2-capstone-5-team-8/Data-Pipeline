@@ -5,6 +5,7 @@
   "book_id": "isbn13:9781119800361",
   "isbn_13": "9781119800361",
   "title": "Operating System Concepts",
+  "authors": ["Abraham Silberschatz", "Peter Baer Galvin", "Greg Gagne"],
   "edition": 10,
   "url": "https://umass.ecampus.com/operating-system-concepts-10th/bk/9781119800361",
   "toc_format": "paragraph_sequence",

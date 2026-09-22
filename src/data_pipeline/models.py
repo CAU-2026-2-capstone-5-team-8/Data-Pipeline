@@ -26,6 +26,13 @@ SourceType = Literal[
     "sample_page",
     "other",
 ]
+EvidenceTier = Literal[
+    "exact_edition_toc",
+    "same_work_alternate_edition_toc",
+    "validated_public_structured_toc",
+    "validated_public_web_toc",
+    "metadata_fallback",
+]
 
 
 class CanonicalModel(BaseModel):
@@ -107,6 +114,25 @@ class TocEntry(CanonicalModel):
     source_id: str = Field(min_length=1)
 
 
+class EvidenceProvenance(CanonicalModel):
+    """Explain how evidence for a target book relates to its source edition."""
+
+    evidence_type: Literal["toc", "metadata"]
+    tier: EvidenceTier
+    target_isbn: str | None = None
+    target_title: str = Field(min_length=1)
+    target_authors: list[str]
+    source_edition_id: str | None = None
+    source_isbns: list[str] = Field(default_factory=list)
+    source_title: str | None = None
+    source_author_ids: list[str] = Field(default_factory=list)
+    same_edition: bool | None = None
+    source_document_type: str | None = None
+    discovery_method: str = Field(min_length=1)
+    match_basis: list[str] = Field(min_length=1)
+    validation_status: Literal["strong", "acceptable"]
+
+
 class Source(CanonicalModel):
     source_id: str = Field(min_length=1)
     book_id: str = Field(min_length=1)
@@ -118,6 +144,7 @@ class Source(CanonicalModel):
     license: str | None = None
     rights_note: str | None = None
     content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence: EvidenceProvenance | None = None
 
     @field_validator("retrieved_at")
     @classmethod

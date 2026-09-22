@@ -26,7 +26,14 @@ from data_pipeline.identifiers import (
     sha256_text,
     stable_id,
 )
-from data_pipeline.models import Book, CanonicalDataset, Document, Source, TocEntry
+from data_pipeline.models import (
+    Book,
+    CanonicalDataset,
+    Document,
+    EvidenceProvenance,
+    Source,
+    TocEntry,
+)
 from data_pipeline.open_textbook_sources import OpenTextbookSourceSpec, open_textbook_source
 from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
@@ -3374,7 +3381,12 @@ def normalize_open_textbook_response(
 
 def _public_page_section(tree: HTMLParser, heading: str) -> Any:
     """Return the content element immediately following a named catalog heading."""
-    for candidate in tree.css("div.summary h2"):
+    candidates = [
+        *tree.css("div.summary h2"),
+        *tree.css("div.summary h3"),
+        *tree.css("div#book-detail-extras h3"),
+    ]
+    for candidate in candidates:
         if candidate.text(separator=" ", strip=True).casefold() != heading.casefold():
             continue
         content = candidate.next
@@ -3430,6 +3442,8 @@ def _indented_table_toc_entries(
             title = nested_cells[-1].text(separator=" ", strip=True)
         if not title:
             raise InvalidProviderResponse("public book page TOC contained an empty title")
+        if title == "Table of Contents provided by Publisher. All Rights Reserved.":
+            continue
 
         # Numbered chapter appendices are siblings of chapter sections even though
         # this catalog page renders them one indentation step deeper.
@@ -3551,6 +3565,29 @@ def _flat_table_toc_entries(html: str, book_id: str, source_id: str) -> list[Toc
     if full_text != " ".join([*titles, footer]):
         raise InvalidProviderResponse("flat table TOC contains unsupported text outside rows")
 
+    return [
+        TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(index), title),
+            book_id=book_id,
+            parent_entry_id=None,
+            level=1,
+            order_index=index,
+            label=None,
+            title=title,
+            source_id=source_id,
+        )
+        for index, title in enumerate(titles)
+    ]
+
+
+def _flat_period_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Preserve a public catalog's period-delimited flat TOC."""
+    content = _public_page_section(HTMLParser(html), "Table of Contents")
+    raw_text = " ".join(content.text(separator=" ", strip=True).split())
+    titles = [title.strip() for title in raw_text.split(".") if title.strip()]
+    compact_titles = ".".join(title.replace(" ", "") for title in titles) + "."
+    if len(titles) < 3 or compact_titles != raw_text.replace(" ", ""):
+        raise InvalidProviderResponse("period-delimited TOC has unsupported punctuation")
     return [
         TocEntry(
             toc_entry_id=stable_id("toc", book_id, source_id, str(index), title),
@@ -3714,6 +3751,20 @@ def normalize_public_book_page_response(
     page_title = title_node.text(separator=" ", strip=True) if title_node is not None else ""
     page_isbn = isbn_node.text(separator=" ", strip=True) if isbn_node is not None else ""
     page_edition = edition_node.text(separator=" ", strip=True) if edition_node is not None else ""
+    if not page_isbn or not page_edition:
+        for script in tree.css('script[type="application/ld+json"]'):
+            try:
+                structured = json.loads(script.text())
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            candidates = structured if isinstance(structured, list) else [structured]
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                if not page_isbn and isinstance(candidate.get("isbn"), str):
+                    page_isbn = candidate["isbn"]
+                if not page_edition and isinstance(candidate.get("bookEdition"), str):
+                    page_edition = candidate["bookEdition"]
     if (
         normalize_bibliographic_text(page_title) != normalize_bibliographic_text(source_spec.title)
         or page_isbn != source_spec.isbn_13
@@ -3726,13 +3777,18 @@ def normalize_public_book_page_response(
 
     source_id = stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
     if source_spec.toc_format == "indented_table":
-        toc = _indented_table_toc_entries(html, source_spec.book_id, source_id)
+        toc = _indented_table_toc_entries(
+            html,
+            source_spec.book_id,
+            source_id,
+            root_indent_threshold=source_spec.root_indent_threshold,
+        )
     elif source_spec.toc_format == "indented_table_chapter_roots":
         toc = _indented_table_toc_entries(
             html,
             source_spec.book_id,
             source_id,
-            root_indent_threshold=20,
+            root_indent_threshold=source_spec.root_indent_threshold or 20,
         )
     elif source_spec.toc_format == "flat_bold":
         toc = _flat_bold_toc_entries(html, source_spec.book_id, source_id)
@@ -3742,6 +3798,8 @@ def normalize_public_book_page_response(
         toc = _paragraph_sequence_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "bold_chapter_paragraphs":
         toc = _bold_chapter_paragraph_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "flat_periods":
+        toc = _flat_period_toc_entries(html, source_spec.book_id, source_id)
     else:
         toc = _heading_sequence_toc_entries(html, source_spec.book_id, source_id)
     if len(toc) != source_spec.expected_toc_count:
@@ -3831,5 +3889,19 @@ def normalize_public_book_page_response(
         license=None,
         rights_note="Public bookstore catalog page; no license statement found.",
         content_hash=sha256_text(html),
+        evidence=EvidenceProvenance(
+            evidence_type="toc",
+            tier="exact_edition_toc",
+            target_isbn=source_spec.isbn_13,
+            target_title=source_spec.title,
+            target_authors=list(source_spec.authors),
+            source_isbns=[source_spec.isbn_13],
+            source_title=source_spec.title,
+            same_edition=True,
+            source_document_type="public_html",
+            discovery_method="reviewed_public_page_registry",
+            match_basis=["exact_isbn", "exact_edition", "normalized_title"],
+            validation_status="strong",
+        ),
     )
     return CanonicalDataset(books=[], documents=[document], toc=toc, sources=[source])

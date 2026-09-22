@@ -8,3 +8,5 @@ __pycache__/
 data/raw/
 data/processed/
 data/experiments/
+data/external/
+data/indexes/

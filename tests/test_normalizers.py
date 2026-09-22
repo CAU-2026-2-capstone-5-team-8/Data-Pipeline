@@ -555,6 +555,11 @@ def test_public_book_page_normalizes_description_and_hierarchical_toc(monkeypatc
     assert by_title["A.1 Overview"].parent_entry_id == by_title["Appendix A TCP/IP"].toc_entry_id
     assert dataset.sources[0].source_type == "other"
     assert dataset.sources[0].content_hash == sha256_text(html)
+    assert dataset.sources[0].evidence is not None
+    assert dataset.sources[0].evidence.tier == "exact_edition_toc"
+    assert dataset.sources[0].evidence.same_edition is True
+    assert dataset.sources[0].evidence.target_authors == ["William Stallings"]
+    assert dataset.sources[0].evidence.discovery_method == "reviewed_public_page_registry"
     assert (
         validate_dataset(
             CanonicalDataset(
@@ -650,6 +655,43 @@ def test_public_book_page_rejects_changed_chapter_sequence(monkeypatch) -> None:
             topic="operating-systems",
             retrieved_at=RETRIEVED_AT,
         )
+
+
+def test_public_book_page_supports_json_ld_identity_legacy_section_and_period_toc(
+    monkeypatch,
+) -> None:
+    source = public_book_source("ecampus-lipschutz-solved-linear1")
+    fixture_spec = replace(
+        source,
+        expected_toc_count=3,
+        expected_root_titles=("Vector Spaces", "Linear Maps", "Eigenvalues"),
+    )
+    monkeypatch.setattr("data_pipeline.normalizers.public_book_source", lambda _slug: fixture_spec)
+    html = f"""
+    <html><body>
+      <h1 class="title">{source.title}</h1>
+      <script type="application/ld+json">{{
+        "@type": "Book", "isbn": "{source.isbn_13}", "bookEdition": "1st"
+      }}</script>
+      <div id="book-detail-extras">
+        <h3>Summary</h3><div class="content">Reviewed description.</div>
+        <h3>Table of Contents</h3>
+        <div class="content">Vector Spaces. Linear Maps. Eigenvalues.</div>
+      </div>
+    </body></html>
+    """
+
+    dataset = normalize_public_book_page_response(
+        {"source_slug": source.slug, "url": source.url, "html": html},
+        topic=source.topic,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert [entry.title for entry in dataset.toc] == [
+        "Vector Spaces",
+        "Linear Maps",
+        "Eigenvalues",
+    ]
 
 
 def test_malformed_toc_item_does_not_change_valid_base_level(caplog) -> None:

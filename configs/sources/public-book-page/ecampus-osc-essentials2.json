@@ -5,6 +5,7 @@
   "book_id": "isbn13:9781118804926",
   "isbn_13": "9781118804926",
   "title": "Operating System Concepts Essentials",
+  "authors": ["Abraham Silberschatz", "Peter Baer Galvin", "Greg Gagne"],
   "edition": 2,
   "url": "https://centralmethodist.ecampus.com/operating-system-concepts-essentials-2nd/bk/9781118804926",
   "toc_format": "paragraph_sequence",

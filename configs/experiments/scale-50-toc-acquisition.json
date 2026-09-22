@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "benchmark": "scale-50-v2",
+  "experiment_date": "2026-09-22",
+  "open_library_dump_date": "2026-08-31",
+  "new_public_web_source_slugs": [
+    "ecampus-chow-distributed-os1",
+    "ecampus-farlow-differential-linear2",
+    "ecampus-hoffman-linear-algebra2",
+    "ecampus-kolman-introductory-linear8",
+    "ecampus-lipschutz-solved-linear1"
+  ],
+  "reviewed_public_web_candidates": [
+    {
+      "book_id": "isbn13:9781498712439",
+      "url": "https://www.oreilly.com/library/view/operating-system-design/9781498712439/Index.xhtml",
+      "status": "public_page_http_blocked",
+      "reason": "Search discovery exposed exact-ISBN contents, but ordinary HTTP retrieval returned 403."
+    },
+    {
+      "book_id": "isbn13:9780131907294",
+      "url": "https://www.kriso.lv/linear-algebra-applications-db-9780131907294.html",
+      "status": "public_page_http_blocked",
+      "reason": "Search discovery exposed exact-ISBN contents, but ordinary HTTP retrieval returned 403."
+    },
+    {
+      "book_id": "isbn13:9781565920606",
+      "url": "https://www.oreilly.com/library/view/learning-the-unix/1565923901/",
+      "status": "rejected_alternate_edition",
+      "reason": "Public contents are for the fourth edition; the target is the third edition and no provider-native Work relation was available."
+    },
+    {
+      "book_id": "isbn13:9780135370193",
+      "url": "https://www.oreilly.com/library/view/linear-algebra-5th/9780136745495/",
+      "status": "rejected_alternate_edition",
+      "reason": "Public contents are for the fifth edition; the target is the first edition and no provider-native Work relation was available."
+    },
+    {
+      "book_id": "isbn13:9780126736502",
+      "url": "https://shop.elsevier.com/books/linear-algebra-and-its-applications/strang/978-0-12-673660-1",
+      "status": "rejected_alternate_edition",
+      "reason": "Publisher contents are for the second edition; the target is the first edition and no provider-native Work relation was available."
+    },
+    {
+      "book_id": "book_09c91e7b456682eb19fb",
+      "url": "https://link.springer.com/book/10.1007/978-1-4757-1949-9",
+      "status": "rejected_alternate_edition",
+      "reason": "Publisher contents are for a later edition; the target is the 1966 Addison-Wesley edition without an ISBN."
+    }
+  ]
+}

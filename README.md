@@ -4,6 +4,110 @@ Evidence-first data collection and normalization for the CAU Capstone Team 8 boo
 recommendation project. This repository emits provider-independent book data for downstream
 ML work; it does not perform concept extraction, difficulty scoring, or recommendation.
 
+## Evidence acquisition hierarchy
+
+Runtime collection is an enrichment layer, not the primary bibliographic database builder. The
+intended resolution order is:
+
+```text
+exact-edition structured TOC
+-> provider-native same-Work alternate-edition TOC
+-> validated other structured source
+-> validated public-web TOC
+-> metadata fallback
+-> unresolved
+```
+
+An alternate-edition TOC may support concept inference, but it is never represented as the
+photographed edition's exact contents. Canonical `Source.evidence` preserves the tier, target and
+source edition identities, source ISBNs, discovery method, match basis, and validation result.
+Public-web evidence must retain its source URL and pass identity plus chapter-structure checks.
+The pipeline does not bypass login, CAPTCHA, paywall, preview, or other access controls.
+
+## Open Library bulk base
+
+The first bulk-base prototype uses the official monthly Open Library Edition dump. The pinned
+2026-08-31 source manifest is
+[`configs/external/open-library-2026-08-31.json`](configs/external/open-library-2026-08-31.json),
+and the source decision record is
+[`docs/external-dataset-audit.md`](docs/external-dataset-audit.md). Large originals and generated
+indexes live under ignored `data/external/` and `data/indexes/`; they are never committed.
+
+The Scale-50 feasibility path deliberately does not create a second decompressed copy or a global
+warehouse. It scans the compressed Edition TSV twice: the first pass maps target ISBNs to Work
+keys, and the second stores only the matching Work's editions in a small SQLite index. This makes
+the required lookups efficient while keeping the benchmark separate from the external dataset:
+
+```text
+ISBN -> Edition
+Edition -> Work
+Work -> Editions
+Work -> TOC-bearing Editions
+```
+
+Inspect the pinned source and local state without network access:
+
+```bash
+uv run data-pipeline bulk-status
+```
+
+The Editions dump is 12.59 GB compressed. Download is resumable, checksum-verified, published by
+atomic rename, and requires an explicit large-download acknowledgement:
+
+```bash
+uv run data-pipeline fetch-open-library-dump \
+  --kind editions \
+  --accept-large-download
+```
+
+Build a target-only index from an existing canonical Scale-50 directory and inspect a resolution:
+
+```bash
+uv run data-pipeline build-open-library-target-index \
+  --dataset-dir data/experiments/scale-50-v2/processed
+
+uv run data-pipeline inspect-open-library-index \
+  --isbn 9781292025773 \
+  --index data/indexes/open_library/scale-targets-2026-08-31.sqlite
+
+uv run data-pipeline enrich-open-library-bulk \
+  --dataset-dir data/experiments/scale-50-bulk-web-20260922/processed \
+  --index data/indexes/open_library/scale-targets-2026-08-31.sqlite
+```
+
+SQLite is used because the target projection needs indexed point lookups, is portable, requires no
+server, and adds no dependency. DuckDB remains useful for ad-hoc inspection of the gzip TSV, as
+documented by Open Library, but is not required by the pipeline. Unit tests use tiny fixtures and
+never download a bulk file; real dump ingestion is an explicit integration workflow.
+
+The 2026-09-22 run scanned the 12.59 GB compressed Edition dump in 106.076 seconds and produced
+a 327,680-byte target-only index: 394 editions, 504 ISBN rows, 51 Works, and 10 TOC-bearing
+editions. The pinned dump found 3 exact-edition TOCs, all already covered by the reviewed
+baseline, plus one unique provider-native same-Work fallback (*Modern Operating Systems*).
+Two title-search API candidates from the earlier feasibility check were deliberately rejected
+because the dump had no target-ISBN Edition from which to establish the Work relation.
+
+The complete unique-gain Scale-50 result is committed as
+[`docs/experiments/scale-50-toc-acquisition-2026-09-22.json`](docs/experiments/scale-50-toc-acquisition-2026-09-22.json).
+It can be regenerated from the local benchmark outputs with:
+
+```bash
+uv run data-pipeline report-toc-acquisition \
+  --baseline-dir data/experiments/scale-50-v2/processed \
+  --final-dir data/experiments/scale-50-bulk-web-20260922/processed \
+  --index data/indexes/open_library/scale-targets-2026-08-31.sqlite \
+  --loc-result /path/to/scale50-structured-discovery.json
+```
+
+The measured result is exact-edition baseline 14/50, Open Library alternate +1, LOC +0,
+and five new exact-edition public-web TOCs, for 20/50 usable TOCs. Because the 14-book baseline
+already includes ten previously reviewed public/publisher pages, it is not an API-only number.
+The independent structured/API-only view is 6/50 (four original canonical TOCs plus two usable
+bulk same-Work resolutions); reviewed public-web evidence raises the result to 20/50. The remaining
+30 books retain metadata fallback rather than being mislabeled as TOC-derived evidence. Large raw
+inputs, indexes, and fetched HTML remain ignored; the source audit, pinned manifest, experiment
+policy, machine-readable report, parsers, and tiny fixtures are committed.
+
 ## Current vertical slice
 
 The implemented slices query public book APIs for a small topic search, preserve the full raw

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "provider": "open_library",
+  "dataset_name": "Open Library monthly data dumps",
+  "dump_date": "2026-08-31",
+  "official_page_url": "https://openlibrary.org/developers/dumps",
+  "archive_metadata_url": "https://archive.org/metadata/ol_dump_2026-08-31",
+  "license_url": "https://openlibrary.org/developers/licensing",
+  "license_note": "Internet Archive asserts no new rights over Open Library database material; underlying contributions can retain rights.",
+  "update_frequency": "monthly",
+  "source_format": "gzip_tsv_json",
+  "parser_version": "open-library-bulk-v1",
+  "retrieved_at": "2026-09-22T00:19:11+09:00",
+  "files": [
+    {
+      "kind": "editions",
+      "url": "https://archive.org/download/ol_dump_2026-08-31/ol_dump_editions_2026-08-31.txt.gz",
+      "filename": "ol_dump_editions_2026-08-31.txt.gz",
+      "compressed_size": 12586485055,
+      "md5": "da4de1cca148aa85bea0707a63ffa212",
+      "sha1": "e09e00630797598aab877ec542596b1b58f6b87c"
+    },
+    {
+      "kind": "works",
+      "url": "https://archive.org/download/ol_dump_2026-08-31/ol_dump_works_2026-08-31.txt.gz",
+      "filename": "ol_dump_works_2026-08-31.txt.gz",
+      "compressed_size": 4058336593,
+      "md5": "eda3a83f9dbc85a4d8f7cde838f070b5",
+      "sha1": "c9362f345368cdc8bf64efcc05d6e4b590974cb6"
+    }
+  ]
+}

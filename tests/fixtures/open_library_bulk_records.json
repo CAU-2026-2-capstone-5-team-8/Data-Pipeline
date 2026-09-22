@@ -1,0 +1,147 @@
+{
+  "works": [
+    {
+      "key": "/works/OL-EXACT-W",
+      "title": "Exact Book",
+      "authors": [{"author": {"key": "/authors/OL-A1"}}],
+      "subjects": ["Computer science"],
+      "description": {"value": "Exact-work description."}
+    },
+    {
+      "key": "/works/OL-ALT-W",
+      "title": "Modern Operating Systems",
+      "authors": [{"author": {"key": "/authors/OL-A2"}}],
+      "subjects": ["Operating systems"]
+    },
+    {
+      "key": "/works/OL-VOLUME-W",
+      "title": "Distributed Systems",
+      "authors": [{"author": {"key": "/authors/OL-A3"}}]
+    }
+  ],
+  "editions": [
+    {
+      "key": "/books/OL-EXACT-M",
+      "title": "Exact Book",
+      "isbn_10": ["0306406152"],
+      "isbn_13": ["9780306406157"],
+      "works": [{"key": "/works/OL-EXACT-W"}],
+      "authors": [{"key": "/authors/OL-A1"}],
+      "publishers": ["Fixture Press"],
+      "publish_date": "2020",
+      "languages": [{"key": "/languages/eng"}],
+      "table_of_contents": [
+        {"level": 0, "label": "1", "title": "Foundations"},
+        {"level": 0, "label": "2", "title": "Processes"},
+        {"level": 0, "label": "3", "title": "Memory"}
+      ]
+    },
+    {
+      "key": "/books/OL-TARGET-M",
+      "title": "Modern Operating Systems",
+      "subtitle": "Third Edition",
+      "isbn_13": ["9781292025773"],
+      "works": [{"key": "/works/OL-ALT-W"}],
+      "authors": [{"key": "/authors/OL-A2"}],
+      "publish_date": "2013",
+      "languages": [{"key": "/languages/eng"}],
+      "source_records": ["bwb:9781292025773"]
+    },
+    {
+      "key": "/books/OL-ALT-M",
+      "title": "Modern Operating Systems",
+      "subtitle": "Fourth Edition",
+      "isbn_10": ["013359162X"],
+      "isbn_13": ["9780133591620"],
+      "works": [{"key": "/works/OL-ALT-W"}],
+      "authors": [{"key": "/authors/OL-A2"}],
+      "publish_date": "2015",
+      "languages": [{"key": "/languages/eng"}],
+      "table_of_contents": [
+        {"level": 0, "label": "Chapter 1", "title": "Introduction"},
+        {"level": 1, "label": "1.1", "title": "Processes"},
+        {"level": 0, "label": "Chapter 2", "title": "Memory Management"}
+      ]
+    },
+    {
+      "key": "/books/OL-MANUAL-M",
+      "title": "Modern Operating Systems Student Solutions Manual",
+      "isbn_13": ["9780000000019"],
+      "works": [{"key": "/works/OL-ALT-W"}],
+      "authors": [{"key": "/authors/OL-A2"}],
+      "publish_date": "2014",
+      "languages": [{"key": "/languages/eng"}],
+      "table_of_contents": [
+        {"level": 0, "title": "Answers 1"},
+        {"level": 0, "title": "Answers 2"},
+        {"level": 0, "title": "Answers 3"},
+        {"level": 0, "title": "Answers 4"}
+      ]
+    },
+    {
+      "key": "/books/OL-WRONG-AUTHOR-M",
+      "title": "Modern Operating Systems",
+      "isbn_13": ["9780000000026"],
+      "works": [{"key": "/works/OL-ALT-W"}],
+      "authors": [{"key": "/authors/OL-OTHER"}],
+      "publish_date": "2013",
+      "languages": [{"key": "/languages/eng"}],
+      "table_of_contents": [
+        {"level": 0, "title": "Unrelated 1"},
+        {"level": 0, "title": "Unrelated 2"},
+        {"level": 0, "title": "Unrelated 3"},
+        {"level": 0, "title": "Unrelated 4"},
+        {"level": 0, "title": "Unrelated 5"}
+      ]
+    },
+    {
+      "key": "/books/OL-MISGROUPED-M",
+      "title": "Unrelated Same-Work Record",
+      "isbn_13": ["9780000000033"],
+      "works": [{"key": "/works/OL-ALT-W"}],
+      "authors": [{"key": "/authors/OL-A2"}],
+      "languages": [{"key": "/languages/eng"}],
+      "table_of_contents": [
+        {"level": 0, "title": "Wrong 1"},
+        {"level": 0, "title": "Wrong 2"},
+        {"level": 0, "title": "Wrong 3"}
+      ]
+    },
+    {
+      "key": "/books/OL-VOLUME-1-M",
+      "title": "Distributed Systems",
+      "subtitle": "Volume 1",
+      "isbn_13": ["9780000000040"],
+      "works": [{"key": "/works/OL-VOLUME-W"}],
+      "authors": [{"key": "/authors/OL-A3"}],
+      "languages": [{"key": "/languages/eng"}]
+    },
+    {
+      "key": "/books/OL-VOLUME-2-M",
+      "title": "Distributed Systems",
+      "subtitle": "Volume 2",
+      "isbn_13": ["9780000000057"],
+      "works": [{"key": "/works/OL-VOLUME-W"}],
+      "authors": [{"key": "/authors/OL-A3"}],
+      "languages": [{"key": "/languages/eng"}],
+      "table_of_contents": [
+        {"level": 0, "title": "Volume Two 1"},
+        {"level": 0, "title": "Volume Two 2"},
+        {"level": 0, "title": "Volume Two 3"}
+      ]
+    },
+    {
+      "key": "/books/OL-STUDENT-M",
+      "title": "Differential Equations and Linear Algebra",
+      "isbn_13": ["9780136054276"],
+      "works": [{"key": "/works/OL-ALT-W"}],
+      "authors": [{"key": "/authors/OL-A2"}],
+      "languages": [{"key": "/languages/eng"}],
+      "source_records": ["ia:studentssolution0000edwa"]
+    },
+    {
+      "key": "/books/OL-MINIMAL-M",
+      "title": "Minimal Edition"
+    }
+  ]
+}
