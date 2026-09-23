@@ -136,7 +136,7 @@ Data-Pipeline          →    ML 저장소               →   Backend
 
 ---
 
-## 6. Collector 아키텍처 — 6가지 수집 방식
+## 6. Collector 아키텍처 — 7가지 수집 방식 + 서지 보강 전용 1개
 
 소스 우선순위(`AGENTS.md` 4절): **공식/공개 API → 출판사·저자 공식 페이지 → 오픈
 교육자료(OER) → 일반 공개 HTML → 브라우저 자동화(최후 수단, 현재 미사용)**.
@@ -151,9 +151,32 @@ Data-Pipeline          →    ML 저장소               →   Backend
 - **Google Books** (`--provider google-books`): 결과 40건 제한을 넘으면 `startIndex`
   페이지로 나눠서 순차 수집한다. Open Library와 달리, 페이지 하나가 실패하면 이미
   모은 페이지까지 포함해 **전체 검색이 실패**한다(부분 결과를 발행하지 않음).
+- **Internet Archive** (`--provider internet-archive`): 무인증 `advancedsearch.php`를
+  `mediatype:(texts)` + 따옴표로 묶은 제목 구문(title-phrase) 쿼리로 호출한다.
+  `fl[]`로 필요한 필드(`title`, `creator`, `isbn`, `publisher`, `date`, `language`,
+  `description`, `access-restricted-item`)를 요청하면 검색 결과 행 자체에 이미 다
+  들어있어, Google Books처럼 **별도 상세 조회가 없다**(Open Library의 편집본/작품
+  상세 조회 패턴과 다름). 많은 항목이 `"access-restricted-item": true`(controlled
+  digital lending)인데, 이 collector는 item의 실제 파일(스캔본/OCR/PDF)을 전혀
+  요청하지 않고 그 제한 사실만 `Source.rights_note`에 기록한다(`license`는
+  항상 `null`).
 
-두 provider 모두 topic별 검색어를 `configs/topics.json`(7절)에서 가져오므로, 코드
-자체에는 topic 이름이 하드코딩되어 있지 않다.
+세 provider 모두 topic별 검색어를 `configs/topics.json`(7절)에서 가져오므로, 코드
+자체에는 topic 이름이 하드코딩되어 있지 않다(Internet Archive는
+`topics.py`의 `topic_title_phrase()` — 현재는 `topic_open_library_title()`의
+별칭 — 를 사용).
+
+### 6.1b 서지 보강 전용: HathiTrust (topic 검색 불가, `search`/`collect` 대상 아님)
+
+HathiTrust의 무료 Bibliographic API는 topic/subject 검색이 아예 없고 **정확한 ISBN
+단건 조회만** 지원하며, 실제 여러 ISBN으로 라이브 조회한 결과 전부
+`rightsCode: "ic"`(저작권 있음) + `"Limited (search-only)"`만 반환했다 — item
+텍스트도 TOC도 얻을 수 없다. 그래서 다른 provider처럼 `--provider hathitrust`로
+만들지 않고, 이미 canonical dataset에 있는 책에 **서지 확인용 `Source` 레코드 하나만
+추가**하는 별도 명령 `enrich-bibliography --isbn <isbn>`(11.1절)으로 구현했다.
+Document/TOC는 만들지 않고, 이미 같은 책에 `provider: hathitrust` 소스가 있으면
+멱등적으로 스킵하며, HathiTrust에 매칭이 없어도 raw 응답은 보존한다(canonical
+데이터셋은 변경하지 않고 종료 코드 1).
 
 ### 6.2 Allowlist 기반 exact-edition 수집 (책 1권씩 검토된 것만)
 
@@ -282,6 +305,7 @@ pydantic이 레코드 하나하나의 모양을 검증한다면, `validate_datas
 | `collect-public-page --source <slug>` | 서점 카탈로그 HTML 수집 (allowlist) |
 | `collect-open-textbook --source <slug>` | 오픈 교재 수집 (allowlist) |
 | `enrich-toc --data-dir <dir> [--max-sources N] [--dry-run]` | **새 네트워크 소스를 만들지 않고**, 기존 canonical dataset에서 TOC가 없는 책만 골라 이미 있는 publisher/public-page allowlist로 채운다. `--dry-run`은 실제로 수집하지 않고 계획만 출력. |
+| `enrich-bibliography --isbn <isbn> [--data-dir ...]` | 이미 canonical dataset에 있는 책 하나에 HathiTrust 서지 확인용 `Source`를 하나 추가(6.1b절). topic 수집이 아니라 기존 책 보강 전용. |
 
 ### 11.2 빌드 (오프라인, 네트워크 없이 raw → canonical)
 
@@ -404,6 +428,8 @@ Data-Pipeline/
 │   │   ├── base.py                # 공용 헬퍼(재시도 판정, JSON 파싱)
 │   │   ├── open_library.py
 │   │   ├── google_books.py
+│   │   ├── internet_archive.py    # Internet Archive advancedsearch.php (6.1절)
+│   │   ├── hathitrust.py          # ISBN → 서지 조회, enrich-bibliography 전용 (6.1b절)
 │   │   ├── publisher_pages.py
 │   │   ├── publisher_documents.py
 │   │   ├── public_book_pages.py
@@ -445,9 +471,12 @@ Data-Pipeline/
    계속 이어지고 있다(예: Larson/Penney/Nutt 선형대수·운영체제 TOC).
 5. **topic/allowlist 데이터화(완료, 7·8절)**: topic 상수와 allowlist를 코드에서
    config 파일로 분리. 새 topic·새 curated 책 추가가 코드 변경 없이 가능해짐.
-6. **다음 계획**: 신규 topic 4개(자료구조/알고리즘, 데이터베이스, 이산수학, 확률과
-   통계) 및 신규 provider(Internet Archive, HathiTrust) 추가 — 자세한 배경과 진행
-   상태는 `docs/expansion-roadmap.md` 참고.
+6. **신규 provider 추가(완료, 6.1·6.1b절)**: Internet Archive를
+   `--provider internet-archive`로 전체 search/collect에 편입, HathiTrust는
+   `enrich-bibliography --isbn` 서지 보강 전용 명령으로 편입. 226개 테스트 전체
+   통과(신규 31개), 라이브 네트워크로 검증 완료.
+7. **다음 계획**: 신규 topic 4개(자료구조/알고리즘, 데이터베이스, 이산수학, 확률과
+   통계) 추가 — 자세한 배경과 진행 상태는 `docs/expansion-roadmap.md` 참고.
 
 ---
 
