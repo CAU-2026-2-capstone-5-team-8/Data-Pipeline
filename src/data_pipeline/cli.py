@@ -1,6 +1,7 @@
 """Command-line entry point for the small MVP collection slice."""
 
 import json
+import os
 import re
 import shutil
 from dataclasses import asdict
@@ -13,6 +14,10 @@ from typing import Annotated, Any
 import httpx
 import typer
 
+from data_pipeline.api_toc import (
+    normalize_springer_metadata_response,
+    normalize_yes24_toc_response,
+)
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
 from data_pipeline.collectors.hathitrust import HathiTrustCollector
@@ -22,6 +27,8 @@ from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
+from data_pipeline.collectors.springer_metadata import SpringerMetadataCollector
+from data_pipeline.collectors.yes24 import Yes24Collector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
 from data_pipeline.manifest import (
     load_manifest,
@@ -35,7 +42,7 @@ from data_pipeline.ml_evidence import (
     write_ml_evidence,
     write_ml_evidence_summary,
 )
-from data_pipeline.models import CanonicalDataset
+from data_pipeline.models import Book, CanonicalDataset
 from data_pipeline.normalizers import (
     TOPICS,
     normalize_google_books_response,
@@ -1500,6 +1507,151 @@ def export_ml_evidence_command(
     typer.echo(json.dumps(summary, indent=2, sort_keys=True))
     typer.echo(f"ML evidence artifact: {output}")
     typer.echo(f"ML evidence summary: {report_path}")
+
+
+API_TOC_PROVIDERS = {"yes24": "YES24_API_KEY", "springer-metadata": "SPRINGER_API_KEY"}
+
+
+def _fetch_api_toc(provider: str, collector: Any, book: Book) -> tuple[dict, dict]:
+    """Return (request parameters, raw response) for one ISBN-keyed API TOC lookup."""
+    isbn_13 = book.isbn_13 or ""
+    if provider == "yes24":
+        return collector.request_parameters(isbn_13), collector.fetch_toc(isbn_13)
+    payload = collector.fetch_chapters(isbn_13)
+    return {"isbn": isbn_13, "q": payload["query"]}, payload
+
+
+def _normalize_api_toc(
+    provider: str, payload: dict, book: Book, retrieved_at: datetime
+) -> CanonicalDataset | None:
+    if provider == "yes24":
+        return normalize_yes24_toc_response(payload, book=book, retrieved_at=retrieved_at)
+    return normalize_springer_metadata_response(payload, book=book, retrieved_at=retrieved_at)
+
+
+@app.command("enrich-api-toc")
+def enrich_api_toc(
+    provider: Annotated[str, typer.Option(help="TOC API provider: yes24 or springer-metadata.")],
+    isbn: Annotated[
+        str | None, typer.Option(help="Only this canonical book (ISBN-10 or ISBN-13).")
+    ] = None,
+    data_dir: Annotated[Path, typer.Option(help="Existing raw and processed data root.")] = Path(
+        "data"
+    ),
+    max_books: Annotated[int, typer.Option(min=1, max=200)] = 50,
+) -> None:
+    """Fill missing TOCs by exact ISBN-13 lookup in the YES24 or Springer Nature API.
+
+    Never discovers new books and never replaces an existing TOC. The API key is read
+    from YES24_API_KEY or SPRINGER_API_KEY and is never written to raw artifacts.
+    """
+    if provider not in API_TOC_PROVIDERS:
+        raise typer.BadParameter("provider must be yes24 or springer-metadata")
+    api_key = os.environ.get(API_TOC_PROVIDERS[provider], "")
+    if not api_key:
+        raise typer.BadParameter(f"{API_TOC_PROVIDERS[provider]} is not set")
+    processed = data_dir / "processed"
+    if not dataset_exists(processed):
+        raise typer.BadParameter("enrich-api-toc requires an existing canonical dataset")
+    dataset = read_dataset(processed)
+    errors = validate_dataset(dataset)
+    if errors:
+        raise typer.BadParameter("; ".join(errors))
+
+    with_toc = {entry.book_id for entry in dataset.toc}
+    if isbn is not None:
+        normalized_isbn = re.sub(r"[^0-9Xx]", "", isbn).upper()
+        targets = [b for b in dataset.books if normalized_isbn in {b.isbn_10, b.isbn_13}]
+        if not targets:
+            raise typer.BadParameter(f"no canonical book has ISBN {isbn}")
+    else:
+        targets = sorted(dataset.books, key=lambda b: b.book_id)
+    targets = [b for b in targets if b.book_id not in with_toc and b.isbn_13][:max_books]
+    if not targets:
+        typer.echo("No selected book is missing a TOC with an ISBN-13; nothing to do.")
+        return
+
+    collector_class = Yes24Collector if provider == "yes24" else SpringerMetadataCollector
+    additions: list[CanonicalDataset] = []
+    attempts: list[dict[str, Any]] = []
+    with collector_class(api_key) as collector:
+        for book in targets:
+            attempt: dict[str, Any] = {"book_id": book.book_id, "isbn_13": book.isbn_13}
+            retrieved_at = datetime.now(UTC)
+            try:
+                parameters, payload = _fetch_api_toc(provider, collector, book)
+            except httpx.HTTPStatusError as exc:
+                error = f"HTTP {exc.response.status_code}"
+                attempts.append({**attempt, "status": "failed", "error": error})
+                continue
+            except httpx.RequestError as exc:
+                attempts.append({**attempt, "status": "failed", "error": f"network: {exc}"})
+                continue
+            except ValueError as exc:
+                attempts.append({**attempt, "status": "failed", "error": str(exc)})
+                continue
+            artifact = RawArtifact(
+                provider=provider,
+                topic=book.topics[-1],
+                requested_limit=1,
+                retrieved_at=retrieved_at,
+                request_parameters=parameters,
+                response=payload,
+            )
+            raw_path = raw_artifact_path(data_dir, artifact)
+            write_raw_response(artifact, raw_path)
+            attempt["raw_path"] = raw_path.as_posix()
+            try:
+                evidence = _normalize_api_toc(provider, payload, book, retrieved_at)
+            except ValueError as exc:
+                attempts.append({**attempt, "status": "failed", "error": str(exc)})
+                continue
+            if evidence is None:
+                attempts.append({**attempt, "status": "no_toc"})
+                continue
+            additions.append(evidence)
+            attempts.append({**attempt, "status": "added", "toc_entries": len(evidence.toc)})
+
+    updated = CanonicalDataset(
+        books=dataset.books,
+        documents=dataset.documents,
+        toc=[*dataset.toc, *(entry for item in additions for entry in item.toc)],
+        sources=[*dataset.sources, *(source for item in additions for source in item.sources)],
+    )
+    errors = validate_dataset(updated)
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR {error}", err=True)
+        raise typer.Exit(code=1)
+    if additions:
+        write_dataset(updated, processed)
+
+    after = {entry.book_id for entry in updated.toc}
+    counts: dict[str, int] = {}
+    for attempt in attempts:
+        counts[attempt["status"]] = counts.get(attempt["status"], 0) + 1
+    report = {
+        "provider": provider,
+        "retrieved_at": datetime.now(UTC).isoformat(),
+        "book_count": len(dataset.books),
+        "toc_books_before": len(with_toc),
+        "toc_books_after": len(after),
+        "status_counts": counts,
+        "added_book_ids": sorted(after - with_toc),
+        "attempts": attempts,
+    }
+    report_path = data_dir / "reports" / f"api-toc-enrichment-{provider}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    typer.echo(
+        f"{provider} TOC coverage: {len(with_toc)}/{len(dataset.books)} -> "
+        f"{len(after)}/{len(dataset.books)} {json.dumps(counts, sort_keys=True)}"
+    )
+    typer.echo(f"Enrichment report: {report_path}")
+    if counts.get("failed"):
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

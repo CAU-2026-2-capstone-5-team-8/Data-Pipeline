@@ -696,6 +696,50 @@ ISBN/edition verification and retained raw provenance. This change does not impl
 source, ML scoring, or a claim of improved live TOC coverage. The synthetic regression verifies
 that an explicitly larger detail budget preserves an otherwise unqueried edition's TOC.
 
+## ISBN-keyed API TOC enrichment (YES24, Springer Nature)
+
+Two keyed APIs can fill a missing TOC by exact ISBN-13 lookup, without per-book allowlists:
+
+```bash
+export YES24_API_KEY=yk_live_...        # https://developers.yes24.com
+export SPRINGER_API_KEY=...             # https://dev.springernature.com (Metadata API)
+uv run data-pipeline enrich-api-toc --provider yes24 --data-dir data/experiments/scale-50
+uv run data-pipeline enrich-api-toc --provider springer-metadata --data-dir data/experiments/scale-50
+uv run data-pipeline enrich-api-toc --provider yes24 --isbn 9781118909584   # one book
+```
+
+The command only touches canonical books that have an ISBN-13 and no TOC yet; it never discovers
+books and never replaces an existing TOC. Each lookup's raw response is preserved (the API key is
+sent as a header or query parameter and is never written to raw artifacts or reports), and a match
+is recorded as `exact_edition_toc` with `match_basis: ["isbn_13"]`. Only TOC titles become
+canonical records: YES24 book descriptions and Springer chapter abstracts are not copied into
+`documents.jsonl`. `reports/api-toc-enrichment-<provider>.json` lists every attempt as `added`,
+`no_toc`, or `failed`; the exit status is 1 only when an attempt failed.
+
+- **YES24** (`/v1/goods/content`): the TOC arrives as one text field whose shape varies by book
+  (tab-separated page columns, period-delimited section runs, HTML with `PART` headings, Korean
+  `n장`/`n부`). Depth comes from dotted labels (`1.1.1`) and `PART`/`부` headings; an unlabeled line
+  sits under the most recent numbered entry. Where the source puts an unlabeled "Exercises" line
+  after a deeper subsection, it is attached to that subsection because the text gives no better
+  signal. `GOODS_001` (no TOC) and `GOODS_002` (unknown ISBN) are `no_toc`, not failures. YES24's
+  terms require a "YES24 출처" attribution and a product link (kept in each Source's `url` and
+  `rights_note`) and prohibit accumulating its catalog into a separate database or redistributing
+  it, which is why the command is ISBN-by-ISBN enrichment of an existing small dataset only.
+- **Springer Nature** (`/meta/v2/json`): the `isbn:` query matches only hyphenated ISBNs
+  (hyphenated with `isbnlib`), and page sizes above 25 or title searches are premium features, so
+  one ISBN's records are paged 25 at a time. Chapters are flat level-1 entries ordered by the
+  chapter number in their DOI (`10.1007/<eISBN>_<n>`); front/back matter and records whose
+  print/electronic ISBN differs from the target are dropped. This complements the reviewed
+  Springer book-page source: it needs an API key but no per-book review.
+
+Measured coverage (2026-09-23) of the 51 ISBN-13s in `configs/mvp.json` and
+`configs/experiments/*.json`: YES24 has a TOC for 4 (mostly current editions in its foreign-book
+catalog) and Springer for 0, because the manifests are dominated by out-of-print Prentice-Hall,
+Addison-Wesley, and McGraw-Hill editions. Both APIs cover current editions well, for example
+Axler's *Linear Algebra Done Right* 3rd edition (Springer, 10 chapters) and Penney's *Linear
+Algebra: Ideas and Applications* (YES24, 161 entries). These raw artifacts are not replayed by
+`build`; rerun the command against the rebuilt dataset instead.
+
 ## Missing-TOC enrichment
 
 After generic metadata collection, run the opt-in reviewed-source fallback:
