@@ -11,12 +11,13 @@ from data_pipeline.api_toc import (
     normalize_yes24_toc_response,
     parse_yes24_contents,
 )
-from data_pipeline.cli import app
+from data_pipeline.cli import _metadata_candidate_limit, app
 from data_pipeline.collectors.base import InvalidProviderResponse
+from data_pipeline.collectors.google_books import GoogleBooksCollector
 from data_pipeline.collectors.springer_metadata import SpringerMetadataCollector, hyphenated_isbn
 from data_pipeline.collectors.yes24 import Yes24Collector
 from data_pipeline.models import Book, CanonicalDataset, Source, TocEntry
-from data_pipeline.storage import read_dataset, write_dataset
+from data_pipeline.storage import RawArtifact, read_dataset, write_dataset, write_raw_response
 from data_pipeline.validation import validate_dataset
 
 RETRIEVED_AT = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
@@ -441,3 +442,120 @@ def test_enrich_api_toc_requires_the_api_key(tmp_path, monkeypatch) -> None:
 
     assert result.exit_code != 0
     assert "SPRINGER_API_KEY" in result.output
+
+
+GOOGLE_FIXTURE = Path(__file__).parent / "fixtures" / "google_books_operating_systems.json"
+GOOGLE_ISBN = "9780306406157"
+
+
+def _google_raw(path: Path) -> Path:
+    plan = GoogleBooksCollector.search_parameters(
+        "operating-systems", _metadata_candidate_limit("google-books", 3)
+    )
+    response = json.loads(GOOGLE_FIXTURE.read_text(encoding="utf-8"))
+    artifact = RawArtifact(
+        provider="google-books",
+        topic="operating-systems",
+        requested_limit=3,
+        retrieved_at=datetime(2026, 9, 12, tzinfo=UTC),
+        request_parameters=plan,
+        response={"pages": [{"request_parameters": plan["pages"][0], "response": response}]},
+    )
+    write_raw_response(artifact, path)
+    return path
+
+
+class _FixtureYes24Collector(_FakeYes24Collector):
+    def fetch_toc(self, isbn_13: str) -> dict:
+        self.requested.append(isbn_13)
+        return _yes24_response() if isbn_13 == GOOGLE_ISBN else _yes24_not_found()
+
+
+def test_build_replays_api_toc_artifacts_byte_identically(tmp_path, monkeypatch) -> None:
+    runner = CliRunner()
+    metadata_raw = _google_raw(tmp_path / "google.json")
+    built = runner.invoke(
+        app, ["build", "--raw", str(metadata_raw), "--output", str(tmp_path / "processed")]
+    )
+    assert built.exit_code == 0, built.output
+    monkeypatch.setattr("data_pipeline.cli.Yes24Collector", _FixtureYes24Collector)
+    monkeypatch.setenv("YES24_API_KEY", "yk_live_test")
+    enriched = runner.invoke(
+        app, ["enrich-api-toc", "--provider", "yes24", "--data-dir", str(tmp_path)]
+    )
+    assert enriched.exit_code == 0, enriched.output
+    (api_raw,) = (tmp_path / "raw" / "yes24").rglob("*.json")
+
+    rebuilt = runner.invoke(
+        app,
+        [
+            "build",
+            "--raw",
+            str(metadata_raw),
+            "--raw",
+            str(api_raw),
+            "--output",
+            str(tmp_path / "rebuilt"),
+        ],
+    )
+
+    assert rebuilt.exit_code == 0, rebuilt.output
+    assert read_dataset(tmp_path / "rebuilt").toc
+    for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl"):
+        assert (tmp_path / "rebuilt" / name).read_bytes() == (
+            tmp_path / "processed" / name
+        ).read_bytes()
+
+
+def test_build_ignores_api_toc_artifact_for_a_book_outside_the_raw_set(tmp_path) -> None:
+    metadata_raw = _google_raw(tmp_path / "google.json")
+    api_raw = tmp_path / "yes24.json"
+    write_raw_response(
+        RawArtifact(
+            provider="yes24",
+            topic="linear-algebra",
+            requested_limit=1,
+            retrieved_at=RETRIEVED_AT,
+            request_parameters=Yes24Collector.request_parameters(YES24_ISBN),
+            response=_yes24_response(),
+        ),
+        api_raw,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "build",
+            "--raw",
+            str(metadata_raw),
+            "--raw",
+            str(api_raw),
+            "--output",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert read_dataset(tmp_path / "out").toc == []
+
+
+def test_build_rejects_api_toc_artifact_with_tampered_parameters(tmp_path) -> None:
+    api_raw = tmp_path / "springer.json"
+    write_raw_response(
+        RawArtifact(
+            provider="springer-metadata",
+            topic="linear-algebra",
+            requested_limit=1,
+            retrieved_at=RETRIEVED_AT,
+            request_parameters={"isbn": SPRINGER_ISBN, "q": "isbn:9783319110806"},
+            response=_springer_payload([]),
+        ),
+        api_raw,
+    )
+
+    result = CliRunner().invoke(
+        app, ["build", "--raw", str(api_raw), "--output", str(tmp_path / "out")]
+    )
+
+    assert result.exit_code != 0
+    assert "topic/query mismatch" in result.output

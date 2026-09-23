@@ -737,8 +737,9 @@ Measured coverage (2026-09-23) of the 51 ISBN-13s in `configs/mvp.json` and
 catalog) and Springer for 0, because the manifests are dominated by out-of-print Prentice-Hall,
 Addison-Wesley, and McGraw-Hill editions. Both APIs cover current editions well, for example
 Axler's *Linear Algebra Done Right* 3rd edition (Springer, 10 chapters) and Penney's *Linear
-Algebra: Ideas and Applications* (YES24, 161 entries). These raw artifacts are not replayed by
-`build`; rerun the command against the rebuilt dataset instead.
+Algebra: Ideas and Applications* (YES24, 161 entries). `build --raw ...` replays these raw artifacts after
+the metadata artifacts, in the given order and under the same fill-only-missing rule, so passing
+all raw artifacts in collection-timestamp order reproduces the enriched JSONL byte for byte.
 
 ## Missing-TOC enrichment
 

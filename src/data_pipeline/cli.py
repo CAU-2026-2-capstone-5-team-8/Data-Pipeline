@@ -27,7 +27,10 @@ from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
-from data_pipeline.collectors.springer_metadata import SpringerMetadataCollector
+from data_pipeline.collectors.springer_metadata import (
+    SpringerMetadataCollector,
+    hyphenated_isbn,
+)
 from data_pipeline.collectors.yes24 import Yes24Collector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
 from data_pipeline.manifest import (
@@ -246,11 +249,47 @@ def _collect_open_textbook_payload(source_slug: str) -> tuple[dict, dict]:
         ) from exc
 
 
+API_TOC_PROVIDERS = {"yes24": "YES24_API_KEY", "springer-metadata": "SPRINGER_API_KEY"}
+
+
+def _api_toc_isbn(artifact: RawArtifact) -> str:
+    """Return the ISBN-13 an API TOC raw artifact was looked up by."""
+    parameters = artifact.request_parameters
+    isbn_13 = parameters.get("query" if artifact.provider == "yes24" else "isbn")
+    if not isinstance(isbn_13, str) or not re.fullmatch(r"[0-9]{13}", isbn_13):
+        raise typer.BadParameter(f"{artifact.provider} raw artifact is missing its ISBN-13")
+    return isbn_13
+
+
+def _api_toc_target(dataset: CanonicalDataset, isbn_13: str) -> Book | None:
+    """Return the canonical book for an ISBN-13 only while it still has no TOC."""
+    book = next((b for b in dataset.books if b.isbn_13 == isbn_13), None)
+    if book is None or any(entry.book_id == book.book_id for entry in dataset.toc):
+        return None
+    return book
+
+
+def _with_api_toc(dataset: CanonicalDataset, additions: list[CanonicalDataset]) -> CanonicalDataset:
+    return CanonicalDataset(
+        books=dataset.books,
+        documents=dataset.documents,
+        toc=[*dataset.toc, *(entry for item in additions for entry in item.toc)],
+        sources=[*dataset.sources, *(source for item in additions for source in item.sources)],
+    )
+
+
 def _expected_request_parameters(artifact: RawArtifact) -> dict:
     """Reconstruct the deterministic request identity recorded by one raw artifact."""
     provider = artifact.provider
     topic = artifact.topic
     limit = artifact.requested_limit
+    if provider in API_TOC_PROVIDERS:
+        if limit != 1:
+            raise typer.BadParameter(f"{provider} raw artifact requested_limit must be 1")
+        isbn_13 = _api_toc_isbn(artifact)
+        if provider == "yes24":
+            return Yes24Collector.request_parameters(isbn_13)
+        return {"isbn": isbn_13, "q": f"isbn:{hyphenated_isbn(isbn_13)}"}
     if provider == "open-textbook":
         if limit != 1:
             raise typer.BadParameter("open textbook raw artifact requested_limit must be 1")
@@ -425,6 +464,7 @@ def _dataset_from_raw_paths(
     datasets = []
     replacement_book_ids: set[str] = set()
     requested_by_topic: dict[str, int] = {}
+    api_toc_artifacts: list[RawArtifact] = []
     for raw_path in raw_paths:
         try:
             artifact = read_raw_response(raw_path)
@@ -436,6 +476,9 @@ def _dataset_from_raw_paths(
             raise typer.BadParameter(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
             )
+        if artifact.provider in API_TOC_PROVIDERS:
+            api_toc_artifacts.append(artifact)
+            continue
         _validate_google_page_provenance(artifact)
         normalization_args = (
             artifact.response,
@@ -463,6 +506,20 @@ def _dataset_from_raw_paths(
         dataset = without_books(merge_datasets(datasets), replacement_book_ids)
     except DatasetMergeError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    # API TOC lookups enrich books the metadata artifacts produced, so replay them last,
+    # in the given (collection) order, under the same fill-only-missing rule as the command.
+    for artifact in api_toc_artifacts:
+        book = _api_toc_target(dataset, _api_toc_isbn(artifact))
+        if book is None:
+            continue
+        try:
+            evidence = _normalize_api_toc(
+                artifact.provider, artifact.response, book, artifact.retrieved_at
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        if evidence is not None:
+            dataset = _with_api_toc(dataset, [evidence])
     return dataset, requested_by_topic
 
 
@@ -1509,9 +1566,6 @@ def export_ml_evidence_command(
     typer.echo(f"ML evidence summary: {report_path}")
 
 
-API_TOC_PROVIDERS = {"yes24": "YES24_API_KEY", "springer-metadata": "SPRINGER_API_KEY"}
-
-
 def _fetch_api_toc(provider: str, collector: Any, book: Book) -> tuple[dict, dict]:
     """Return (request parameters, raw response) for one ISBN-keyed API TOC lookup."""
     isbn_13 = book.isbn_13 or ""
@@ -1612,12 +1666,7 @@ def enrich_api_toc(
             additions.append(evidence)
             attempts.append({**attempt, "status": "added", "toc_entries": len(evidence.toc)})
 
-    updated = CanonicalDataset(
-        books=dataset.books,
-        documents=dataset.documents,
-        toc=[*dataset.toc, *(entry for item in additions for entry in item.toc)],
-        sources=[*dataset.sources, *(source for item in additions for source in item.sources)],
-    )
+    updated = _with_api_toc(dataset, additions)
     errors = validate_dataset(updated)
     if errors:
         for error in errors:
