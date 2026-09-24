@@ -696,6 +696,51 @@ ISBN/edition verification and retained raw provenance. This change does not impl
 source, ML scoring, or a claim of improved live TOC coverage. The synthetic regression verifies
 that an explicitly larger detail budget preserves an otherwise unqueried edition's TOC.
 
+## ISBN-keyed API TOC enrichment (YES24, Springer Nature)
+
+Two keyed APIs can fill a missing TOC by exact ISBN-13 lookup, without per-book allowlists:
+
+```bash
+export YES24_API_KEY=yk_live_...        # https://developers.yes24.com
+export SPRINGER_API_KEY=...             # https://dev.springernature.com (Metadata API)
+uv run data-pipeline enrich-api-toc --provider yes24 --data-dir data/experiments/scale-50
+uv run data-pipeline enrich-api-toc --provider springer-metadata --data-dir data/experiments/scale-50
+uv run data-pipeline enrich-api-toc --provider yes24 --isbn 9781118909584   # one book
+```
+
+The command only touches canonical books that have an ISBN-13 and no TOC yet; it never discovers
+books and never replaces an existing TOC. Each lookup's raw response is preserved (the API key is
+sent as a header or query parameter and is never written to raw artifacts or reports), and a match
+is recorded as `exact_edition_toc` with `match_basis: ["isbn_13"]`. Only TOC titles become
+canonical records: YES24 book descriptions and Springer chapter abstracts are not copied into
+`documents.jsonl`. `reports/api-toc-enrichment-<provider>.json` lists every attempt as `added`,
+`no_toc`, or `failed`; the exit status is 1 only when an attempt failed.
+
+- **YES24** (`/v1/goods/content`): the TOC arrives as one text field whose shape varies by book
+  (tab-separated page columns, period-delimited section runs, HTML with `PART` headings, Korean
+  `n장`/`n부`). Depth comes from dotted labels (`1.1.1`) and `PART`/`부` headings; an unlabeled line
+  sits under the most recent numbered entry. Where the source puts an unlabeled "Exercises" line
+  after a deeper subsection, it is attached to that subsection because the text gives no better
+  signal. `GOODS_001` (no TOC) and `GOODS_002` (unknown ISBN) are `no_toc`, not failures. YES24's
+  terms require a "YES24 출처" attribution and a product link (kept in each Source's `url` and
+  `rights_note`) and prohibit accumulating its catalog into a separate database or redistributing
+  it, which is why the command is ISBN-by-ISBN enrichment of an existing small dataset only.
+- **Springer Nature** (`/meta/v2/json`): the `isbn:` query matches only hyphenated ISBNs
+  (hyphenated with `isbnlib`), and page sizes above 25 or title searches are premium features, so
+  one ISBN's records are paged 25 at a time. Chapters are flat level-1 entries ordered by the
+  chapter number in their DOI (`10.1007/<eISBN>_<n>`); front/back matter and records whose
+  print/electronic ISBN differs from the target are dropped. This complements the reviewed
+  Springer book-page source: it needs an API key but no per-book review.
+
+Measured coverage (2026-09-23) of the 51 ISBN-13s in `configs/mvp.json` and
+`configs/experiments/*.json`: YES24 has a TOC for 4 (mostly current editions in its foreign-book
+catalog) and Springer for 0, because the manifests are dominated by out-of-print Prentice-Hall,
+Addison-Wesley, and McGraw-Hill editions. Both APIs cover current editions well, for example
+Axler's *Linear Algebra Done Right* 3rd edition (Springer, 10 chapters) and Penney's *Linear
+Algebra: Ideas and Applications* (YES24, 161 entries). `build --raw ...` replays these raw artifacts after
+the metadata artifacts, in the given order and under the same fill-only-missing rule, so passing
+all raw artifacts in collection-timestamp order reproduces the enriched JSONL byte for byte.
+
 ## Missing-TOC enrichment
 
 After generic metadata collection, run the opt-in reviewed-source fallback:
@@ -903,6 +948,87 @@ with the 64-entry catalog TOC. Coverage remained 14/50, while canonical TOC entr
 second run made no network attempts and left raw-file counts and canonical file hashes unchanged.
 Raw HTML, raw artifacts, and generated canonical data remain outside Git; thirty-six selected
 books still lack TOCs.
+
+### Unresolved-book TOC sweep (2026-09-23 KST)
+
+Every one of the thirty Scale-50 books that the
+[2026-09-22 acquisition report](docs/experiments/scale-50-toc-acquisition-2026-09-22.json)
+left at `metadata_fallback` was re-checked against the already-allowlisted eCampus catalog by
+searching for its canonical target ISBN. The sweep was read-only reconnaissance; nothing was
+imported without a reviewed source entry.
+
+| Outcome | Books |
+| --- | --- |
+| Exact-ISBN catalog page found | 7 |
+| Page found and TOC section present | 4 |
+| Added as a reviewed source | 3 |
+| Rejected: page declares no edition and its title is a different SKU | 1 |
+| No exact-ISBN catalog page | 19 |
+| No ISBN on the canonical record, so exact-edition lookup is impossible | 4 |
+
+The three added sources are:
+
+| Book | ISBN | Format | Entries |
+| --- | --- | --- | --- |
+| Axler, *Linear Algebra Done Right*, 2nd | 9780387982588 | `flat_table` | 10 |
+| Harris, *Schaum's Outline of Operating Systems*, 1st | 9780071364355 | `indented_table` | 50 |
+| Sinha, *Distributed Operating Systems: Concepts and Design*, 1st | 9780780311190 | `indented_table_chapter_roots` | 168 |
+
+No parser changed. Each source reuses an existing `toc_format` and pins the reviewed ISBN,
+title, edition, entry count, root titles, per-root child counts, and descendant counts, so a
+later catalog change fails loudly instead of importing a different book's contents.
+
+`9780131907294` was rejected on purpose. Its catalog page carries no `bookEdition` marker and
+its title is *Linear Algebra with Applications (2-Download)*, a distinct digital SKU rather than
+the exact edition of the canonical record. Relaxing the edition check to gain one book would
+weaken the identity guard for every source, so it stays unresolved.
+
+Four canonical records carry no ISBN at all. They cannot be resolved by exact-edition lookup in
+any provider and need a selection fix, not another collector.
+
+#### Library of Congress `catdir` pages are not retrievable
+
+The acquisition report lists six MARC 856 `loc.gov/catdir` TOC links with
+`loc_856_usable_count = 0` and no recorded reason. Direct retrieval of three of them on
+2026-09-23 returned HTTP 403 with a Cloudflare interactive challenge body
+(`cType: "interactive"`, "Enable JavaScript and cookies to continue") rather than TOC HTML.
+This is an access control, so the pipeline does not work around it and the LOC tier stays at
+zero. The zero is a measured platform limit, not an unimplemented collector.
+
+#### Live verification
+
+The two Operating Systems sources were collected live against a copy of the 25-book
+`toc-enriched-20260920` canonical set:
+
+```bash
+uv run data-pipeline collect-public-page --source ecampus-sinha-distributed-os1  --data-dir <copy>
+uv run data-pipeline collect-public-page --source ecampus-harris-schaum-os1      --data-dir <copy>
+```
+
+TOC coverage rose from 7/25 to 9/25 and canonical TOC entries from 318 to 536. An immediate
+second run of both commands left `books.jsonl`, `documents.jsonl`, and `toc.jsonl` byte
+identical; only `sources.jsonl` changed, because a repeated retrieval updates its source
+snapshot as documented above.
+
+Applied to the Scale-50 selection these three sources project 20/50 to 23/50 usable TOCs. That
+projection has not been run against the Scale-50 dataset, which is not checked in; only the
+25-book result above was measured.
+
+#### Downstream effect
+
+The enriched 25-book set was scored with the ML repository's concept-difficulty comparison.
+Books with enough concept evidence to receive an intrinsic difficulty score rose from 6 to 8:
+
+| Book | Intrinsic score | Band | Concepts | Matched TOC entries |
+| --- | --- | --- | --- | --- |
+| Schaum's Outline of Operating Systems | 0.390 | intermediate | 9 | 23 / 50 |
+| Distributed Operating Systems | 0.424 | intermediate | 8 | 18 / 168 |
+
+Those scores come from the ML repository's uncalibrated proposed rubric. They demonstrate that
+the new evidence flows through concept matching into difficulty scoring; they are not evidence
+that either score is correct. The low match rate on the Sinha TOC reflects distributed-systems
+headings such as *Remote Procedure Calls*, *Distributed Shared Memory*, and *Naming* that the
+current ML concept list does not cover.
 
 ## Springer book landing pages
 
