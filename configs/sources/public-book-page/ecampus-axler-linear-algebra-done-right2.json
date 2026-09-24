@@ -1,0 +1,28 @@
+{
+  "slug": "ecampus-axler-linear-algebra-done-right2",
+  "provider": "ecampus",
+  "topic": "linear-algebra",
+  "book_id": "isbn13:9780387982588",
+  "isbn_13": "9780387982588",
+  "title": "Linear Algebra Done Right",
+  "authors": [
+    "Sheldon Axler"
+  ],
+  "edition": 2,
+  "url": "https://drake.ecampus.com/linear-algebra-done-right-2nd-axler/bk/9780387982588",
+  "toc_format": "flat_table",
+  "expected_toc_count": 10,
+  "expected_root_titles": [
+    "Vector Spaces",
+    "Finite-Dimensional Vector Spaces",
+    "Linear Maps",
+    "Polynomials",
+    "Eigenvalues and Eigenvectors",
+    "Inner-Product Spaces",
+    "Operators on Inner-Product Spaces",
+    "Operators on Complex Vector Spaces",
+    "Operators on Real Vector Spaces",
+    "Trace and Determinant"
+  ],
+  "expected_chapter_labels": []
+}
