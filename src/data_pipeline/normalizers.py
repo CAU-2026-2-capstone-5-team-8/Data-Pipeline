@@ -20,6 +20,7 @@ from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     is_valid_isbn_10,
     is_valid_isbn_13,
+    isbn_10_to_13,
     normalize_bibliographic_text,
     sha256_bytes,
     sha256_json,
@@ -667,6 +668,11 @@ def _normalize_yes24_item(
     )
     isbn_10 = normalize_isbn(item.get("isbn10"), 10)
     isbn_13 = normalize_isbn(item.get("isbn13"), 13)
+    if isbn_10 is not None and isbn_13 is not None and isbn_10_to_13(isbn_10) != isbn_13:
+        # A 979-prefixed ISBN-13 (most Korean books) has no ISBN-10, yet YES24 still
+        # fills `isbn10` with a checksum-valid value that identifies a different
+        # book. ISBN-13 is authoritative; the raw response keeps YES24's value.
+        isbn_10 = None
     if isbn_10 is None and isbn_13 is None:
         # YES24 lists bundles/sets alongside individual books; Korean law requires
         # a real ISBN for an actual book, so an item without one is treated as

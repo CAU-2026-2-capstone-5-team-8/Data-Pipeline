@@ -425,6 +425,34 @@ def test_normalize_accepts_isbn10_only_items() -> None:
     assert dataset.books[0].book_id == "isbn10:0070380376"
 
 
+def test_normalize_drops_isbn10_that_identifies_a_different_book() -> None:
+    # 979-prefixed ISBN-13s have no ISBN-10; YES24's checksum-valid isbn10 is spurious.
+    dataset = normalize_yes24_response(
+        _response(_item(isbn10="1169665993", isbn13="9791169665995")),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    book = dataset.books[0]
+    assert (book.book_id, book.isbn_10, book.isbn_13) == (
+        "isbn13:9791169665995",
+        None,
+        "9791169665995",
+    )
+
+
+def test_normalize_keeps_isbn10_that_matches_its_isbn13() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(isbn10="0070380376", isbn13="9780070380370")),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert dataset.books[0].isbn_10 == "0070380376"
+
+
 def test_normalize_skips_titles_that_do_not_match_the_topic_relevance_pattern() -> None:
     dataset = normalize_yes24_response(
         _response(_item(title="이공편입수학 ver 3.0 세트")),
