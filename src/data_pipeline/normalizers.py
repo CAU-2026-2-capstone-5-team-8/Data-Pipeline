@@ -39,6 +39,7 @@ from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
+from data_pipeline.springer_book_sources import springer_book_source, springer_book_source_id
 from data_pipeline.topics import TOPICS
 
 logger = logging.getLogger(__name__)
@@ -3941,3 +3942,139 @@ def normalize_public_book_page_response(
         ),
     )
     return CanonicalDataset(books=[], documents=[document], toc=toc, sources=[source])
+
+
+def _springer_structured_book(tree: HTMLParser) -> dict[str, Any]:
+    """Return the ld+json Book node Springer publishes on a book landing page."""
+    for script in tree.css('script[type="application/ld+json"]'):
+        try:
+            payload = json.loads(script.text())
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        for candidate in payload if isinstance(payload, list) else [payload]:
+            if not isinstance(candidate, dict):
+                continue
+            node_type = candidate.get("@type")
+            types = node_type if isinstance(node_type, list) else [node_type]
+            if "Book" in types and candidate.get("isbn"):
+                return candidate
+    raise InvalidProviderResponse("Springer page is missing its structured Book metadata")
+
+
+def _springer_toc_entries(
+    tree: HTMLParser, book_id: str, source_id: str
+) -> tuple[list[TocEntry], list[str | None]]:
+    """Preserve the published chapter sequence and each chapter's printed page range."""
+    section = tree.css_first('[data-title="book-toc"]')
+    if section is None:
+        raise InvalidProviderResponse("Springer page is missing its table of contents")
+    entries: list[TocEntry] = []
+    page_ranges: list[str | None] = []
+    for order_index, chapter in enumerate(section.css('[data-test="chapter"]')):
+        heading = chapter.css_first("h3")
+        title = heading.text(separator=" ", strip=True).strip() if heading is not None else ""
+        if not title:
+            raise InvalidProviderResponse("Springer table of contents contained an untitled entry")
+        page_node = chapter.css_first('[data-test="page-number"]')
+        page_ranges.append(page_node.text(strip=True) if page_node is not None else None)
+        entries.append(
+            TocEntry(
+                toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), title),
+                book_id=book_id,
+                parent_entry_id=None,
+                level=1,
+                order_index=order_index,
+                label=None,
+                title=title,
+                source_id=source_id,
+            )
+        )
+    if not entries:
+        raise InvalidProviderResponse("Springer table of contents contained no chapters")
+    return entries, page_ranges
+
+
+def normalize_springer_book_response(
+    response: dict[str, Any], *, topic: str, retrieved_at: datetime
+) -> CanonicalDataset:
+    """Normalize one reviewed Springer book landing page into canonical TOC evidence."""
+    source_slug = response.get("source_slug")
+    if not isinstance(source_slug, str):
+        raise InvalidProviderResponse("Springer response is missing source_slug")
+    try:
+        source_spec = springer_book_source(source_slug)
+    except ValueError as exc:
+        raise InvalidProviderResponse(str(exc)) from exc
+    if topic != source_spec.topic:
+        raise InvalidProviderResponse("Springer response topic does not match its allowlist entry")
+    if response.get("url") != source_spec.url:
+        raise InvalidProviderResponse("Springer response URL does not match allowlist")
+    html = response.get("html")
+    if not isinstance(html, str):
+        raise InvalidProviderResponse("Springer response must contain an HTML string")
+
+    tree = HTMLParser(html)
+    structured = _springer_structured_book(tree)
+    page_isbn = str(structured.get("isbn", "")).replace("-", "")
+    if page_isbn != source_spec.ebook_isbn:
+        raise InvalidProviderResponse("Springer page does not match the reviewed eBook ISBN")
+    page_title = str(structured.get("name", ""))
+    if normalize_bibliographic_text(page_title) != normalize_bibliographic_text(source_spec.title):
+        raise InvalidProviderResponse("Springer page does not match the reviewed book title")
+    if source_spec.springer_edition_label and source_spec.springer_edition_label not in html:
+        raise InvalidProviderResponse("Springer page no longer declares the reviewed edition")
+
+    source_id = springer_book_source_id(source_spec)
+    toc, page_ranges = _springer_toc_entries(tree, source_spec.book_id, source_id)
+    if tuple(entry.title for entry in toc) != source_spec.expected_entry_titles:
+        raise InvalidProviderResponse(
+            "Springer table of contents does not match the reviewed chapter sequence"
+        )
+
+    # An alternate Springer edition is never recorded as this book's own contents.
+    same_edition = source_spec.edition_relation == "exact"
+    rights_note = (
+        "Springer book landing page; chapter titles and page ranges only, no chapter text."
+    )
+    if not same_edition:
+        rights_note += (
+            f" Contents belong to the Springer {source_spec.springer_edition_label or 'edition'},"
+            " not to the canonical record's own edition."
+        )
+    source = Source(
+        source_id=source_id,
+        book_id=source_spec.book_id,
+        provider=source_spec.provider,
+        source_type="publisher_page",
+        url=source_spec.url,
+        external_id=source_spec.doi,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=sha256_text(html),
+        evidence=EvidenceProvenance(
+            evidence_type="toc",
+            tier="exact_edition_toc" if same_edition else "same_work_alternate_edition_toc",
+            target_isbn=source_spec.isbn_13,
+            target_title=source_spec.title,
+            target_authors=list(source_spec.authors),
+            source_edition_id=source_spec.doi,
+            source_isbns=[source_spec.ebook_isbn],
+            source_title=page_title,
+            same_edition=same_edition,
+            source_document_type="publisher_html",
+            discovery_method="reviewed_springer_registry",
+            match_basis=(
+                ["exact_ebook_isbn", "normalized_title", "reviewed_chapter_sequence"]
+                + (["exact_edition"] if same_edition else ["same_work_doi"])
+            ),
+            validation_status="strong" if same_edition else "acceptable",
+        ),
+    )
+    logger.info(
+        "springer toc normalized: slug=%s entries=%d page_ranges=%d",
+        source_spec.slug,
+        len(toc),
+        sum(1 for value in page_ranges if value),
+    )
+    return CanonicalDataset(books=[], documents=[], toc=toc, sources=[source])
