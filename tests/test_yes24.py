@@ -7,6 +7,7 @@ from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.normalizers import normalize_yes24_response
+from data_pipeline.validation import validate_dataset
 
 RETRIEVED_AT = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
 
@@ -283,6 +284,99 @@ def test_normalize_parses_part_style_toc_with_tab_indented_children() -> None:
     assert root_titles[appendix_index + 1 : appendix_index + 3] == [
         "QR분해",
         "특이값 분해(SVD)",
+    ]
+
+
+def _toc_tree(contents: str) -> list[tuple[int, str | None, str, str | None]]:
+    """(level, label, title, parent title) for each entry, in order."""
+    dataset = normalize_yes24_response(
+        _response(_item(contentDetail={"tableOfContents": contents})),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    titles = {entry.toc_entry_id: entry.title for entry in dataset.toc}
+    return [
+        (entry.level, entry.label, entry.title, titles.get(entry.parent_entry_id or ""))
+        for entry in sorted(dataset.toc, key=lambda entry: entry.order_index)
+    ]
+
+
+def test_normalize_gives_unique_ids_and_order_when_titles_repeat_across_chapters() -> None:
+    contents = "1장 벡터\r\n1.1 내적\r\n요약\r\n2장 행렬\r\n2.1 곱셈\r\n요약\r\n"
+    dataset = normalize_yes24_response(
+        _response(_item(contentDetail={"tableOfContents": contents})),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert validate_dataset(dataset) == []
+    assert len({entry.toc_entry_id for entry in dataset.toc}) == 6
+    assert [entry.order_index for entry in dataset.toc] == [0, 1, 2, 3, 4, 5]
+
+
+def test_normalize_strips_html_and_nests_hyphen_sections_and_underscore_items() -> None:
+    contents = (
+        "<b>Chapter 01 컴퓨터 구조 시작하기</B>\r\n\r\n"
+        "01-1 구조를 알아야 하는 이유\t\r\n"
+        "__문제 해결\t\r\n"
+        "[확인 문제]\r\n"
+        "01-2 컴퓨터 구조의 큰 그림\r\n"
+        "<B>Chapter 02 데이터</B>\r\n"
+    )
+
+    assert _toc_tree(contents) == [
+        (1, None, "Chapter 01 컴퓨터 구조 시작하기", None),
+        (2, "01-1", "구조를 알아야 하는 이유", "Chapter 01 컴퓨터 구조 시작하기"),
+        (3, None, "문제 해결", "구조를 알아야 하는 이유"),
+        # Unmarked lines stay flat roots but do not close the open chapter.
+        (1, None, "확인 문제", None),
+        (2, "01-2", "컴퓨터 구조의 큰 그림", "Chapter 01 컴퓨터 구조 시작하기"),
+        (1, None, "Chapter 02 데이터", None),
+    ]
+
+
+def test_normalize_nests_parts_chapters_and_multi_level_numbers() -> None:
+    contents = (
+        "<b>PART 01 운영체제와 컴퓨터</b>\r\n"
+        "CHAPTER 01 운영체제 개요\r\n"
+        "01 운영체제의 개념\r\n"
+        "1.2 운영체제의 유형\r\n"
+        "1.2.1 일괄 처리 시스템\r\n"
+        "제2장 프로세스\r\n"
+        "\t1. 프로세스의 개념\r\n"
+    )
+
+    assert _toc_tree(contents) == [
+        (1, "01", "운영체제와 컴퓨터", None),
+        (2, None, "CHAPTER 01 운영체제 개요", "운영체제와 컴퓨터"),
+        (3, "01", "운영체제의 개념", "CHAPTER 01 운영체제 개요"),
+        (3, "1.2", "운영체제의 유형", "CHAPTER 01 운영체제 개요"),
+        (4, "1.2.1", "일괄 처리 시스템", "운영체제의 유형"),
+        (2, None, "제2장 프로세스", "운영체제와 컴퓨터"),
+        (3, "1", "프로세스의 개념", "제2장 프로세스"),
+    ]
+
+
+def test_normalize_nests_single_numbers_under_part_and_splits_br_lines() -> None:
+    contents = "<b>PART 1 주제 도출</b>\r\n01 문장 독해<br/>02 정보 관계\r\n"
+
+    assert _toc_tree(contents) == [
+        (1, "1", "주제 도출", None),
+        (2, "01", "문장 독해", "주제 도출"),
+        (2, "02", "정보 관계", "주제 도출"),
+    ]
+
+
+def test_normalize_back_matter_closes_the_open_chapter() -> None:
+    contents = "Chapter 5 고유값\r\n1. 대각화\r\n[부록]\r\n1. QR분해\r\n"
+
+    assert [(level, title) for level, _, title, _ in _toc_tree(contents)] == [
+        (1, "Chapter 5 고유값"),
+        (2, "대각화"),
+        (1, "부록"),
+        (1, "QR분해"),
     ]
 
 

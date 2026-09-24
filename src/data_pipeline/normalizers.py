@@ -480,95 +480,153 @@ def normalize_internet_archive_response(
     return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
 
 
-_YES24_PART_LABEL_RE = re.compile(r"^PART\s+([^\s.]+)\.\s*(.+)$")
-# Matches both hyphen-separated ("0-1. 제목") and dot-separated ("1.1 제목")
-# compound labels, with or without a trailing period before the title.
-_YES24_CHILD_LABEL_RE = re.compile(r"^(\d+(?:[.\-]\d+)*)\.?\s+(.+)$")
-_YES24_BRACKET_RE = re.compile(r"^\[(.+)\]$")
+_YES24_TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
+_YES24_BREAK_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_YES24_BOLD_RE = re.compile(r"<b\b", re.IGNORECASE)
 _YES24_TITLE_MARKER_RE = re.compile(r"^『.*』$")
-_YES24_CHAPTER_ROOT_RE = re.compile(r"^(\d+)\s*장\b")
+_YES24_BRACKET_RE = re.compile(r"^\[(.+)\]$")
+# "PART 0. 기초상식", "PART 01 운영체제", "Part 1 개관", "PART 1? 왜 ...", "제1부 기초", "Ⅰ 가상화"
+_YES24_PART_RE = re.compile(
+    r"^(?:part\s*([0-9]+)(?=[\s.:?]|$)|제\s*([0-9]+)\s*부|([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)(?=\s))"
+    r"[\s.:?]*(.*)$",
+    re.IGNORECASE,
+)
+# "Chapter 01 제목", "제11장장치관리", "1장 벡터와 행렬" -- but not "1장에 대한 고찰".
+_YES24_CHAPTER_RE = re.compile(
+    r"^(?:chapter\s*([0-9]+)(?=[\s.:]|$)|제\s*([0-9]+)\s*장|([0-9]+)\s*장(?=\s|$))",
+    re.IGNORECASE,
+)
+# Matches both hyphen-separated ("0-1. 제목") and dot-separated ("1.2.1 제목")
+# compound labels, with or without a trailing period before the title.
+_YES24_NUMBERED_RE = re.compile(r"^(\d+(?:[.\-]\d+)*)\.?\s+(.+)$")
+_YES24_BACK_MATTER_RE = re.compile(
+    r"^(?:부록|appendix|찾아보기|index|참고\s*문헌|참고\s*자료)", re.IGNORECASE
+)
+_YES24_PART_RANK = 1
+_YES24_CHAPTER_RANK = 2
 
 
 def _parse_yes24_toc(text: str, book_id: str, source_id: str) -> list[TocEntry]:
-    """Parse YES24's free-text `contents` blob into a two-level hierarchy.
+    """Parse YES24's free-text `contents` blob into a TOC hierarchy.
 
-    Two independent signals nest a line under the most recent root:
-    - indentation (tab or 4-space), used by "PART" -style books; or
-    - a compound numeric label whose leading segment matches a preceding
-      "<N>장" ("Chapter N") root, used by books that number sections
-      ("1.1 제목") without indenting them.
-    YES24 does not consistently indent or number every child (e.g. a
-    bracketed "[부록]" appendix heading's own entries are neither indented
-    nor chapter-numbered), so anything matching neither signal becomes its
-    own flat root rather than a guessed child -- consistent with this
-    project's rule against inventing hierarchy the source text does not
-    encode.
+    Only signals written in the source text create hierarchy, ranked
+    part > chapter > numbered section:
+    - "PART N" / "제N부" / Roman-numeral lines are parts;
+    - "Chapter N" / "제N장" / "N장" lines and bold (`<b>`) headings are chapters;
+    - compound numbers nest by segment count ("1.1" under chapter 1,
+      "1.2.1" under "1.2") when their leading segment matches the open
+      chapter number, and a single number ("1.", "01") nests under the
+      innermost open chapter or part;
+    - a "__" prefix nests under the previous entry, and tab/4-space
+      indentation nests under the previous unindented entry.
+    Anything matching none of these (e.g. "요약", "[확인 문제]") becomes its own
+    flat root rather than a guessed child, without closing the open chapter,
+    consistent with this project's rule against inventing hierarchy the
+    source text does not encode. Back matter such as "[부록]" closes it.
+
+    One order_index counter runs over the whole book, so order is total and
+    entry IDs cannot collide when titles such as "요약" repeat across chapters.
+    `<br>` separates lines, and other HTML tags are removed from titles.
     """
     entries: list[TocEntry] = []
-    current_root_id: str | None = None
-    current_chapter_number: str | None = None
-    root_order = 0
-    child_order = 0
-    for raw_line in text.splitlines():
+    # (rank, entry, is part/chapter): only parts and chapters contain single-numbered sections.
+    stack: list[tuple[int, TocEntry, bool]] = []
+    chapter_number: int | None = None
+    previous: TocEntry | None = None
+    previous_unindented: TocEntry | None = None
+
+    def add(parent: TocEntry | None, label: str | None, title: str) -> TocEntry:
+        order_index = len(entries)
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), title),
+            book_id=book_id,
+            parent_entry_id=parent.toc_entry_id if parent is not None else None,
+            level=parent.level + 1 if parent is not None else 1,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        return entry
+
+    def push(rank: int, label: str | None, title: str, *, container: bool = False) -> TocEntry:
+        while stack and stack[-1][0] >= rank:
+            stack.pop()
+        entry = add(stack[-1][1] if stack else None, label, title)
+        stack.append((rank, entry, container))
+        return entry
+
+    for raw_line in _YES24_BREAK_RE.sub("\n", text).splitlines():
         if not raw_line.strip():
             continue
         indented = raw_line.startswith(("\t", "    "))
-        line = raw_line.strip()
-        if _YES24_TITLE_MARKER_RE.match(line):
+        bold = bool(_YES24_BOLD_RE.search(raw_line))
+        line = _YES24_TAG_RE.sub("", raw_line).strip()
+        underscored = line.startswith("__")
+        line = line.lstrip("_").strip()
+        if not line or _YES24_TITLE_MARKER_RE.match(line):
             continue
 
-        child_match = _YES24_CHILD_LABEL_RE.match(line)
-        label = child_match.group(1) if child_match else None
-        numbered_child = current_root_id is not None and (
-            indented or (label is not None and label.split(".")[0] == current_chapter_number)
-        )
-        if numbered_child:
-            title = child_match.group(2).strip()
-            entry_id = stable_id("toc", book_id, source_id, "child", str(child_order), title)
-            entries.append(
-                TocEntry(
-                    toc_entry_id=entry_id,
-                    book_id=book_id,
-                    parent_entry_id=current_root_id,
-                    level=2,
-                    order_index=child_order,
-                    label=label,
-                    title=title,
-                    source_id=source_id,
-                )
+        if underscored and previous is not None:
+            add(previous, None, line)
+            continue
+
+        numbered = _YES24_NUMBERED_RE.match(line)
+        part = _YES24_PART_RE.match(line)
+        chapter = _YES24_CHAPTER_RE.match(line)
+        if part:
+            label = next(group for group in part.groups()[:3] if group)
+            entry = push(_YES24_PART_RANK, label, part.group(4).strip() or line, container=True)
+            chapter_number = None
+        elif chapter or bold:
+            entry = push(_YES24_CHAPTER_RANK, None, line, container=True)
+            number = next((group for group in chapter.groups() if group), None) if chapter else None
+            chapter_number = int(number) if number is not None else None
+        elif indented and previous_unindented is not None:
+            label, title = (
+                (numbered.group(1), numbered.group(2).strip()) if numbered else (None, line)
             )
-            child_order += 1
+            previous = add(previous_unindented, label, title)
             continue
-
-        part_match = _YES24_PART_LABEL_RE.match(line)
-        bracket_match = _YES24_BRACKET_RE.match(line)
-        if part_match:
-            label, title = part_match.group(1), part_match.group(2).strip()
-        elif bracket_match:
-            label, title = None, bracket_match.group(1).strip()
-        elif child_match:
-            title = child_match.group(2).strip()
+        elif numbered and (
+            rank := _yes24_section_rank(
+                numbered.group(1),
+                chapter_number,
+                container_rank=max(
+                    (open_rank for open_rank, _, container in stack if container),
+                    default=None,
+                ),
+            )
+        ):
+            entry = push(rank, numbered.group(1), numbered.group(2).strip())
         else:
-            label, title = None, line
-        entry_id = stable_id("toc", book_id, source_id, "root", str(root_order), title)
-        entries.append(
-            TocEntry(
-                toc_entry_id=entry_id,
-                book_id=book_id,
-                parent_entry_id=None,
-                level=1,
-                order_index=root_order,
-                label=label,
-                title=title,
-                source_id=source_id,
-            )
-        )
-        current_root_id = entry_id
-        chapter_match = _YES24_CHAPTER_ROOT_RE.match(line)
-        current_chapter_number = chapter_match.group(1) if chapter_match else None
-        root_order += 1
-        child_order = 0
+            bracket = _YES24_BRACKET_RE.match(line)
+            if numbered:
+                label, title = numbered.group(1), numbered.group(2).strip()
+            elif bracket:
+                label, title = None, bracket.group(1).strip()
+            else:
+                label, title = None, line
+            if _YES24_BACK_MATTER_RE.match(title):
+                stack.clear()
+                chapter_number = None
+            entry = add(None, label, title)
+        previous = entry
+        previous_unindented = entry
     return entries
+
+
+def _yes24_section_rank(
+    label: str, chapter_number: int | None, *, container_rank: int | None
+) -> int | None:
+    """Rank of a numbered line under the open part/chapter, or None when it does not nest."""
+    segments = re.split(r"[.\-]", label)
+    if len(segments) == 1:
+        return container_rank + 1 if container_rank is not None else None
+    if chapter_number is not None and int(segments[0]) == chapter_number:
+        return _YES24_CHAPTER_RANK + len(segments) - 1
+    return None
 
 
 def _yes24_published_year(value: Any) -> int | None:
