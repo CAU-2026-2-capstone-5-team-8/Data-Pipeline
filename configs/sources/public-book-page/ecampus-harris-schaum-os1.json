@@ -1,0 +1,52 @@
+{
+  "slug": "ecampus-harris-schaum-os1",
+  "provider": "ecampus",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9780071364355",
+  "isbn_13": "9780071364355",
+  "title": "Schaum's Outline of Operating Systems",
+  "authors": [
+    "J. Archer Harris"
+  ],
+  "edition": 1,
+  "url": "https://drake.ecampus.com/schaums-outline-operating-systems-1st/bk/9780071364355",
+  "toc_format": "indented_table",
+  "expected_toc_count": 50,
+  "expected_root_titles": [
+    "Introduction",
+    "Process Management",
+    "Interprocess Communication and Synchronization",
+    "Memory Management",
+    "Virtual Memory",
+    "File System Management",
+    "Device Management",
+    "Security",
+    "Bibliography",
+    "Index"
+  ],
+  "expected_chapter_labels": [],
+  "expected_child_counts": [
+    3,
+    7,
+    3,
+    10,
+    2,
+    5,
+    3,
+    7,
+    0,
+    0
+  ],
+  "expected_descendant_counts": [
+    3,
+    7,
+    3,
+    10,
+    2,
+    5,
+    3,
+    7,
+    0,
+    0
+  ]
+}
