@@ -11,6 +11,7 @@ dependencies = [
     "selectolax>=0.3.33,<1",
     "tenacity>=9.1,<10",
     "typer>=0.16,<1",
+    "isbnlib>=3.10,<4",
 ]
 
 [project.scripts]
