@@ -22,6 +22,11 @@ from data_pipeline.topics import topic_korean_query
 
 ITEM_LIST_URL = "https://apis.yes24.com/v1/goods/itemList"
 CONTENT_URL = "https://apis.yes24.com/v1/goods/content"
+# Live-verified: pageSize=1000 returns whatever the true result count is (e.g. 976
+# for "algorithms") with no error -- the API has no page-size wall in this range.
+# This cap is a defensive ceiling, not a discovered API limit; it sits comfortably
+# above the largest candidate_limit the CLI can ever request (100-book limit * 4).
+MAX_PAGE_SIZE = 1000
 
 
 class MissingApiKey(RuntimeError):
@@ -73,7 +78,7 @@ class Yes24Collector:
                 "query": topic_korean_query(topic),
                 "category": "BOOK",
                 "detail": "Y",
-                "pageSize": min(candidate_limit, 100),
+                "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
             },
             headers=self._auth_headers,
         )
@@ -92,7 +97,7 @@ class Yes24Collector:
             "query": topic_korean_query(topic),
             "category": "BOOK",
             "detail": "Y",
-            "pageSize": min(candidate_limit, 100),
+            "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
         }
 
     @retry(

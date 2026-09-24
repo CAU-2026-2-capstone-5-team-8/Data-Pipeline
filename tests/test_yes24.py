@@ -80,8 +80,8 @@ def test_search_parameters_uses_korean_topic_query() -> None:
     assert parameters["pageSize"] == 20
 
 
-def test_search_parameters_caps_page_size_at_one_hundred() -> None:
-    assert Yes24Collector.search_parameters("linear-algebra", 500)["pageSize"] == 100
+def test_search_parameters_caps_page_size_at_one_thousand() -> None:
+    assert Yes24Collector.search_parameters("linear-algebra", 5000)["pageSize"] == 1000
 
 
 def test_search_parameters_rejects_non_positive_candidate_limit() -> None:
