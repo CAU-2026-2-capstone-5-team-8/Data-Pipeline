@@ -39,7 +39,7 @@ from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
-from data_pipeline.topics import TOPICS
+from data_pipeline.topics import TOPICS, topic_korean_relevance_pattern
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -478,6 +478,284 @@ def normalize_internet_archive_response(
             break
 
     return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
+
+
+_YES24_PART_LABEL_RE = re.compile(r"^PART\s+([^\s.]+)\.\s*(.+)$")
+# Matches both hyphen-separated ("0-1. 제목") and dot-separated ("1.1 제목")
+# compound labels, with or without a trailing period before the title.
+_YES24_CHILD_LABEL_RE = re.compile(r"^(\d+(?:[.\-]\d+)*)\.?\s+(.+)$")
+_YES24_BRACKET_RE = re.compile(r"^\[(.+)\]$")
+_YES24_TITLE_MARKER_RE = re.compile(r"^『.*』$")
+_YES24_CHAPTER_ROOT_RE = re.compile(r"^(\d+)\s*장\b")
+
+
+def _parse_yes24_toc(text: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse YES24's free-text `contents` blob into a two-level hierarchy.
+
+    Two independent signals nest a line under the most recent root:
+    - indentation (tab or 4-space), used by "PART" -style books; or
+    - a compound numeric label whose leading segment matches a preceding
+      "<N>장" ("Chapter N") root, used by books that number sections
+      ("1.1 제목") without indenting them.
+    YES24 does not consistently indent or number every child (e.g. a
+    bracketed "[부록]" appendix heading's own entries are neither indented
+    nor chapter-numbered), so anything matching neither signal becomes its
+    own flat root rather than a guessed child -- consistent with this
+    project's rule against inventing hierarchy the source text does not
+    encode.
+    """
+    entries: list[TocEntry] = []
+    current_root_id: str | None = None
+    current_chapter_number: str | None = None
+    root_order = 0
+    child_order = 0
+    for raw_line in text.splitlines():
+        if not raw_line.strip():
+            continue
+        indented = raw_line.startswith(("\t", "    "))
+        line = raw_line.strip()
+        if _YES24_TITLE_MARKER_RE.match(line):
+            continue
+
+        child_match = _YES24_CHILD_LABEL_RE.match(line)
+        label = child_match.group(1) if child_match else None
+        numbered_child = current_root_id is not None and (
+            indented or (label is not None and label.split(".")[0] == current_chapter_number)
+        )
+        if numbered_child:
+            title = child_match.group(2).strip()
+            entry_id = stable_id("toc", book_id, source_id, "child", str(child_order), title)
+            entries.append(
+                TocEntry(
+                    toc_entry_id=entry_id,
+                    book_id=book_id,
+                    parent_entry_id=current_root_id,
+                    level=2,
+                    order_index=child_order,
+                    label=label,
+                    title=title,
+                    source_id=source_id,
+                )
+            )
+            child_order += 1
+            continue
+
+        part_match = _YES24_PART_LABEL_RE.match(line)
+        bracket_match = _YES24_BRACKET_RE.match(line)
+        if part_match:
+            label, title = part_match.group(1), part_match.group(2).strip()
+        elif bracket_match:
+            label, title = None, bracket_match.group(1).strip()
+        elif child_match:
+            title = child_match.group(2).strip()
+        else:
+            label, title = None, line
+        entry_id = stable_id("toc", book_id, source_id, "root", str(root_order), title)
+        entries.append(
+            TocEntry(
+                toc_entry_id=entry_id,
+                book_id=book_id,
+                parent_entry_id=None,
+                level=1,
+                order_index=root_order,
+                label=label,
+                title=title,
+                source_id=source_id,
+            )
+        )
+        current_root_id = entry_id
+        chapter_match = _YES24_CHAPTER_ROOT_RE.match(line)
+        current_chapter_number = chapter_match.group(1) if chapter_match else None
+        root_order += 1
+        child_order = 0
+    return entries
+
+
+def _yes24_published_year(value: Any) -> int | None:
+    """Parse YES24's compact `publishDate` (YYYYMMDD, e.g. "20260917")."""
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"^(1\d{3}|20\d{2}|21\d{2})", value.strip())
+    return int(match.group(1)) if match else None
+
+
+def _yes24_records(response: dict[str, Any]) -> list[Any]:
+    data = response.get("data", {})
+    if not isinstance(data, dict):
+        raise InvalidProviderResponse("yes24 response missing 'data' object")
+    return _provider_records(data, "items", "yes24")
+
+
+def _normalize_yes24_item(
+    item: dict[str, Any], topic: str, retrieved_at: datetime
+) -> tuple[Book, Source, list[Document], list[TocEntry]] | None:
+    """Normalize one YES24 itemList row (identity, description, and TOC if present)."""
+    item_id_value = item.get("itemId")
+    if not isinstance(item_id_value, int) or isinstance(item_id_value, bool):
+        return None
+    item_id = str(item_id_value)
+    title_value = item.get("title")
+    if not isinstance(title_value, str) or not title_value.strip():
+        return None
+    title = title_value.strip()
+    if not topic_korean_relevance_pattern(topic).search(title):
+        return None
+
+    author_field = item.get("author")
+    authors = (
+        _deduplicate_authors([author_field])
+        if isinstance(author_field, str) and author_field
+        else []
+    )
+    isbn_10 = normalize_isbn(item.get("isbn10"), 10)
+    isbn_13 = normalize_isbn(item.get("isbn13"), 13)
+    if isbn_10 is None and isbn_13 is None:
+        # YES24 lists bundles/sets alongside individual books; Korean law requires
+        # a real ISBN for an actual book, so an item without one is treated as
+        # ineligible rather than given a synthetic fallback identity.
+        return None
+    book_id = _book_id(isbn_10, isbn_13, title, authors, "yes24", item_id)
+    source_id = stable_id("source", "yes24", item_id, book_id, retrieved_at.isoformat())
+
+    publisher_value = item.get("publisher")
+    publisher = (
+        publisher_value.strip() if isinstance(publisher_value, str) and publisher_value else None
+    )
+
+    book = Book(
+        book_id=book_id,
+        isbn_10=isbn_10,
+        isbn_13=isbn_13,
+        title=title,
+        subtitle=None,
+        authors=authors,
+        publisher=publisher,
+        published_year=_yes24_published_year(item.get("publishDate")),
+        language="ko",
+        topics=TOPICS[topic],
+    )
+
+    is_translation = str(item.get("originalTranslation", "")).strip().upper() == "Y"
+    original_title_value = item.get("originalTitle")
+    original_title = (
+        original_title_value.strip()
+        if isinstance(original_title_value, str) and original_title_value.strip()
+        else None
+    )
+    rights_note = None
+    if is_translation:
+        rights_note = (
+            f'Translated edition (original title: "{original_title}")'
+            if original_title
+            else "Translated edition (original title not provided by YES24)"
+        )
+
+    link_value = item.get("link")
+    url = (
+        link_value.strip()
+        if isinstance(link_value, str) and link_value.strip()
+        else (f"https://www.yes24.com/product/goods/{item_id}")
+    )
+    source = Source(
+        source_id=source_id,
+        book_id=book_id,
+        provider="yes24",
+        source_type="metadata_api",
+        url=url,
+        external_id=item_id,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=sha256_json(item),
+    )
+
+    documents: list[Document] = []
+    content_detail = item.get("contentDetail")
+    if isinstance(content_detail, dict):
+        intro_value = content_detail.get("bookIntroduction")
+        if isinstance(intro_value, str) and intro_value.strip():
+            intro_text = intro_value.strip()
+            documents.append(
+                Document(
+                    document_id=stable_id("doc", book_id, "description", source_id),
+                    book_id=book_id,
+                    document_type="description",
+                    text=intro_text,
+                    source_id=source_id,
+                    content_hash=sha256_text(intro_text),
+                )
+            )
+
+    toc_entries: list[TocEntry] = []
+    if isinstance(content_detail, dict):
+        toc_value = content_detail.get("tableOfContents")
+        if isinstance(toc_value, str) and toc_value.strip():
+            toc_entries = _parse_yes24_toc(toc_value, book_id, source_id)
+
+    return book, source, documents, toc_entries
+
+
+def normalize_yes24_response(
+    response: dict[str, Any],
+    *,
+    topic: str,
+    limit: int,
+    retrieved_at: datetime,
+    diagnostics: NormalizationDiagnostics | None = None,
+) -> CanonicalDataset:
+    """Normalize one YES24 itemList (detail=Y) search response."""
+    if topic not in TOPICS:
+        raise ValueError(f"unsupported topic: {topic}")
+
+    books: list[Book] = []
+    documents: list[Document] = []
+    toc: list[TocEntry] = []
+    sources: list[Source] = []
+    seen_books: set[str] = set()
+
+    records = _yes24_records(response)
+    if diagnostics is not None:
+        diagnostics.candidate_count += len(records)
+    for record in records:
+        if not isinstance(record, dict):
+            logger.warning("event=normalization_skipped provider=yes24 reason=record_not_object")
+            if diagnostics is not None:
+                diagnostics.fail("invalid_provider_response")
+            continue
+        try:
+            result = _normalize_yes24_item(record, topic, retrieved_at)
+        except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+            logger.warning(
+                "event=normalization_skipped provider=yes24 item_id=%s error=%s",
+                record.get("itemId"),
+                exc,
+            )
+            if diagnostics is not None:
+                diagnostics.fail("parse_failure")
+            continue
+        if result is None:
+            if diagnostics is not None:
+                diagnostics.fail("ineligible_candidate")
+            continue
+        book, source, item_documents, item_toc = result
+        book_id = book.book_id
+        if book_id in seen_books:
+            if diagnostics is not None:
+                diagnostics.duplicate_candidate_count += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.normalized_candidate_count += 1
+        seen_books.add(book_id)
+        if len(books) >= limit:
+            continue
+        documents.extend(item_documents)
+        toc.extend(item_toc)
+        books.append(book)
+        sources.append(source)
+        if len(books) >= limit and diagnostics is None:
+            break
+
+    return CanonicalDataset(books=books, documents=documents, toc=toc, sources=sources)
 
 
 def normalize_hathitrust_response(

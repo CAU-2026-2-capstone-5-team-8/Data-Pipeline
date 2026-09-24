@@ -5,7 +5,9 @@
     "open_library_title": "operating systems",
     "google_books_subject": "Operating systems",
     "relevance_term_pattern": "\\boperating\\s+systems?\\b",
-    "conflicting_subjects_pattern": "\\b(?:robotics?|electric\\s+power|political\\s+science|anarchism)\\b"
+    "conflicting_subjects_pattern": "\\b(?:robotics?|electric\\s+power|political\\s+science|anarchism)\\b",
+    "korean_query": "운영체제",
+    "korean_relevance_term_pattern": "운영\\s*체제"
   },
   "linear-algebra": {
     "domain": "mathematics",
@@ -13,7 +15,9 @@
     "open_library_title": "linear algebra",
     "google_books_subject": "Linear algebra",
     "relevance_term_pattern": "\\blinear\\s+algebra\\b",
-    "conflicting_subjects_pattern": null
+    "conflicting_subjects_pattern": null,
+    "korean_query": "선형대수",
+    "korean_relevance_term_pattern": "선형\\s*대수"
   },
   "algorithms": {
     "domain": "computer-science",
@@ -21,7 +25,9 @@
     "open_library_title": "algorithms",
     "google_books_subject": "Computer algorithms",
     "relevance_term_pattern": "\\b(?:algorithms?|data\\s+structures?)\\b",
-    "conflicting_subjects_pattern": null
+    "conflicting_subjects_pattern": null,
+    "korean_query": "알고리즘",
+    "korean_relevance_term_pattern": "알고리즘|자료\\s*구조"
   },
   "databases": {
     "domain": "computer-science",
@@ -29,7 +35,9 @@
     "open_library_title": "database systems",
     "google_books_subject": "Database management",
     "relevance_term_pattern": "\\bdatabase(?:s|\\s+(?:systems?|management))?\\b",
-    "conflicting_subjects_pattern": null
+    "conflicting_subjects_pattern": null,
+    "korean_query": "데이터베이스",
+    "korean_relevance_term_pattern": "데이터\\s*베이스"
   },
   "discrete-mathematics": {
     "domain": "mathematics",
@@ -37,7 +45,9 @@
     "open_library_title": "discrete mathematics",
     "google_books_subject": "Discrete mathematics",
     "relevance_term_pattern": "\\bdiscrete\\s+mathematics\\b",
-    "conflicting_subjects_pattern": null
+    "conflicting_subjects_pattern": null,
+    "korean_query": "이산수학",
+    "korean_relevance_term_pattern": "이산\\s*수학"
   },
   "probability-statistics": {
     "domain": "mathematics",
@@ -45,6 +55,8 @@
     "open_library_title": "probability and statistics",
     "google_books_subject": "Probabilities",
     "relevance_term_pattern": "\\b(?:probabilit(?:y|ies)|statistics?)\\b",
-    "conflicting_subjects_pattern": null
+    "conflicting_subjects_pattern": null,
+    "korean_query": "확률과 통계",
+    "korean_relevance_term_pattern": "확률|통계"
   }
 }
