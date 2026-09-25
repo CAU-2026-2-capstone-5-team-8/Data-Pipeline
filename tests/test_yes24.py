@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
+import typer
 
+from data_pipeline.cli import _collect_payload
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.diagnostics import NormalizationDiagnostics
@@ -70,6 +72,13 @@ def test_collector_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("YES24_API_KEY", raising=False)
     with pytest.raises(MissingApiKey):
         Yes24Collector()
+
+
+def test_collect_reports_missing_api_key_as_cli_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("YES24_API_KEY", raising=False)
+
+    with pytest.raises(typer.BadParameter, match="YES24_API_KEY is not set"):
+        _collect_payload("yes24", "linear-algebra", 20)
 
 
 def test_search_parameters_uses_korean_topic_query() -> None:

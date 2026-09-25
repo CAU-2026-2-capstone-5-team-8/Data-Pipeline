@@ -10,9 +10,6 @@ Book-specialty online bookstore API. Two uses share this client:
 * `fetch_toc` -- exact ISBN-13 lookup of one canonical book's table of contents
   (`enrich-api-toc`). It never discovers books.
 
-YES24's terms prohibit accumulating its catalog into a separate database, so
-discovery results must stay topic-scoped.
-
 Requires an API key issued at https://developers.yes24.com, sent as the
 `X-Api-Key` header. Rate limit per the published OpenAPI spec: 5 requests/sec,
 5,000 requests/day.

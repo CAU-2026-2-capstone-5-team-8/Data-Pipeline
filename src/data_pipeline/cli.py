@@ -32,7 +32,7 @@ from data_pipeline.collectors.springer_metadata import (
     SpringerMetadataCollector,
     hyphenated_isbn,
 )
-from data_pipeline.collectors.yes24 import Yes24Collector
+from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
 from data_pipeline.manifest import (
     load_manifest,
@@ -169,6 +169,8 @@ def _collect_payload(
                     "collection_failures": getattr(collector, "detail_failures", []),
                 }
             return payload, request_parameters
+    except MissingApiKey as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
     except httpx.HTTPStatusError as exc:
         raise typer.BadParameter(
             f"{provider} returned HTTP {exc.response.status_code}; no data was written"
