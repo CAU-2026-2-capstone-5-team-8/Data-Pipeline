@@ -13,6 +13,7 @@ from typing import Annotated, Any
 
 import httpx
 import typer
+from dotenv import load_dotenv
 
 from data_pipeline.api_toc import (
     normalize_springer_metadata_response,
@@ -31,7 +32,7 @@ from data_pipeline.collectors.springer_metadata import (
     SpringerMetadataCollector,
     hyphenated_isbn,
 )
-from data_pipeline.collectors.yes24 import Yes24Collector
+from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
 from data_pipeline.manifest import (
     load_manifest,
@@ -56,6 +57,7 @@ from data_pipeline.normalizers import (
     normalize_public_book_page_response,
     normalize_publisher_document_response,
     normalize_publisher_page_response,
+    normalize_yes24_response,
 )
 from data_pipeline.open_library_bulk import (
     build_targeted_open_library_index,
@@ -93,11 +95,14 @@ from data_pipeline.storage import (
 from data_pipeline.toc_acquisition_report import build_toc_acquisition_report
 from data_pipeline.validation import validate_dataset
 
+load_dotenv()
+
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book evidence.")
 TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
 LimitOption = Annotated[int, typer.Option(min=1, max=100, help="Books to normalize.")]
 ProviderOption = Annotated[
-    str, typer.Option(help="Metadata provider: open-library, google-books, or internet-archive.")
+    str,
+    typer.Option(help="Metadata provider: open-library, google-books, internet-archive, or yes24."),
 ]
 PublisherSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition publisher source slug.")
@@ -140,12 +145,13 @@ def _collect_payload(
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
         "internet-archive": InternetArchiveCollector,
+        "yes24": Yes24Collector,
     }
     try:
         collector_class = collectors[provider]
     except KeyError as exc:
         raise typer.BadParameter(
-            "provider must be open-library, google-books, or internet-archive"
+            "provider must be open-library, google-books, internet-archive, or yes24"
         ) from exc
     try:
         with collector_class() as collector:
@@ -163,6 +169,8 @@ def _collect_payload(
                     "collection_failures": getattr(collector, "detail_failures", []),
                 }
             return payload, request_parameters
+    except MissingApiKey as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
     except httpx.HTTPStatusError as exc:
         raise typer.BadParameter(
             f"{provider} returned HTTP {exc.response.status_code}; no data was written"
@@ -334,6 +342,7 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
         "internet-archive": InternetArchiveCollector,
+        "yes24": Yes24Collector,
     }
     try:
         collector_class = collectors[provider]
@@ -434,6 +443,10 @@ def _normalize(
             return normalize_internet_archive_response(
                 payload, topic=topic, limit=limit, retrieved_at=retrieved_at
             )
+        if provider == "yes24":
+            return normalize_yes24_response(
+                payload, topic=topic, limit=limit, retrieved_at=retrieved_at
+            )
         if provider == "publisher-page":
             return normalize_publisher_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
@@ -449,8 +462,8 @@ def _normalize(
         if provider == "open-textbook":
             return normalize_open_textbook_response(payload, topic=topic, retrieved_at=retrieved_at)
         raise typer.BadParameter(
-            "provider must be open-library, google-books, internet-archive, publisher-page, "
-            "public-book-page, publisher-document, or open-textbook"
+            "provider must be open-library, google-books, internet-archive, yes24, "
+            "publisher-page, public-book-page, publisher-document, or open-textbook"
         )
     except InvalidProviderResponse as exc:
         raise typer.BadParameter(str(exc)) from exc

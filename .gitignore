@@ -10,3 +10,6 @@ data/processed/
 data/experiments/
 data/external/
 data/indexes/
+
+# Local secrets; never committed.
+.env
