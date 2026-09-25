@@ -1,10 +1,17 @@
 """YES24 Open API collector.
 
-Book-specialty online bookstore API. Unlike the generic catalog providers, it
-exposes a dedicated table-of-contents endpoint (`/v1/goods/content`) and marks
-whether a listing is a translated edition (`originalTranslation`/`originalTitle`),
-which this project treats as a first-class fact rather than something to
-normalize away -- see AGENTS.md's language-scope note.
+Book-specialty online bookstore API. Two uses share this client:
+
+* `search_books` -- topic discovery through `/v1/goods/itemList` (the `yes24`
+  provider of `collect`). It also marks whether a listing is a translated edition
+  (`originalTranslation`/`originalTitle`), which this project treats as a
+  first-class fact rather than something to normalize away -- see AGENTS.md's
+  language-scope note.
+* `fetch_toc` -- exact ISBN-13 lookup of one canonical book's table of contents
+  (`enrich-api-toc`). It never discovers books.
+
+YES24's terms prohibit accumulating its catalog into a separate database, so
+discovery results must stay topic-scoped and small.
 
 Requires an API key issued at https://developers.yes24.com, sent as the
 `X-Api-Key` header. Rate limit per the published OpenAPI spec: 5 requests/sec,
@@ -12,6 +19,7 @@ Requires an API key issued at https://developers.yes24.com, sent as the
 """
 
 import os
+import time
 from typing import Any
 
 import httpx
@@ -22,17 +30,20 @@ from data_pipeline.topics import topic_korean_query
 
 ITEM_LIST_URL = "https://apis.yes24.com/v1/goods/itemList"
 CONTENT_URL = "https://apis.yes24.com/v1/goods/content"
+API_URL = CONTENT_URL
+API_KEY_ENV = "YES24_API_KEY"
+MIN_REQUEST_INTERVAL_SECONDS = 0.25
 
 
-class MissingApiKey(RuntimeError):
+class MissingApiKey(ValueError):
     """Raised when YES24_API_KEY is not set."""
 
 
 class Yes24Collector:
-    def __init__(self, client: httpx.Client | None = None, api_key: str | None = None) -> None:
-        key = api_key or os.environ.get("YES24_API_KEY")
+    def __init__(self, api_key: str | None = None, client: httpx.Client | None = None) -> None:
+        key = os.environ.get(API_KEY_ENV) if api_key is None else api_key
         if not key:
-            raise MissingApiKey("YES24_API_KEY is not set (see .env.example)")
+            raise MissingApiKey(f"{API_KEY_ENV} is not set (see .env.example)")
         # Sent per-request rather than as a client default header, so the key is
         # never silently dropped when a caller (e.g. a test) supplies its own client.
         self._auth_headers = {"X-Api-Key": key}
@@ -41,6 +52,7 @@ class Yes24Collector:
             timeout=httpx.Timeout(20.0),
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1 (metadata research)"},
         )
+        self._last_request_at: float | None = None
 
     def close(self) -> None:
         if self._owns_client:
@@ -67,6 +79,7 @@ class Yes24Collector:
         """
         if candidate_limit < 1:
             raise ValueError("candidate_limit must be at least 1")
+        self._wait_for_rate_limit()
         response = self.client.get(
             ITEM_LIST_URL,
             params={
@@ -108,6 +121,7 @@ class Yes24Collector:
         outcome, not a failure; this returns a payload with `data: None` for it
         rather than raising.
         """
+        self._wait_for_rate_limit()
         response = self.client.get(
             CONTENT_URL,
             params={"searchType": "ISBN13", "query": isbn13},
@@ -116,6 +130,43 @@ class Yes24Collector:
         payload = _not_found_as_empty(response, empty_key=None)
         if payload is not None:
             return payload
+        response.raise_for_status()
+        return parse_json_object(response, "yes24")
+
+    @staticmethod
+    def request_parameters(isbn_13: str) -> dict[str, str]:
+        """Return the exact TOC query sent for one ISBN; the API key is never part of it."""
+        return {"searchType": "ISBN13", "query": isbn_13}
+
+    def _wait_for_rate_limit(self) -> None:
+        if self._last_request_at is not None:
+            elapsed = time.monotonic() - self._last_request_at
+            if elapsed < MIN_REQUEST_INTERVAL_SECONDS:
+                time.sleep(MIN_REQUEST_INTERVAL_SECONDS - elapsed)
+        self._last_request_at = time.monotonic()
+
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
+    def fetch_toc(self, isbn_13: str) -> dict[str, Any]:
+        """Fetch one book's TOC; a "product not found" answer is returned, not raised.
+
+        Unlike `fetch_content`, the YES24 error body is kept as-is so the raw
+        artifact records exactly why no TOC was found.
+        """
+        self._wait_for_rate_limit()
+        response = self.client.get(
+            API_URL,
+            params=self.request_parameters(isbn_13),
+            headers=self._auth_headers,
+        )
+        if response.status_code == 404:
+            payload = parse_json_object(response, "yes24")
+            if payload.get("success") is False:
+                return payload
         response.raise_for_status()
         return parse_json_object(response, "yes24")
 

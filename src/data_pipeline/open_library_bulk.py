@@ -201,9 +201,11 @@ def iter_dump_candidates(
             encoding="utf-8",
         )
         assert process.stdout is not None
+        yielded_candidate = False
         try:
             for candidate_number, line in enumerate(process.stdout, start=1):
                 try:
+                    yielded_candidate = True
                     yield parse_dump_line(line, expected_type=expected_type)
                 except ValueError as exc:
                     raise ValueError(
@@ -223,7 +225,11 @@ def iter_dump_candidates(
             process.stderr.close()
         if return_code not in {0, 1}:
             raise ValueError(f"ripgrep could not scan Open Library dump {path}: {stderr.strip()}")
-        return
+        # Some rg builds accept --search-zip but have no gzip decompressor available.
+        # They report an ordinary no-match exit (1), so use the deterministic Python
+        # scanner instead of silently treating every target ISBN as absent.
+        if yielded_candidate:
+            return
 
     candidate_pattern = re.compile("|".join(patterns).encode("ascii"))
 
