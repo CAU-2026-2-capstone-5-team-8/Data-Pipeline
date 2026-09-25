@@ -40,7 +40,11 @@ from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
-from data_pipeline.topics import TOPICS, topic_korean_relevance_pattern
+from data_pipeline.topics import (
+    TOPICS,
+    topic_korean_conflicting_subjects_pattern,
+    topic_korean_relevance_pattern,
+)
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -658,6 +662,9 @@ def _normalize_yes24_item(
         return None
     title = title_value.strip()
     if not topic_korean_relevance_pattern(topic).search(title):
+        return None
+    conflicting_pattern = topic_korean_conflicting_subjects_pattern(topic)
+    if conflicting_pattern is not None and conflicting_pattern.search(title):
         return None
 
     author_field = item.get("author")

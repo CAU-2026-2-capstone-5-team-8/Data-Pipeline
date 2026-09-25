@@ -473,6 +473,38 @@ def test_normalize_matches_relevance_pattern_for_other_topics() -> None:
     assert len(dataset.books) == 1
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        "2027 공단기 이유진 국어 독해 알고리즘 개념 훈련",
+        "EBSi 2028학년도 강의노트 수능개념 강승희의 통합사회 알고리즘 (2026년)",
+        "행정사 행정절차론 알고리즘 사례집",
+        "생활 스포츠지도사 골프 실기·구술 합격 알고리즘",
+    ],
+)
+def test_normalize_skips_exam_prep_books_that_use_algorithm_as_a_brand_name(
+    title: str,
+) -> None:
+    """ "알고리즘" is a common Korean test-prep brand name, not a CS signal on its own."""
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, isbn13="9791169664806")),
+        topic="algorithms",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+def test_normalize_still_accepts_real_algorithm_books() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(title="파이썬 자료구조와 알고리즘 for Beginner", isbn13="9791169664806")),
+        topic="algorithms",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert len(dataset.books) == 1
+
+
 def test_normalize_deduplicates_same_book_id_across_items() -> None:
     diagnostics = NormalizationDiagnostics(provider="yes24")
     dataset = normalize_yes24_response(

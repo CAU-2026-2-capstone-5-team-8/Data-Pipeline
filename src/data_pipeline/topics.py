@@ -31,6 +31,7 @@ class TopicSpec(BaseModel):
     conflicting_subjects_pattern: str | None = None
     korean_query: str | None = None
     korean_relevance_term_pattern: str | None = None
+    korean_conflicting_subjects_pattern: str | None = None
 
 
 def _load_registry(path: Path) -> dict[str, TopicSpec]:
@@ -115,3 +116,9 @@ def topic_korean_relevance_pattern(topic: str) -> re.Pattern[str]:
     if pattern is None:
         raise ValueError(f"topic has no korean_relevance_term_pattern configured: {topic}")
     return re.compile(pattern)
+
+
+def topic_korean_conflicting_subjects_pattern(topic: str) -> re.Pattern[str] | None:
+    """Return the compiled Korean-language competing-subject rejection pattern, if any."""
+    pattern = _spec(topic).korean_conflicting_subjects_pattern
+    return re.compile(pattern) if pattern else None
