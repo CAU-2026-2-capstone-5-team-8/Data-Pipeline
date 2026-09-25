@@ -505,6 +505,40 @@ def test_normalize_still_accepts_real_algorithm_books() -> None:
     assert len(dataset.books) == 1
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        "EBS 수능특강 수학영역 확률과 통계 (2026년) (2027 수능대비)",
+        "2027 마더텅 수능기출문제집 확률과 통계 (2026년)",
+        "2027 수능대비 Xistory 자이스토리 고3 확률과 통계 (2026년)",
+        "메가스터디 수능 수학 킥(KICK) 확률과 통계 (2026년)",
+    ],
+)
+def test_normalize_skips_csat_prep_workbooks_for_probability_statistics(title: str) -> None:
+    """ "확률과 통계" is also a real Korean high-school CSAT subject name, not just a
+
+    university topic -- exam-prep workbooks are the wrong education level for this
+    project's "전공도서"(major/degree-level textbook) scope.
+    """
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, isbn13="9791162243022")),
+        topic="probability-statistics",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+def test_normalize_still_accepts_real_probability_statistics_books() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(title="세상에서 가장 쉬운 확률과 통계", isbn13="9791162243022")),
+        topic="probability-statistics",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert len(dataset.books) == 1
+
+
 def test_normalize_deduplicates_same_book_id_across_items() -> None:
     diagnostics = NormalizationDiagnostics(provider="yes24")
     dataset = normalize_yes24_response(

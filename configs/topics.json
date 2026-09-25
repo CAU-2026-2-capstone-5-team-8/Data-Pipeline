@@ -28,7 +28,7 @@
     "conflicting_subjects_pattern": null,
     "korean_query": "알고리즘",
     "korean_relevance_term_pattern": "알고리즘|자료\\s*구조",
-    "korean_conflicting_subjects_pattern": "수능|공단기|이유진|EBSi|행정사|지도사|국어\\s*독해|통합사회"
+    "korean_conflicting_subjects_pattern": "수능|공단기|이유진|EBS|행정사|지도사|국어\\s*독해|통합사회|마더텅|자이스토리|Xistory|메가스터디|모의고사|기출|고3|고2"
   },
   "databases": {
     "domain": "computer-science",
@@ -58,6 +58,7 @@
     "relevance_term_pattern": "\\b(?:probabilit(?:y|ies)|statistics?)\\b",
     "conflicting_subjects_pattern": null,
     "korean_query": "확률과 통계",
-    "korean_relevance_term_pattern": "확률|통계"
+    "korean_relevance_term_pattern": "확률|통계",
+    "korean_conflicting_subjects_pattern": "수능|공단기|이유진|EBS|행정사|지도사|국어\\s*독해|통합사회|마더텅|자이스토리|Xistory|메가스터디|모의고사|기출|고3|고2"
   }
 }
