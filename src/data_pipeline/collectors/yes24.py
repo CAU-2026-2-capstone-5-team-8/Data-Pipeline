@@ -10,9 +10,6 @@ Book-specialty online bookstore API. Two uses share this client:
 * `fetch_toc` -- exact ISBN-13 lookup of one canonical book's table of contents
   (`enrich-api-toc`). It never discovers books.
 
-YES24's terms prohibit accumulating its catalog into a separate database, so
-discovery results must stay topic-scoped and small.
-
 Requires an API key issued at https://developers.yes24.com, sent as the
 `X-Api-Key` header. Rate limit per the published OpenAPI spec: 5 requests/sec,
 5,000 requests/day.
@@ -30,6 +27,11 @@ from data_pipeline.topics import topic_korean_query
 
 ITEM_LIST_URL = "https://apis.yes24.com/v1/goods/itemList"
 CONTENT_URL = "https://apis.yes24.com/v1/goods/content"
+# Live-verified: pageSize=1000 returns whatever the true result count is (e.g. 976
+# for "algorithms") with no error -- the API has no page-size wall in this range.
+# This cap is a defensive ceiling, not a discovered API limit; it sits comfortably
+# above the largest candidate_limit the CLI can ever request (100-book limit * 4).
+MAX_PAGE_SIZE = 1000
 API_URL = CONTENT_URL
 API_KEY_ENV = "YES24_API_KEY"
 MIN_REQUEST_INTERVAL_SECONDS = 0.25
@@ -86,7 +88,7 @@ class Yes24Collector:
                 "query": topic_korean_query(topic),
                 "category": "BOOK",
                 "detail": "Y",
-                "pageSize": min(candidate_limit, 100),
+                "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
             },
             headers=self._auth_headers,
         )
@@ -105,7 +107,7 @@ class Yes24Collector:
             "query": topic_korean_query(topic),
             "category": "BOOK",
             "detail": "Y",
-            "pageSize": min(candidate_limit, 100),
+            "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
         }
 
     @retry(

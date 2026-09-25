@@ -2,11 +2,14 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
+import typer
 
+from data_pipeline.cli import _collect_payload
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.normalizers import normalize_yes24_response
+from data_pipeline.validation import validate_dataset
 
 RETRIEVED_AT = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
 
@@ -71,6 +74,13 @@ def test_collector_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
         Yes24Collector()
 
 
+def test_collect_reports_missing_api_key_as_cli_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("YES24_API_KEY", raising=False)
+
+    with pytest.raises(typer.BadParameter, match="YES24_API_KEY is not set"):
+        _collect_payload("yes24", "linear-algebra", 20)
+
+
 def test_search_parameters_uses_korean_topic_query() -> None:
     parameters = Yes24Collector.search_parameters("linear-algebra", 20)
     assert parameters["query"] == "선형대수"
@@ -79,8 +89,8 @@ def test_search_parameters_uses_korean_topic_query() -> None:
     assert parameters["pageSize"] == 20
 
 
-def test_search_parameters_caps_page_size_at_one_hundred() -> None:
-    assert Yes24Collector.search_parameters("linear-algebra", 500)["pageSize"] == 100
+def test_search_parameters_caps_page_size_at_one_thousand() -> None:
+    assert Yes24Collector.search_parameters("linear-algebra", 5000)["pageSize"] == 1000
 
 
 def test_search_parameters_rejects_non_positive_candidate_limit() -> None:
@@ -286,6 +296,99 @@ def test_normalize_parses_part_style_toc_with_tab_indented_children() -> None:
     ]
 
 
+def _toc_tree(contents: str) -> list[tuple[int, str | None, str, str | None]]:
+    """(level, label, title, parent title) for each entry, in order."""
+    dataset = normalize_yes24_response(
+        _response(_item(contentDetail={"tableOfContents": contents})),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    titles = {entry.toc_entry_id: entry.title for entry in dataset.toc}
+    return [
+        (entry.level, entry.label, entry.title, titles.get(entry.parent_entry_id or ""))
+        for entry in sorted(dataset.toc, key=lambda entry: entry.order_index)
+    ]
+
+
+def test_normalize_gives_unique_ids_and_order_when_titles_repeat_across_chapters() -> None:
+    contents = "1장 벡터\r\n1.1 내적\r\n요약\r\n2장 행렬\r\n2.1 곱셈\r\n요약\r\n"
+    dataset = normalize_yes24_response(
+        _response(_item(contentDetail={"tableOfContents": contents})),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert validate_dataset(dataset) == []
+    assert len({entry.toc_entry_id for entry in dataset.toc}) == 6
+    assert [entry.order_index for entry in dataset.toc] == [0, 1, 2, 3, 4, 5]
+
+
+def test_normalize_strips_html_and_nests_hyphen_sections_and_underscore_items() -> None:
+    contents = (
+        "<b>Chapter 01 컴퓨터 구조 시작하기</B>\r\n\r\n"
+        "01-1 구조를 알아야 하는 이유\t\r\n"
+        "__문제 해결\t\r\n"
+        "[확인 문제]\r\n"
+        "01-2 컴퓨터 구조의 큰 그림\r\n"
+        "<B>Chapter 02 데이터</B>\r\n"
+    )
+
+    assert _toc_tree(contents) == [
+        (1, None, "Chapter 01 컴퓨터 구조 시작하기", None),
+        (2, "01-1", "구조를 알아야 하는 이유", "Chapter 01 컴퓨터 구조 시작하기"),
+        (3, None, "문제 해결", "구조를 알아야 하는 이유"),
+        # Unmarked lines stay flat roots but do not close the open chapter.
+        (1, None, "확인 문제", None),
+        (2, "01-2", "컴퓨터 구조의 큰 그림", "Chapter 01 컴퓨터 구조 시작하기"),
+        (1, None, "Chapter 02 데이터", None),
+    ]
+
+
+def test_normalize_nests_parts_chapters_and_multi_level_numbers() -> None:
+    contents = (
+        "<b>PART 01 운영체제와 컴퓨터</b>\r\n"
+        "CHAPTER 01 운영체제 개요\r\n"
+        "01 운영체제의 개념\r\n"
+        "1.2 운영체제의 유형\r\n"
+        "1.2.1 일괄 처리 시스템\r\n"
+        "제2장 프로세스\r\n"
+        "\t1. 프로세스의 개념\r\n"
+    )
+
+    assert _toc_tree(contents) == [
+        (1, "01", "운영체제와 컴퓨터", None),
+        (2, None, "CHAPTER 01 운영체제 개요", "운영체제와 컴퓨터"),
+        (3, "01", "운영체제의 개념", "CHAPTER 01 운영체제 개요"),
+        (3, "1.2", "운영체제의 유형", "CHAPTER 01 운영체제 개요"),
+        (4, "1.2.1", "일괄 처리 시스템", "운영체제의 유형"),
+        (2, None, "제2장 프로세스", "운영체제와 컴퓨터"),
+        (3, "1", "프로세스의 개념", "제2장 프로세스"),
+    ]
+
+
+def test_normalize_nests_single_numbers_under_part_and_splits_br_lines() -> None:
+    contents = "<b>PART 1 주제 도출</b>\r\n01 문장 독해<br/>02 정보 관계\r\n"
+
+    assert _toc_tree(contents) == [
+        (1, "1", "주제 도출", None),
+        (2, "01", "문장 독해", "주제 도출"),
+        (2, "02", "정보 관계", "주제 도출"),
+    ]
+
+
+def test_normalize_back_matter_closes_the_open_chapter() -> None:
+    contents = "Chapter 5 고유값\r\n1. 대각화\r\n[부록]\r\n1. QR분해\r\n"
+
+    assert [(level, title) for level, _, title, _ in _toc_tree(contents)] == [
+        (1, "Chapter 5 고유값"),
+        (2, "대각화"),
+        (1, "부록"),
+        (1, "QR분해"),
+    ]
+
+
 def test_normalize_skips_books_with_no_table_of_contents() -> None:
     dataset = normalize_yes24_response(
         _response(_item(contentDetail={"tableOfContents": None})),
@@ -331,6 +434,34 @@ def test_normalize_accepts_isbn10_only_items() -> None:
     assert dataset.books[0].book_id == "isbn10:0070380376"
 
 
+def test_normalize_drops_isbn10_that_identifies_a_different_book() -> None:
+    # 979-prefixed ISBN-13s have no ISBN-10; YES24's checksum-valid isbn10 is spurious.
+    dataset = normalize_yes24_response(
+        _response(_item(isbn10="1169665993", isbn13="9791169665995")),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    book = dataset.books[0]
+    assert (book.book_id, book.isbn_10, book.isbn_13) == (
+        "isbn13:9791169665995",
+        None,
+        "9791169665995",
+    )
+
+
+def test_normalize_keeps_isbn10_that_matches_its_isbn13() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(isbn10="0070380376", isbn13="9780070380370")),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    assert dataset.books[0].isbn_10 == "0070380376"
+
+
 def test_normalize_skips_titles_that_do_not_match_the_topic_relevance_pattern() -> None:
     dataset = normalize_yes24_response(
         _response(_item(title="이공편입수학 ver 3.0 세트")),
@@ -345,6 +476,72 @@ def test_normalize_matches_relevance_pattern_for_other_topics() -> None:
     dataset = normalize_yes24_response(
         _response(_item(title="운영체제 개념과 예제", isbn13="9791162243022")),
         topic="operating-systems",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert len(dataset.books) == 1
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "2027 공단기 이유진 국어 독해 알고리즘 개념 훈련",
+        "EBSi 2028학년도 강의노트 수능개념 강승희의 통합사회 알고리즘 (2026년)",
+        "행정사 행정절차론 알고리즘 사례집",
+        "생활 스포츠지도사 골프 실기·구술 합격 알고리즘",
+    ],
+)
+def test_normalize_skips_exam_prep_books_that_use_algorithm_as_a_brand_name(
+    title: str,
+) -> None:
+    """ "알고리즘" is a common Korean test-prep brand name, not a CS signal on its own."""
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, isbn13="9791169664806")),
+        topic="algorithms",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+def test_normalize_still_accepts_real_algorithm_books() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(title="파이썬 자료구조와 알고리즘 for Beginner", isbn13="9791169664806")),
+        topic="algorithms",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert len(dataset.books) == 1
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "EBS 수능특강 수학영역 확률과 통계 (2026년) (2027 수능대비)",
+        "2027 마더텅 수능기출문제집 확률과 통계 (2026년)",
+        "2027 수능대비 Xistory 자이스토리 고3 확률과 통계 (2026년)",
+        "메가스터디 수능 수학 킥(KICK) 확률과 통계 (2026년)",
+    ],
+)
+def test_normalize_skips_csat_prep_workbooks_for_probability_statistics(title: str) -> None:
+    """ "확률과 통계" is also a real Korean high-school CSAT subject name, not just a
+
+    university topic -- exam-prep workbooks are the wrong education level for this
+    project's "전공도서"(major/degree-level textbook) scope.
+    """
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, isbn13="9791162243022")),
+        topic="probability-statistics",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+def test_normalize_still_accepts_real_probability_statistics_books() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(title="세상에서 가장 쉬운 확률과 통계", isbn13="9791162243022")),
+        topic="probability-statistics",
         limit=5,
         retrieved_at=RETRIEVED_AT,
     )

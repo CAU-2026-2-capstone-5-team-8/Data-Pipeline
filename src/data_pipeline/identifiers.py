@@ -50,6 +50,13 @@ def is_valid_isbn_10(value: str) -> bool:
     return sum((10 - index) * digit for index, digit in enumerate(digits)) % 11 == 0
 
 
+def isbn_10_to_13(value: str) -> str:
+    """Return the 978-prefixed ISBN-13 that a normalized ISBN-10 identifies."""
+    stem = f"978{value[:9]}"
+    total = sum((1 if index % 2 == 0 else 3) * int(stem[index]) for index in range(12))
+    return f"{stem}{(10 - total % 10) % 10}"
+
+
 def is_valid_isbn_13(value: str) -> bool:
     """Return whether a normalized ISBN-13 has a valid check digit."""
     if len(value) != 13 or not value.isdigit():
