@@ -20,6 +20,7 @@ from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     is_valid_isbn_10,
     is_valid_isbn_13,
+    isbn_10_to_13,
     normalize_bibliographic_text,
     sha256_bytes,
     sha256_json,
@@ -39,7 +40,11 @@ from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
-from data_pipeline.topics import TOPICS
+from data_pipeline.topics import (
+    TOPICS,
+    topic_korean_conflicting_subjects_pattern,
+    topic_korean_relevance_pattern,
+)
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -478,6 +483,350 @@ def normalize_internet_archive_response(
             break
 
     return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
+
+
+_YES24_TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
+_YES24_BREAK_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_YES24_BOLD_RE = re.compile(r"<b\b", re.IGNORECASE)
+_YES24_TITLE_MARKER_RE = re.compile(r"^『.*』$")
+_YES24_BRACKET_RE = re.compile(r"^\[(.+)\]$")
+# "PART 0. 기초상식", "PART 01 운영체제", "Part 1 개관", "PART 1? 왜 ...", "제1부 기초", "Ⅰ 가상화"
+_YES24_PART_RE = re.compile(
+    r"^(?:part\s*([0-9]+)(?=[\s.:?]|$)|제\s*([0-9]+)\s*부|([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)(?=\s))"
+    r"[\s.:?]*(.*)$",
+    re.IGNORECASE,
+)
+# "Chapter 01 제목", "제11장장치관리", "1장 벡터와 행렬" -- but not "1장에 대한 고찰".
+_YES24_CHAPTER_RE = re.compile(
+    r"^(?:chapter\s*([0-9]+)(?=[\s.:]|$)|제\s*([0-9]+)\s*장|([0-9]+)\s*장(?=\s|$))",
+    re.IGNORECASE,
+)
+# Matches both hyphen-separated ("0-1. 제목") and dot-separated ("1.2.1 제목")
+# compound labels, with or without a trailing period before the title.
+_YES24_NUMBERED_RE = re.compile(r"^(\d+(?:[.\-]\d+)*)\.?\s+(.+)$")
+_YES24_BACK_MATTER_RE = re.compile(
+    r"^(?:부록|appendix|찾아보기|index|참고\s*문헌|참고\s*자료)", re.IGNORECASE
+)
+_YES24_PART_RANK = 1
+_YES24_CHAPTER_RANK = 2
+
+
+def _parse_yes24_toc(text: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse YES24's free-text `contents` blob into a TOC hierarchy.
+
+    Only signals written in the source text create hierarchy, ranked
+    part > chapter > numbered section:
+    - "PART N" / "제N부" / Roman-numeral lines are parts;
+    - "Chapter N" / "제N장" / "N장" lines and bold (`<b>`) headings are chapters;
+    - compound numbers nest by segment count ("1.1" under chapter 1,
+      "1.2.1" under "1.2") when their leading segment matches the open
+      chapter number, and a single number ("1.", "01") nests under the
+      innermost open chapter or part;
+    - a "__" prefix nests under the previous entry, and tab/4-space
+      indentation nests under the previous unindented entry.
+    Anything matching none of these (e.g. "요약", "[확인 문제]") becomes its own
+    flat root rather than a guessed child, without closing the open chapter,
+    consistent with this project's rule against inventing hierarchy the
+    source text does not encode. Back matter such as "[부록]" closes it.
+
+    One order_index counter runs over the whole book, so order is total and
+    entry IDs cannot collide when titles such as "요약" repeat across chapters.
+    `<br>` separates lines, and other HTML tags are removed from titles.
+    """
+    entries: list[TocEntry] = []
+    # (rank, entry, is part/chapter): only parts and chapters contain single-numbered sections.
+    stack: list[tuple[int, TocEntry, bool]] = []
+    chapter_number: int | None = None
+    previous: TocEntry | None = None
+    previous_unindented: TocEntry | None = None
+
+    def add(parent: TocEntry | None, label: str | None, title: str) -> TocEntry:
+        order_index = len(entries)
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), title),
+            book_id=book_id,
+            parent_entry_id=parent.toc_entry_id if parent is not None else None,
+            level=parent.level + 1 if parent is not None else 1,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        return entry
+
+    def push(rank: int, label: str | None, title: str, *, container: bool = False) -> TocEntry:
+        while stack and stack[-1][0] >= rank:
+            stack.pop()
+        entry = add(stack[-1][1] if stack else None, label, title)
+        stack.append((rank, entry, container))
+        return entry
+
+    for raw_line in _YES24_BREAK_RE.sub("\n", text).splitlines():
+        if not raw_line.strip():
+            continue
+        indented = raw_line.startswith(("\t", "    "))
+        bold = bool(_YES24_BOLD_RE.search(raw_line))
+        line = _YES24_TAG_RE.sub("", raw_line).strip()
+        underscored = line.startswith("__")
+        line = line.lstrip("_").strip()
+        if not line or _YES24_TITLE_MARKER_RE.match(line):
+            continue
+
+        if underscored and previous is not None:
+            add(previous, None, line)
+            continue
+
+        numbered = _YES24_NUMBERED_RE.match(line)
+        part = _YES24_PART_RE.match(line)
+        chapter = _YES24_CHAPTER_RE.match(line)
+        if part:
+            label = next(group for group in part.groups()[:3] if group)
+            entry = push(_YES24_PART_RANK, label, part.group(4).strip() or line, container=True)
+            chapter_number = None
+        elif chapter or bold:
+            entry = push(_YES24_CHAPTER_RANK, None, line, container=True)
+            number = next((group for group in chapter.groups() if group), None) if chapter else None
+            chapter_number = int(number) if number is not None else None
+        elif indented and previous_unindented is not None:
+            label, title = (
+                (numbered.group(1), numbered.group(2).strip()) if numbered else (None, line)
+            )
+            previous = add(previous_unindented, label, title)
+            continue
+        elif numbered and (
+            rank := _yes24_section_rank(
+                numbered.group(1),
+                chapter_number,
+                container_rank=max(
+                    (open_rank for open_rank, _, container in stack if container),
+                    default=None,
+                ),
+            )
+        ):
+            entry = push(rank, numbered.group(1), numbered.group(2).strip())
+        else:
+            bracket = _YES24_BRACKET_RE.match(line)
+            if numbered:
+                label, title = numbered.group(1), numbered.group(2).strip()
+            elif bracket:
+                label, title = None, bracket.group(1).strip()
+            else:
+                label, title = None, line
+            if _YES24_BACK_MATTER_RE.match(title):
+                stack.clear()
+                chapter_number = None
+            entry = add(None, label, title)
+        previous = entry
+        previous_unindented = entry
+    return entries
+
+
+def _yes24_section_rank(
+    label: str, chapter_number: int | None, *, container_rank: int | None
+) -> int | None:
+    """Rank of a numbered line under the open part/chapter, or None when it does not nest."""
+    segments = re.split(r"[.\-]", label)
+    if len(segments) == 1:
+        return container_rank + 1 if container_rank is not None else None
+    if chapter_number is not None and int(segments[0]) == chapter_number:
+        return _YES24_CHAPTER_RANK + len(segments) - 1
+    return None
+
+
+def _yes24_published_year(value: Any) -> int | None:
+    """Parse YES24's compact `publishDate` (YYYYMMDD, e.g. "20260917")."""
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"^(1\d{3}|20\d{2}|21\d{2})", value.strip())
+    return int(match.group(1)) if match else None
+
+
+def _yes24_records(response: dict[str, Any]) -> list[Any]:
+    data = response.get("data", {})
+    if not isinstance(data, dict):
+        raise InvalidProviderResponse("yes24 response missing 'data' object")
+    return _provider_records(data, "items", "yes24")
+
+
+def _normalize_yes24_item(
+    item: dict[str, Any], topic: str, retrieved_at: datetime
+) -> tuple[Book, Source, list[Document], list[TocEntry]] | None:
+    """Normalize one YES24 itemList row (identity, description, and TOC if present)."""
+    item_id_value = item.get("itemId")
+    if not isinstance(item_id_value, int) or isinstance(item_id_value, bool):
+        return None
+    item_id = str(item_id_value)
+    title_value = item.get("title")
+    if not isinstance(title_value, str) or not title_value.strip():
+        return None
+    title = title_value.strip()
+    if not topic_korean_relevance_pattern(topic).search(title):
+        return None
+    conflicting_pattern = topic_korean_conflicting_subjects_pattern(topic)
+    if conflicting_pattern is not None and conflicting_pattern.search(title):
+        return None
+
+    author_field = item.get("author")
+    authors = (
+        _deduplicate_authors([author_field])
+        if isinstance(author_field, str) and author_field
+        else []
+    )
+    isbn_10 = normalize_isbn(item.get("isbn10"), 10)
+    isbn_13 = normalize_isbn(item.get("isbn13"), 13)
+    if isbn_10 is not None and isbn_13 is not None and isbn_10_to_13(isbn_10) != isbn_13:
+        # A 979-prefixed ISBN-13 (most Korean books) has no ISBN-10, yet YES24 still
+        # fills `isbn10` with a checksum-valid value that identifies a different
+        # book. ISBN-13 is authoritative; the raw response keeps YES24's value.
+        isbn_10 = None
+    if isbn_10 is None and isbn_13 is None:
+        # YES24 lists bundles/sets alongside individual books; Korean law requires
+        # a real ISBN for an actual book, so an item without one is treated as
+        # ineligible rather than given a synthetic fallback identity.
+        return None
+    book_id = _book_id(isbn_10, isbn_13, title, authors, "yes24", item_id)
+    source_id = stable_id("source", "yes24", item_id, book_id, retrieved_at.isoformat())
+
+    publisher_value = item.get("publisher")
+    publisher = (
+        publisher_value.strip() if isinstance(publisher_value, str) and publisher_value else None
+    )
+
+    book = Book(
+        book_id=book_id,
+        isbn_10=isbn_10,
+        isbn_13=isbn_13,
+        title=title,
+        subtitle=None,
+        authors=authors,
+        publisher=publisher,
+        published_year=_yes24_published_year(item.get("publishDate")),
+        language="ko",
+        topics=TOPICS[topic],
+    )
+
+    is_translation = str(item.get("originalTranslation", "")).strip().upper() == "Y"
+    original_title_value = item.get("originalTitle")
+    original_title = (
+        original_title_value.strip()
+        if isinstance(original_title_value, str) and original_title_value.strip()
+        else None
+    )
+    rights_note = None
+    if is_translation:
+        rights_note = (
+            f'Translated edition (original title: "{original_title}")'
+            if original_title
+            else "Translated edition (original title not provided by YES24)"
+        )
+
+    link_value = item.get("link")
+    url = (
+        link_value.strip()
+        if isinstance(link_value, str) and link_value.strip()
+        else (f"https://www.yes24.com/product/goods/{item_id}")
+    )
+    source = Source(
+        source_id=source_id,
+        book_id=book_id,
+        provider="yes24",
+        source_type="metadata_api",
+        url=url,
+        external_id=item_id,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=sha256_json(item),
+    )
+
+    documents: list[Document] = []
+    content_detail = item.get("contentDetail")
+    if isinstance(content_detail, dict):
+        intro_value = content_detail.get("bookIntroduction")
+        if isinstance(intro_value, str) and intro_value.strip():
+            intro_text = intro_value.strip()
+            documents.append(
+                Document(
+                    document_id=stable_id("doc", book_id, "description", source_id),
+                    book_id=book_id,
+                    document_type="description",
+                    text=intro_text,
+                    source_id=source_id,
+                    content_hash=sha256_text(intro_text),
+                )
+            )
+
+    toc_entries: list[TocEntry] = []
+    if isinstance(content_detail, dict):
+        toc_value = content_detail.get("tableOfContents")
+        if isinstance(toc_value, str) and toc_value.strip():
+            toc_entries = _parse_yes24_toc(toc_value, book_id, source_id)
+
+    return book, source, documents, toc_entries
+
+
+def normalize_yes24_response(
+    response: dict[str, Any],
+    *,
+    topic: str,
+    limit: int,
+    retrieved_at: datetime,
+    diagnostics: NormalizationDiagnostics | None = None,
+) -> CanonicalDataset:
+    """Normalize one YES24 itemList (detail=Y) search response."""
+    if topic not in TOPICS:
+        raise ValueError(f"unsupported topic: {topic}")
+
+    books: list[Book] = []
+    documents: list[Document] = []
+    toc: list[TocEntry] = []
+    sources: list[Source] = []
+    seen_books: set[str] = set()
+
+    records = _yes24_records(response)
+    if diagnostics is not None:
+        diagnostics.candidate_count += len(records)
+    for record in records:
+        if not isinstance(record, dict):
+            logger.warning("event=normalization_skipped provider=yes24 reason=record_not_object")
+            if diagnostics is not None:
+                diagnostics.fail("invalid_provider_response")
+            continue
+        try:
+            result = _normalize_yes24_item(record, topic, retrieved_at)
+        except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+            logger.warning(
+                "event=normalization_skipped provider=yes24 item_id=%s error=%s",
+                record.get("itemId"),
+                exc,
+            )
+            if diagnostics is not None:
+                diagnostics.fail("parse_failure")
+            continue
+        if result is None:
+            if diagnostics is not None:
+                diagnostics.fail("ineligible_candidate")
+            continue
+        book, source, item_documents, item_toc = result
+        book_id = book.book_id
+        if book_id in seen_books:
+            if diagnostics is not None:
+                diagnostics.duplicate_candidate_count += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.normalized_candidate_count += 1
+        seen_books.add(book_id)
+        if len(books) >= limit:
+            continue
+        documents.extend(item_documents)
+        toc.extend(item_toc)
+        books.append(book)
+        sources.append(source)
+        if len(books) >= limit and diagnostics is None:
+            break
+
+    return CanonicalDataset(books=books, documents=documents, toc=toc, sources=sources)
 
 
 def normalize_hathitrust_response(
