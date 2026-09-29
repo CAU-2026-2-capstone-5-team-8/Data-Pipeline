@@ -48,40 +48,42 @@ the Xinu TOC and Springer chapter list emit no `Document` rows.
 All 27 books unresolved on the replayed latest-`main` baseline were checked by exact ISBN where
 available, and by exact title + author + publication year for the four ISBN-less records. The
 equivalent query set covered `table of contents`, `contents`, `preview`, `sample chapter`, and
-`pdf`. Candidate material was then classified by edition identity, completeness, ordinary HTTP
+`pdf`. Eighteen durable direct candidate URLs were recorded; search-visible candidates without a
+stable/retrievable URL are still recorded by provider type and rejection reason. Candidate material
+was then classified by edition identity, completeness, ordinary HTTP
 availability, access restrictions, and whether it was a lawful public source. Search snippets
 alone, hidden preview sections, unauthorized mirrors, and unlinked alternate editions were not
 imported.
 
-| Target | Best public candidate | Decision |
-| --- | --- | --- |
-| Comer, *Operating System Design*, 2e, 9781498712439 | [official Purdue TOC](https://xinu.cs.purdue.edu/cont.html) and preface | **Accepted**: explicit second edition, official author/university site, reviewed platform markers, 492-entry shape |
-| Greub, *Linear Algebra*, 2e, 1963, no target ISBN | [official Springer page](https://link.springer.com/book/10.1007/978-3-662-01545-2) | **Accepted**: exact title, author, edition, year, DOI/eISBN, and 17-entry shape |
-| Deitel, *An Introduction to Operating Systems*, 9780201509397 | exact-ISBN limited preview | Incomplete; most sections hidden |
-| Peek et al., *Learning the UNIX Operating System*, 9781565920606 | public O'Reilly contents | Later edition; no provider-native target-edition relation |
-| Easter Science/Kumar, *Operating System*, 9781549660115 | retailer metadata | No trustworthy exact-edition TOC; selection metadata needs review |
-| Madnick/Donovan, *Operating Systems*, 9780070394551 | exact-edition limited preview | Partial contents only |
-| Nutt, *Operating Systems*, 9780201612516 | exact-ISBN library-catalog TOC | Search-visible but timed out under ordinary HTTP; could not preserve/test |
-| Tanenbaum/Woodhull, *Operating Systems*, 9780136374060 | exact-ISBN catalog/marketplace contents | Exact edition is attributed to Tanenbaum alone; canonical author identity conflicts |
-| Stallings, *Operating Systems*, 9788131703045 | regional-edition retailer metadata | No complete public TOC for the exact Indian edition |
-| Davis, *Operating Systems*, 9780201111859 | retailer/Open Library metadata | No TOC; work description names a different edition |
-| Milenkovic, *Operating Systems*, 9780070419209 | exact-ISBN retailer preview | Contents unavailable; unauthorized copies rejected |
-| Dhamdhere, *Systems Programming and Operating Systems*, 9780074630839 | retailer/bibliographic metadata | No high-confidence exact-edition source |
-| Flynn/McHoes, *Understanding Operating Systems*, 9780534950934 | exact Open Library restricted preview | No complete public TOC |
-| Noble, *Applied Linear Algebra*, 1969, no ISBN | later-edition records | Edition mismatch; target identity cannot be proven |
-| Edwards/Penney, *Differential Equations and Linear Algebra*, 9780136054276 | exact-ISBN record | ISBN is a Student Solutions Manual; selection repair required |
-| Kolman/Hill, *Elementary Linear Algebra*, 9780023660450 | metadata/restricted preview | No complete exact-edition public TOC |
-| Grossman, *Elementary Linear Algebra*, 9780534074227 | another-edition contents | ISBN/edition mismatch; no native Work relation |
-| Johnson/Riess, *Introduction to Linear Algebra*, 9780201033922 | exact-ISBN limited preview | Only a few visible sections; completeness unprovable |
-| Kolman, *Introductory Linear Algebra With Applications*, 9780132819824 | exact-ISBN record | ISBN is a Students Solutions Manual; selection repair required |
-| Friedberg/Insel/Spence, *Linear Algebra*, 9780135370193 | restricted exact preview; public fifth edition | Target first edition remains incomplete |
-| Curtis, *Linear Algebra*, 1963, no ISBN | later publisher edition | Edition mismatch; exact target identity cannot be proven |
-| Fraleigh/Beauregard, *Linear Algebra*, 9780201119497 | exact Open Library restricted preview | No complete public TOC |
-| Jacob, *Linear Algebra*, 9780716721772 | exact-ISBN record | ISBN is a solutions manual/study guide; main-book TOC would be false evidence |
-| Strang, *Linear Algebra and Its Applications*, 9780126736502 | restricted exact preview; public publisher 2e | Publisher TOC is a different edition |
-| Leon, *Linear Algebra with Applications*, 9780138493080 | restricted exact record; later-edition contents | No complete exact-edition public TOC |
-| Bretscher, *Linear Algebra with Applications*, 9780131907294 | search-visible catalog; eCampus digital SKU | Catalog not ordinarily retrievable; eCampus has no edition and a different `2-Download` title |
-| Lang, *Linear Algebra*, 1966, no ISBN | later Springer/PDF editions | Edition mismatch; no exact-edition identifier |
+| Target | Best public candidate | HTTP | Exact-edition confidence | TOC / prose | Decision |
+| --- | --- | --- | --- | --- | --- |
+| Comer, *Operating System Design*, 2e, 9781498712439 | [official Purdue TOC](https://xinu.cs.purdue.edu/cont.html) and preface | 200 HTML / 200 PDF | High | Complete 492 / preface | **Accepted**: explicit second edition, official author/university site, platform markers, reviewed shape |
+| Greub, *Linear Algebra*, 2e, 1963, no target ISBN | [official Springer page](https://link.springer.com/book/10.1007/978-3-662-01545-2) | Public 303 identity chain → 200 HTML | High | Complete 17 / none | **Accepted**: exact title, author, edition, year, DOI/eISBN, and shape |
+| Deitel, *An Introduction to Operating Systems*, 9780201509397 | exact-ISBN limited preview | Yes | High identity | Partial / restricted | Reject: most sections hidden |
+| Peek et al., *Learning the UNIX Operating System*, 9781565920606 | public O'Reilly contents | Yes | Low for target | Later-edition TOC / none | Reject: no provider-native target-edition relation |
+| Easter Science/Kumar, *Operating System*, 9781549660115 | retailer metadata | Yes | Low | None / none | Reject: no trustworthy exact-edition evidence; selection review needed |
+| Madnick/Donovan, *Operating Systems*, 9780070394551 | exact-edition limited preview | Yes | High identity | Partial / restricted | Reject: incomplete contents |
+| Nutt, *Operating Systems*, 9780201612516 | exact-ISBN library-catalog TOC | No; timeout | High in indexed page | Full search-visible / none | Reject: could not preserve or test ordinary HTTP response |
+| Tanenbaum/Woodhull, *Operating Systems*, 9780136374060 | exact-ISBN catalog/marketplace contents | Yes | Conflicting | Contents / none | Reject: exact edition is attributed to Tanenbaum alone; canonical author conflict |
+| Stallings, *Operating Systems*, 9788131703045 | regional-edition retailer metadata | Yes | Medium | None / none | Reject: no complete exact Indian-edition TOC |
+| Davis, *Operating Systems*, 9780201111859 | retailer/Open Library metadata | Yes | Conflicting prose | None / mismatched description | Reject: description names another edition |
+| Milenkovic, *Operating Systems*, 9780070419209 | exact-ISBN retailer preview | Yes | High identity | None / unavailable | Reject: legitimate preview has no contents; unauthorized copies rejected |
+| Dhamdhere, *Systems Programming and Operating Systems*, 9780074630839 | retailer/bibliographic metadata | Yes | Low | None / none | Reject: no high-confidence evidence source |
+| Flynn/McHoes, *Understanding Operating Systems*, 9780534950934 | exact Open Library restricted preview | Metadata only | High identity | None / restricted | Reject: no complete public TOC or prose |
+| Noble, *Applied Linear Algebra*, 1969, no ISBN | later-edition records | Yes | Low | Other edition / none | Reject: target identity cannot be proven |
+| Edwards/Penney, *Differential Equations and Linear Algebra*, 9780136054276 | exact-ISBN record | Yes | Wrong target | Solutions manual / none | Reject: selection repair required |
+| Kolman/Hill, *Elementary Linear Algebra*, 9780023660450 | metadata/restricted preview | Metadata only | High identity | None / restricted | Reject: no complete public evidence |
+| Grossman, *Elementary Linear Algebra*, 9780534074227 | another-edition contents | Yes | Low | Other edition / none | Reject: no native Work relation |
+| Johnson/Riess, *Introduction to Linear Algebra*, 9780201033922 | exact-ISBN limited preview | Yes | High identity | Partial / restricted | Reject: completeness unprovable |
+| Kolman, *Introductory Linear Algebra With Applications*, 9780132819824 | exact-ISBN record | Yes | Wrong target | Solutions manual / none | Reject: selection repair required |
+| Friedberg/Insel/Spence, *Linear Algebra*, 9780135370193 | restricted exact preview; public fifth edition | Exact restricted; alternate public | Low for usable source | Later-edition TOC / restricted | Reject: target first edition incomplete |
+| Curtis, *Linear Algebra*, 1963, no ISBN | later publisher edition | Yes | Low | Other edition / none | Reject: exact target identity cannot be proven |
+| Fraleigh/Beauregard, *Linear Algebra*, 9780201119497 | exact Open Library restricted preview | Metadata only | High identity | None / restricted | Reject: no complete public TOC |
+| Jacob, *Linear Algebra*, 9780716721772 | exact-ISBN record | Yes | Wrong target | Solutions manual / none | Reject: main-book TOC would be false evidence |
+| Strang, *Linear Algebra and Its Applications*, 9780126736502 | restricted exact preview; public publisher 2e | Exact restricted; alternate public | Low for usable source | Later-edition TOC / restricted | Reject: publisher TOC is another edition |
+| Leon, *Linear Algebra with Applications*, 9780138493080 | restricted exact record; later-edition contents | Exact restricted; alternate public | Low for usable source | Later-edition TOC / restricted | Reject: no complete exact-edition TOC |
+| Bretscher, *Linear Algebra with Applications*, 9780131907294 | search-visible catalog; eCampus digital SKU | Catalog blocked; SKU public | Conflicting | Search-visible TOC / none | Reject: no retrievable exact edition; eCampus is a different SKU |
+| Lang, *Linear Algebra*, 1966, no ISBN | later Springer/PDF editions | Yes | Low | Other edition / none | Reject: no exact-edition identifier |
 
 Final unresolved coverage is 25/50. Four selected records have no ISBN (Greub, Noble, Curtis,
 Lang); Greub could be matched safely from the official publisher's title/author/edition/year/DOI
@@ -102,8 +104,9 @@ match.
 `springer-greub-linear-algebra2` requires the official Springer page's visible and JSON-LD title,
 Werner H. Greub author identity, `2nd edition`, 1963 copyright, DOI/eISBN, 17-entry root sequence,
 page ranges, canonical chapter links, and complete labels 1–15. Springer currently uses an identity
-redirect; collection follows at most five HTTPS redirects and only within the explicitly reviewed
-`springer.com` host boundary. Other sources still reject redirects. Neither accepted page carries
+redirect; collection follows the server-provided public chain at most five times, only over HTTPS,
+and only within the explicitly reviewed `springer.com` host boundary. It does not fabricate,
+extract, or replay tokens/cookies. Other sources still reject redirects. Neither accepted page carries
 a reuse license; only the publicly displayed metadata/TOC is normalized, and restricted chapter
 PDFs are not fetched.
 

@@ -53,6 +53,7 @@
   ],
   "discovery": {
     "targets_reviewed": 27,
+    "durable_candidate_urls_recorded": 18,
     "accepted": 2,
     "remaining_unresolved": 25,
     "books": [
@@ -294,6 +295,7 @@
       "book_id": "isbn13:9781498712439",
       "toc_entries": 492,
       "document_type": null,
+      "live_http": "200 text/html",
       "identity_limit": "The TOC page does not state an ISBN; matching uses the official author/university site, explicit second-edition label, platform markers, year corroboration, and full reviewed shape."
     },
     {
@@ -301,6 +303,7 @@
       "book_id": "isbn13:9781498712439",
       "toc_entries": 0,
       "document_type": "preface",
+      "live_http": "200 application/pdf",
       "identity_limit": "The four-page PDF is linked from the official Xinu site and must match reviewed text markers; no license statement was found."
     },
     {
@@ -308,6 +311,7 @@
       "book_id": "book_6efa911685e0a8f7f57d",
       "toc_entries": 17,
       "document_type": null,
+      "live_http": "303 public identity redirect chain, then 200 text/html",
       "identity_limit": "The canonical target lacks an ISBN and misspells the author's middle name; the official publisher title, author, second-edition marker, 1963 copyright, DOI/eISBN, and full shape are all required."
     }
   ],
