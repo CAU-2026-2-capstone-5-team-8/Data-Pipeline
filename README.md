@@ -99,14 +99,20 @@ uv run data-pipeline report-toc-acquisition \
   --loc-result /path/to/scale50-structured-discovery.json
 ```
 
-The measured result is exact-edition baseline 14/50, Open Library alternate +1, LOC +0,
-and five new exact-edition public-web TOCs, for 20/50 usable TOCs. Because the 14-book baseline
+The historical 2026-09-22 result is exact-edition baseline 14/50, Open Library alternate +1,
+LOC +0, and five new exact-edition public-web TOCs, for 20/50 usable TOCs. Because the 14-book baseline
 already includes ten previously reviewed public/publisher pages, it is not an API-only number.
 The independent structured/API-only view is 6/50 (four original canonical TOCs plus two usable
 bulk same-Work resolutions); reviewed public-web evidence raises the result to 20/50. The remaining
 30 books retain metadata fallback rather than being mislabeled as TOC-derived evidence. Large raw
 inputs, indexes, and fetched HTML remain ignored; the source audit, pinned manifest, experiment
 policy, machine-readable report, parsers, and tiny fixtures are committed.
+
+The latest-main replay and exact-edition search sweep are reported separately in
+[`scale-50-public-evidence-coverage-2026-09-29.md`](docs/experiments/scale-50-public-evidence-coverage-2026-09-29.md).
+It verifies the three later eCampus additions (23/50), adds reviewed Purdue Xinu and Springer
+Greub sources, and reaches **25/50** with 2,954 TOC entries. TOC and prose coverage are reported
+separately; the final data has descriptions for 25 books and one preface for one additional book.
 
 ## ML evidence export
 
@@ -125,10 +131,11 @@ uv run data-pipeline export-ml-evidence \
   --report data/experiments/scale-50-bulk-web-20260922/ml-evidence-v1/summary.json
 ```
 
-The measured Scale-50 export has 50 records: 20 books with TOC evidence, 30 metadata-fallback-only
-books, and zero books without evidence. The generated artifact is deterministic local data and is
-ignored by Git. Rebuilding it requires the canonical four-file input, not the 12.59 GB Open Library
-raw dump.
+The historical 2026-09-22 Scale-50 export has 50 records: 20 books with TOC evidence,
+30 metadata-fallback-only books, and zero books without evidence. The 2026-09-29 coverage replay
+reaches 25 TOC books but does not commit a generated ML export. The generated artifact is
+deterministic local data and is ignored by Git. Rebuilding it requires the canonical four-file
+input, not the 12.59 GB Open Library raw dump.
 
 ## Current vertical slice
 
@@ -1010,9 +1017,41 @@ second run of both commands left `books.jsonl`, `documents.jsonl`, and `toc.json
 identical; only `sources.jsonl` changed, because a repeated retrieval updates its source
 snapshot as documented above.
 
-Applied to the Scale-50 selection these three sources project 20/50 to 23/50 usable TOCs. That
-projection has not been run against the Scale-50 dataset, which is not checked in; only the
-25-book result above was measured.
+The 2026-09-29 replay subsequently verified these three sources against Scale-50: usable TOC
+coverage rose from the historical 20/50 result to 23/50 before the Purdue and Springer additions.
+
+### Latest-main unresolved-book sweep (2026-09-29 KST)
+
+The dated
+[coverage report](docs/experiments/scale-50-public-evidence-coverage-2026-09-29.md) records a new
+exact-edition public-web search for all 27 books unresolved on the replayed latest-`main` baseline.
+Two high-confidence sources were implemented:
+
+| Book | Identity boundary | Evidence |
+| --- | --- | ---: |
+| Comer, *Operating System Design: The Xinu Approach*, 2e | Official Purdue author site, explicit edition/platform markers, complete reviewed hierarchy | 492 TOC entries + 1 preface |
+| Greub, *Linear Algebra*, 2e (1963) | Official Springer title, author, edition, year, DOI/eISBN, complete reviewed sequence | 17 TOC entries |
+
+The result is 25/50 usable TOCs: Linear Algebra 11/25 and Operating Systems 14/25. Twenty-four are
+same-edition sources and one is an explicitly labeled same-Work alternate. The 2,954 TOC entries
+are not counted as prose; prose remains 30 descriptions across 25 books plus the one Xinu preface.
+Both API keys were unavailable, so no YES24 or Springer Metadata API gain is claimed.
+
+The lower-level offline replay accepts the same opt-in relevance gate used by Scale-50 v2:
+
+```bash
+uv run data-pipeline build \
+  --raw <scale-50-open-library-operating-systems.json> \
+  --raw <scale-50-open-library-linear-algebra.json> \
+  --raw <reviewed-public-evidence.json> \
+  --output <rebuilt-directory> \
+  --relevance-gate topic-evidence-v1
+```
+
+Two independent offline builds plus pinned Open Library bulk enrichment were byte-identical. The
+report includes all four SHA-256 hashes, remaining-book classifications, raw artifact paths, and
+source limitations. Four canonical records still lack ISBNs, and three exact ISBNs select solution
+manuals rather than the named textbook; those require selection repair, not relaxed matching.
 
 #### Downstream effect
 

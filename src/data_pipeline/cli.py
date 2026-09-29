@@ -1077,9 +1077,15 @@ def build(
     output: Annotated[Path, typer.Option(help="Canonical output directory.")] = Path(
         "data/processed"
     ),
+    relevance_gate: Annotated[
+        str | None,
+        typer.Option(help="Optional metadata selection policy recorded by the source experiment."),
+    ] = None,
 ) -> None:
     """Rebuild canonical JSONL solely from preserved raw artifact metadata."""
-    dataset, requested_by_topic = _dataset_from_raw_paths(raw)
+    if relevance_gate not in {None, "topic-evidence-v1"}:
+        raise typer.BadParameter("relevance-gate must be topic-evidence-v1 when provided")
+    dataset, requested_by_topic = _dataset_from_raw_paths(raw, relevance_gate)
     errors = validate_dataset(dataset)
     if errors:
         raise typer.BadParameter("; ".join(errors))
