@@ -1052,6 +1052,8 @@ Two independent offline builds plus pinned Open Library bulk enrichment were byt
 report includes all four SHA-256 hashes, remaining-book classifications, raw artifact paths, and
 source limitations. Four canonical records still lack ISBNs, and three exact ISBNs select solution
 manuals rather than the named textbook; those require selection repair, not relaxed matching.
+The unchanged `book-evidence-v1` exporter also emitted all 50 records with zero validation errors;
+the new Xinu and Greub TOCs and the Xinu preface are present with their original provenance.
 
 #### Downstream effect
 

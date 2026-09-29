@@ -131,3 +131,9 @@ then enriched offline from the pinned 2026-08-31 target index. Both builds were 
 The lower-level `build` command now accepts the already-defined `topic-evidence-v1` gate so these
 preserved Scale-50 API artifacts can be replayed directly. Omitting the option preserves previous
 behavior. No ML schema, score, or recommendation code changed.
+
+The unchanged `book-evidence-v1` exporter was also run against the final offline rebuild. It
+emitted 50 valid records, 25 with TOC evidence and 25 metadata-fallback-only, with zero validation
+errors. Greub contributes 17 `toc_public_web_exact` rows; Xinu contributes 492 such rows plus one
+`document` row typed `preface`. This verifies propagation inside Data-Pipeline only—no concept
+matching, difficulty scoring, or ranking was run.

@@ -330,5 +330,30 @@
       "toc.jsonl": "2d7ea2f05a0523c50966be94874353ca7e9993cfe8658c1a736b009ceec73028",
       "sources.jsonl": "686112dcc33854eae7a69c7c8dc673953e71ed1523e044de6c605a1f4311917a"
     }
+  },
+  "downstream_export": {
+    "contract_version": "book-evidence-v1",
+    "total_books": 50,
+    "books_with_toc_evidence": 25,
+    "books_with_exact_toc": 24,
+    "books_with_public_web_toc": 21,
+    "books_with_same_work_alternate_toc": 1,
+    "metadata_fallback_only": 25,
+    "validation_errors": [],
+    "new_book_evidence": {
+      "book_6efa911685e0a8f7f57d": {
+        "toc_public_web_exact_rows": 17,
+        "document_rows": 0,
+        "provider": "springer_link"
+      },
+      "isbn13:9781498712439": {
+        "toc_public_web_exact_rows": 492,
+        "document_rows": 1,
+        "document_types": [
+          "preface"
+        ],
+        "provider": "purdue_xinu"
+      }
+    }
   }
 }
