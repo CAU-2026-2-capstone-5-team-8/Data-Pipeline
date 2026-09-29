@@ -18,7 +18,7 @@ no result was merged into the current canonical Scale-50 dataset.
 - Normalized topic rows / unique books: 471 / 471
 - Existing-filter exclusions: 129
 - Cross-topic duplicate rows: 0
-- YES24 requests: 12 total (6×200, 6×400, 0 retries)
+- YES24 requests: 12 total (6×pageSize=400/HTTP 400, 6×pageSize=100/HTTP 200, 0 retries)
 
 The first bounded run reused the generic `collect --limit 100` 4× oversampling plan, so
 it sent `pageSize=400`; YES24 rejected all six topic requests with HTTP 400 and wrote no

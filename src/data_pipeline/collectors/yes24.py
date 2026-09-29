@@ -31,11 +31,9 @@ from data_pipeline.topics import topic_korean_query
 ITEM_LIST_URL = "https://apis.yes24.com/v1/goods/itemList"
 ITEM_DETAIL_URL = "https://apis.yes24.com/v1/goods/itemDetail"
 CONTENT_URL = "https://apis.yes24.com/v1/goods/content"
-# Live-verified: pageSize=1000 returns whatever the true result count is (e.g. 976
-# for "algorithms") with no error -- the API has no page-size wall in this range.
-# This cap is a defensive ceiling, not a discovered API limit; it sits comfortably
-# above the largest candidate_limit the CLI can ever request (100-book limit * 4).
-MAX_PAGE_SIZE = 1000
+# Discovery-600 live verification found pageSize=400 consistently rejected and
+# pageSize=100 consistently accepted. Keep collection within the observed stable cap.
+MAX_PAGE_SIZE = 100
 API_URL = CONTENT_URL
 API_KEY_ENV = "YES24_API_KEY"
 MIN_REQUEST_INTERVAL_SECONDS = 0.25

@@ -381,8 +381,8 @@ def markdown_report(report: dict[str, Any], json_name: str) -> str:
         f"- Existing-filter exclusions: {collection['normalization_exclusions']}",
         f"- Cross-topic duplicate rows: {collection['cross_topic_duplicate_rows']}",
         f"- YES24 requests: {collection['telemetry']['requests']} total "
-        f"({collection['telemetry']['http_status_counts'].get('200', 0)}×200, "
-        f"{collection['telemetry']['http_status_counts'].get('400', 0)}×400, "
+        f"({collection['telemetry']['http_status_counts'].get('400', 0)}×pageSize=400/HTTP 400, "
+        f"{collection['telemetry']['http_status_counts'].get('200', 0)}×pageSize=100/HTTP 200, "
         f"{collection['telemetry']['retries']} retries)",
         "",
         "The first bounded run reused the generic `collect --limit 100` 4× oversampling plan, so ",
