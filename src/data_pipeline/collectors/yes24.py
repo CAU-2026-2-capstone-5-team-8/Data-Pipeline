@@ -1,6 +1,6 @@
 """YES24 Open API collector.
 
-Book-specialty online bookstore API. Two uses share this client:
+Book-specialty online bookstore API. Three bounded uses share this client:
 
 * `search_books` -- topic discovery through `/v1/goods/itemList` (the `yes24`
   provider of `collect`). It also marks whether a listing is a translated edition
@@ -9,10 +9,13 @@ Book-specialty online bookstore API. Two uses share this client:
   language-scope note.
 * `fetch_toc` -- exact ISBN-13 lookup of one canonical book's table of contents
   (`enrich-api-toc`). It never discovers books.
+* `fetch_detail` -- exact ISBN-13 product-detail probe. It does not normalize or
+  persist descriptions into the canonical dataset.
 
 Requires an API key issued at https://developers.yes24.com, sent as the
-`X-Api-Key` header. Rate limit per the published OpenAPI spec: 5 requests/sec,
-5,000 requests/day.
+`X-Api-Key` header. The Basic rate limit in the current published OpenAPI
+documentation is 10 requests/second and 20,000 requests/day. This collector's
+0.25-second interval remains deliberately more conservative.
 """
 
 import os
@@ -26,6 +29,7 @@ from data_pipeline.collectors.base import is_transient_http_error, parse_json_ob
 from data_pipeline.topics import topic_korean_query
 
 ITEM_LIST_URL = "https://apis.yes24.com/v1/goods/itemList"
+ITEM_DETAIL_URL = "https://apis.yes24.com/v1/goods/itemDetail"
 CONTENT_URL = "https://apis.yes24.com/v1/goods/content"
 # Live-verified: pageSize=1000 returns whatever the true result count is (e.g. 976
 # for "algorithms") with no error -- the API has no page-size wall in this range.
@@ -55,6 +59,8 @@ class Yes24Collector:
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1 (metadata research)"},
         )
         self._last_request_at: float | None = None
+        self.request_count = 0
+        self.response_status_counts: dict[str, int] = {}
 
     def close(self) -> None:
         if self._owns_client:
@@ -81,8 +87,7 @@ class Yes24Collector:
         """
         if candidate_limit < 1:
             raise ValueError("candidate_limit must be at least 1")
-        self._wait_for_rate_limit()
-        response = self.client.get(
+        response = self._get(
             ITEM_LIST_URL,
             params={
                 "query": topic_korean_query(topic),
@@ -90,7 +95,6 @@ class Yes24Collector:
                 "detail": "Y",
                 "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
             },
-            headers=self._auth_headers,
         )
         payload = _not_found_as_empty(response, empty_key="items")
         if payload is not None:
@@ -123,11 +127,9 @@ class Yes24Collector:
         outcome, not a failure; this returns a payload with `data: None` for it
         rather than raising.
         """
-        self._wait_for_rate_limit()
-        response = self.client.get(
+        response = self._get(
             CONTENT_URL,
             params={"searchType": "ISBN13", "query": isbn13},
-            headers=self._auth_headers,
         )
         payload = _not_found_as_empty(response, empty_key=None)
         if payload is not None:
@@ -140,12 +142,49 @@ class Yes24Collector:
         """Return the exact TOC query sent for one ISBN; the API key is never part of it."""
         return {"searchType": "ISBN13", "query": isbn_13}
 
+    @staticmethod
+    def detail_request_parameters(isbn_13: str) -> dict[str, str]:
+        """Return exact item-detail parameters, excluding the header-only API key."""
+        return {"searchType": "ISBN13", "query": isbn_13, "detail": "Y"}
+
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
+    def fetch_detail(self, isbn_13: str) -> dict[str, Any]:
+        """Fetch exact-ISBN product detail for a bounded evidence probe.
+
+        A documented no-product 404 is returned as evidence rather than raised. This
+        method does not normalize or persist the response into canonical documents.
+        """
+        response = self._get(
+            ITEM_DETAIL_URL,
+            params=self.detail_request_parameters(isbn_13),
+        )
+        if response.status_code == 404:
+            payload = parse_json_object(response, "yes24")
+            if payload.get("errorCode") in _ITEM_DETAIL_NOT_FOUND_CODES:
+                return payload
+        response.raise_for_status()
+        return parse_json_object(response, "yes24")
+
     def _wait_for_rate_limit(self) -> None:
         if self._last_request_at is not None:
             elapsed = time.monotonic() - self._last_request_at
             if elapsed < MIN_REQUEST_INTERVAL_SECONDS:
                 time.sleep(MIN_REQUEST_INTERVAL_SECONDS - elapsed)
         self._last_request_at = time.monotonic()
+
+    def _get(self, url: str, *, params: dict[str, Any]) -> httpx.Response:
+        """Send one quota-bearing request and retain only non-secret telemetry."""
+        self._wait_for_rate_limit()
+        self.request_count += 1
+        response = self.client.get(url, params=params, headers=self._auth_headers)
+        status = str(response.status_code)
+        self.response_status_counts[status] = self.response_status_counts.get(status, 0) + 1
+        return response
 
     @retry(
         retry=retry_if_exception(is_transient_http_error),
@@ -159,11 +198,9 @@ class Yes24Collector:
         Unlike `fetch_content`, the YES24 error body is kept as-is so the raw
         artifact records exactly why no TOC was found.
         """
-        self._wait_for_rate_limit()
-        response = self.client.get(
+        response = self._get(
             API_URL,
             params=self.request_parameters(isbn_13),
-            headers=self._auth_headers,
         )
         if response.status_code == 404:
             payload = parse_json_object(response, "yes24")
@@ -174,6 +211,7 @@ class Yes24Collector:
 
 
 _NOT_FOUND_CODES = {"SEARCH_001", "GOODS_001", "GOODS_002"}
+_ITEM_DETAIL_NOT_FOUND_CODES = {"GOODS_001", "GOODS_002", "SEARCH_002"}
 
 
 def _not_found_as_empty(response: httpx.Response, empty_key: str | None) -> dict[str, Any] | None:
