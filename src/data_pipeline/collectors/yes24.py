@@ -25,14 +25,20 @@ from typing import Any
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
-from data_pipeline.collectors.base import is_transient_http_error, parse_json_object
+from data_pipeline.collectors.base import (
+    InvalidProviderResponse,
+    is_transient_http_error,
+    parse_json_object,
+)
 from data_pipeline.topics import topic_korean_query
 
 ITEM_LIST_URL = "https://apis.yes24.com/v1/goods/itemList"
 ITEM_DETAIL_URL = "https://apis.yes24.com/v1/goods/itemDetail"
 CONTENT_URL = "https://apis.yes24.com/v1/goods/content"
 # Discovery-600 live verification found pageSize=400 consistently rejected and
-# pageSize=100 consistently accepted. Keep collection within the observed stable cap.
+# pageSize=100 consistently accepted; on 2026-09-30 the rejection body was HTTP 400
+# PARAM_006 ("pageSize는 1에서 100 사이의 값이어야 합니다"). Larger searches are
+# therefore paged with `page` (1-based). pageSize=400 was still accepted on 2026-09-25.
 MAX_PAGE_SIZE = 100
 API_URL = CONTENT_URL
 API_KEY_ENV = "YES24_API_KEY"
@@ -70,30 +76,48 @@ class Yes24Collector:
     def __exit__(self, *_args: object) -> None:
         self.close()
 
+    def search_books(self, topic: str, candidate_limit: int = 20) -> dict[str, Any]:
+        """Search YES24's domestic book catalog for one supported topic, page by page.
+
+        Each page is preserved with its exact request parameters. Paging stops once
+        `totalCount` rows are collected or a page comes back short. A query with zero
+        matches is a normal outcome (HTTP 404, errorCode SEARCH_001), not a failure;
+        it yields a page with an empty item list rather than raising.
+        """
+        plan = self.search_parameters(topic, candidate_limit)
+        pages: list[dict[str, Any]] = []
+        collected_count = 0
+        for parameters in plan["pages"]:
+            response = self._fetch_search_page(parameters)
+            data = response.get("data")
+            items = data.get("items") if isinstance(data, dict) else None
+            if not isinstance(items, list):
+                raise InvalidProviderResponse(
+                    "yes24 returned an invalid 'items' collection; expected a list"
+                )
+            pages.append({"request_parameters": parameters, "response": response})
+            collected_count += len(items)
+            total_count = data.get("totalCount")
+            has_valid_total = (
+                isinstance(total_count, int)
+                and not isinstance(total_count, bool)
+                and total_count >= 0
+            )
+            if has_valid_total and collected_count >= total_count:
+                break
+            if len(items) < parameters["pageSize"]:
+                break
+        return {"pages": pages}
+
     @retry(
         retry=retry_if_exception(is_transient_http_error),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
         reraise=True,
     )
-    def search_books(self, topic: str, candidate_limit: int = 20) -> dict[str, Any]:
-        """Search YES24's domestic book catalog for one supported topic.
-
-        A query with zero matches is a normal outcome (HTTP 404, errorCode
-        SEARCH_001), not a failure; this returns an empty item list for it
-        rather than raising.
-        """
-        if candidate_limit < 1:
-            raise ValueError("candidate_limit must be at least 1")
-        response = self._get(
-            ITEM_LIST_URL,
-            params={
-                "query": topic_korean_query(topic),
-                "category": "BOOK",
-                "detail": "Y",
-                "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
-            },
-        )
+    def _fetch_search_page(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Fetch and decode one independently retried itemList page."""
+        response = self._get(ITEM_LIST_URL, params=parameters)
         payload = _not_found_as_empty(response, empty_key="items")
         if payload is not None:
             return payload
@@ -102,14 +126,35 @@ class Yes24Collector:
 
     @staticmethod
     def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
-        """Return the exact public API parameters used for a topic search."""
+        """Return the exact ordered page requests for one bounded topic search.
+
+        Every page uses the same pageSize because YES24 positions `page` by it.
+        """
         if candidate_limit < 1:
             raise ValueError("candidate_limit must be at least 1")
+        page_size = min(candidate_limit, MAX_PAGE_SIZE)
+        page_count = -(-candidate_limit // page_size)
+        return {
+            "pages": [
+                {
+                    "query": topic_korean_query(topic),
+                    "category": "BOOK",
+                    "detail": "Y",
+                    "pageSize": page_size,
+                    "page": page,
+                }
+                for page in range(1, page_count + 1)
+            ]
+        }
+
+    @staticmethod
+    def legacy_search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
+        """Return the single-request identity recorded before paging (up to 2026-09-25)."""
         return {
             "query": topic_korean_query(topic),
             "category": "BOOK",
             "detail": "Y",
-            "pageSize": min(candidate_limit, MAX_PAGE_SIZE),
+            "pageSize": min(candidate_limit, 1000),
         }
 
     @retry(

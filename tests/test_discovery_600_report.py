@@ -57,3 +57,64 @@ def test_discovery_600_report_keeps_raw_prose_and_credentials_out() -> None:
         <= book.keys()
         for book in report["books"]
     )
+
+
+def _report_module():
+    import importlib.util
+
+    path = Path(__file__).parents[1] / "scripts" / "report_discovery_600.py"
+    spec = importlib.util.spec_from_file_location("report_discovery_600", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_discovery_600_topic_rows_read_paginated_yes24_artifacts(tmp_path) -> None:
+    from datetime import UTC, datetime
+
+    from data_pipeline.collectors.yes24 import Yes24Collector
+    from data_pipeline.normalizers import normalize_yes24_response
+    from data_pipeline.storage import (
+        RawArtifact,
+        raw_artifact_path,
+        write_dataset,
+        write_raw_response,
+    )
+
+    retrieved_at = datetime(2026, 9, 30, tzinfo=UTC)
+    item = {
+        "itemId": 105894639,
+        "title": "스트랭 선형대수학",
+        "isbn13": "9791173400438",
+        "goodsSortNm": "국내도서-대학교재",
+        "originalTranslation": "Y",
+        "originalTitle": "Introduction to Linear Algebra",
+    }
+    plan = Yes24Collector.search_parameters("linear-algebra", 400)
+    response = {
+        "pages": [
+            {
+                "request_parameters": plan["pages"][0],
+                "response": {"success": True, "data": {"items": [item], "totalCount": 1}},
+            }
+        ]
+    }
+    artifact = RawArtifact(
+        provider="yes24",
+        topic="linear-algebra",
+        requested_limit=100,
+        retrieved_at=retrieved_at,
+        request_parameters=plan,
+        response=response,
+    )
+    write_raw_response(artifact, raw_artifact_path(tmp_path, artifact))
+    dataset = normalize_yes24_response(
+        response, topic="linear-algebra", limit=100, retrieved_at=retrieved_at
+    )
+    write_dataset(dataset, tmp_path / "topics" / "linear-algebra" / "processed")
+
+    rows, raw_summary = _report_module()._topic_rows(tmp_path, "linear-algebra")
+
+    assert raw_summary["provider_items"] == 1
+    assert rows[0]["provider_category"] == "국내도서-대학교재"
+    assert rows[0]["translation"] != "unknown"

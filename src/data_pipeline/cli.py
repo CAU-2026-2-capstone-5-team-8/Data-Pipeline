@@ -260,6 +260,17 @@ def _collect_open_textbook_payload(source_slug: str) -> tuple[dict, dict]:
 API_TOC_PROVIDERS = {"yes24": "YES24_API_KEY", "springer-metadata": "SPRINGER_API_KEY"}
 
 
+def _is_api_toc_artifact(artifact: RawArtifact) -> bool:
+    """Tell an ISBN TOC lookup apart from a topic search under the same provider name.
+
+    YES24 raw artifacts come from both `enrich-api-toc` (an ISBN13 content lookup) and
+    `collect --provider yes24` (an itemList topic search).
+    """
+    if artifact.provider not in API_TOC_PROVIDERS:
+        return False
+    return artifact.provider != "yes24" or artifact.request_parameters.get("searchType") == "ISBN13"
+
+
 def _api_toc_isbn(artifact: RawArtifact) -> str:
     """Return the ISBN-13 an API TOC raw artifact was looked up by."""
     parameters = artifact.request_parameters
@@ -291,7 +302,7 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
     provider = artifact.provider
     topic = artifact.topic
     limit = artifact.requested_limit
-    if provider in API_TOC_PROVIDERS:
+    if _is_api_toc_artifact(artifact):
         if limit != 1:
             raise typer.BadParameter(f"{provider} raw artifact requested_limit must be 1")
         isbn_13 = _api_toc_isbn(artifact)
@@ -404,11 +415,50 @@ def _validate_google_page_provenance(artifact: RawArtifact) -> None:
             raise typer.BadParameter("google-books raw pages ended before plan was satisfied")
 
 
+def _validate_yes24_page_provenance(artifact: RawArtifact) -> None:
+    """Require fetched YES24 pages to be an ordered prefix of the plan that ended honestly."""
+    if artifact.provider != "yes24" or "pages" not in artifact.response:
+        return
+    planned_pages = artifact.request_parameters.get("pages")
+    fetched_pages = artifact.response.get("pages")
+    if not isinstance(planned_pages, list) or not isinstance(fetched_pages, list):
+        raise typer.BadParameter("paginated yes24 raw artifact has invalid page lists")
+    if not fetched_pages or len(fetched_pages) > len(planned_pages):
+        raise typer.BadParameter("paginated yes24 raw artifact has an invalid page count")
+    collected_count = 0
+    for index, fetched_page in enumerate(fetched_pages):
+        if not isinstance(fetched_page, dict):
+            raise typer.BadParameter(f"paginated yes24 raw artifact has invalid page {index}")
+        if fetched_page.get("request_parameters") != planned_pages[index]:
+            raise typer.BadParameter(f"paginated yes24 raw artifact page {index} request mismatch")
+        response = fetched_page.get("response")
+        data = response.get("data") if isinstance(response, dict) else None
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise typer.BadParameter(f"paginated yes24 raw artifact page {index} has no item list")
+        collected_count += len(items)
+    if len(fetched_pages) < len(planned_pages):
+        total_count = data.get("totalCount")
+        reached_total = (
+            isinstance(total_count, int)
+            and not isinstance(total_count, bool)
+            and collected_count >= total_count
+        )
+        if not reached_total and len(items) >= planned_pages[len(fetched_pages) - 1]["pageSize"]:
+            raise typer.BadParameter("yes24 raw pages ended before plan was satisfied")
+
+
 def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
-    """Accept the current plan or the pre-pagination Google single-request identity."""
+    """Accept the current plan or a provider's pre-pagination single-request identity."""
     if artifact.request_parameters == expected:
         return True
-    if artifact.provider != "google-books" or "pages" in artifact.response:
+    if "pages" in artifact.response:
+        return False
+    if artifact.provider == "yes24" and not _is_api_toc_artifact(artifact):
+        return artifact.request_parameters == Yes24Collector.legacy_search_parameters(
+            artifact.topic, _metadata_candidate_limit("yes24", artifact.requested_limit)
+        )
+    if artifact.provider != "google-books":
         return False
     legacy_plan = GoogleBooksCollector.search_parameters(
         artifact.topic, max(artifact.requested_limit * 4, artifact.requested_limit)
@@ -489,10 +539,11 @@ def _dataset_from_raw_paths(
             raise typer.BadParameter(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
             )
-        if artifact.provider in API_TOC_PROVIDERS:
+        if _is_api_toc_artifact(artifact):
             api_toc_artifacts.append(artifact)
             continue
         _validate_google_page_provenance(artifact)
+        _validate_yes24_page_provenance(artifact)
         normalization_args = (
             artifact.response,
             artifact.provider,

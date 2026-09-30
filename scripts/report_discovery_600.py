@@ -87,7 +87,12 @@ def _topic_rows(data_dir: Path, topic: str) -> tuple[list[dict[str, Any]], dict[
     if len(raw_paths) != 1:
         raise ValueError(f"expected exactly one preserved raw artifact for {topic}")
     artifact = read_raw_response(raw_paths[0])
-    items = artifact.response.get("data", {}).get("items", [])
+    # Discovery-600 artifacts are single responses; later collections are paginated.
+    pages = artifact.response.get("pages")
+    responses = (
+        [page["response"] for page in pages] if isinstance(pages, list) else [artifact.response]
+    )
+    items = [item for response in responses for item in response.get("data", {}).get("items", [])]
     item_by_id = {
         str(item["itemId"]): item
         for item in items
