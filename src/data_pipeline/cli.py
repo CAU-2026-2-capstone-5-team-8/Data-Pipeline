@@ -1077,9 +1077,15 @@ def build(
     output: Annotated[Path, typer.Option(help="Canonical output directory.")] = Path(
         "data/processed"
     ),
+    relevance_gate: Annotated[
+        str | None,
+        typer.Option(help="Optional metadata selection policy recorded by the source experiment."),
+    ] = None,
 ) -> None:
     """Rebuild canonical JSONL solely from preserved raw artifact metadata."""
-    dataset, requested_by_topic = _dataset_from_raw_paths(raw)
+    if relevance_gate not in {None, "topic-evidence-v1"}:
+        raise typer.BadParameter("relevance-gate must be topic-evidence-v1 when provided")
+    dataset, requested_by_topic = _dataset_from_raw_paths(raw, relevance_gate)
     errors = validate_dataset(dataset)
     if errors:
         raise typer.BadParameter("; ".join(errors))
@@ -1596,6 +1602,73 @@ def _normalize_api_toc(
     return normalize_springer_metadata_response(payload, book=book, retrieved_at=retrieved_at)
 
 
+def _api_toc_observation(provider: str, payload: dict, book: Book) -> dict[str, Any]:
+    """Summarize one raw lookup without copying prose or credentials into the report."""
+    if provider == "yes24":
+        error_code = payload.get("errorCode")
+        data = payload.get("data")
+        record = data.get("data") if isinstance(data, dict) else None
+        contents = record.get("contents") if isinstance(record, dict) else None
+        return {
+            "product_found": error_code != "GOODS_002",
+            "toc_present": isinstance(contents, str) and bool(contents.strip()),
+            "toc_normalized": False,
+            "toc_entries_parsed": 0,
+            "provider_error_code": error_code,
+        }
+
+    pages = payload.get("pages")
+    page_items = pages if isinstance(pages, list) else []
+    records = [
+        record
+        for page in page_items
+        if isinstance(page, dict)
+        for record in page.get("response", {}).get("records", [])
+        if isinstance(record, dict)
+    ]
+    target = book.isbn_13
+
+    def normalized_isbn(value: Any) -> str | None:
+        return re.sub(r"[^0-9X]", "", value.upper()) if isinstance(value, str) else None
+
+    matching_chapters = [
+        record
+        for record in records
+        if record.get("contentType") == "Chapter"
+        and target
+        in {
+            normalized_isbn(record.get("printIsbn")),
+            normalized_isbn(record.get("electronicIsbn")),
+        }
+    ]
+    abstract_count = sum(
+        isinstance(record.get("abstract"), str) and bool(record["abstract"].strip())
+        for record in matching_chapters
+    )
+    return {
+        "pages": len(page_items),
+        "records_found": len(records),
+        "matching_chapter_records": len(matching_chapters),
+        "chapter_records_with_nonblank_abstract": abstract_count,
+        "toc_normalized": False,
+        "toc_entries": 0,
+    }
+
+
+def _api_toc_empty_status(provider: str, payload: dict, observation: dict[str, Any]) -> str:
+    if provider == "yes24":
+        if payload.get("errorCode") == "GOODS_002":
+            return "no_product"
+        if observation["toc_present"]:
+            return "parse_failure"
+        return "no_toc"
+    if observation["records_found"] == 0:
+        return "no_result"
+    if observation["matching_chapter_records"] == 0:
+        return "no_matching_chapters"
+    return "no_toc"
+
+
 @app.command("enrich-api-toc")
 def enrich_api_toc(
     provider: Annotated[str, typer.Option(help="TOC API provider: yes24 or springer-metadata.")],
@@ -1643,19 +1716,29 @@ def enrich_api_toc(
     attempts: list[dict[str, Any]] = []
     with collector_class(api_key) as collector:
         for book in targets:
-            attempt: dict[str, Any] = {"book_id": book.book_id, "isbn_13": book.isbn_13}
+            attempt: dict[str, Any] = {
+                "book_id": book.book_id,
+                "isbn_13": book.isbn_13,
+                "title": book.title,
+            }
             retrieved_at = datetime.now(UTC)
             try:
                 parameters, payload = _fetch_api_toc(provider, collector, book)
             except httpx.HTTPStatusError as exc:
                 error = f"HTTP {exc.response.status_code}"
-                attempts.append({**attempt, "status": "failed", "error": error})
+                attempts.append({**attempt, "status": "network_failure", "error": error})
                 continue
             except httpx.RequestError as exc:
-                attempts.append({**attempt, "status": "failed", "error": f"network: {exc}"})
+                attempts.append(
+                    {
+                        **attempt,
+                        "status": "network_failure",
+                        "error": f"network: {type(exc).__name__}",
+                    }
+                )
                 continue
             except ValueError as exc:
-                attempts.append({**attempt, "status": "failed", "error": str(exc)})
+                attempts.append({**attempt, "status": "parse_failure", "error": str(exc)})
                 continue
             artifact = RawArtifact(
                 provider=provider,
@@ -1668,16 +1751,48 @@ def enrich_api_toc(
             raw_path = raw_artifact_path(data_dir, artifact)
             write_raw_response(artifact, raw_path)
             attempt["raw_path"] = raw_path.as_posix()
+            observation = _api_toc_observation(provider, payload, book)
+            attempt.update(observation)
             try:
                 evidence = _normalize_api_toc(provider, payload, book, retrieved_at)
             except ValueError as exc:
-                attempts.append({**attempt, "status": "failed", "error": str(exc)})
+                attempts.append({**attempt, "status": "parse_failure", "error": str(exc)})
                 continue
             if evidence is None:
-                attempts.append({**attempt, "status": "no_toc"})
+                attempts.append(
+                    {**attempt, "status": _api_toc_empty_status(provider, payload, observation)}
+                )
                 continue
             additions.append(evidence)
-            attempts.append({**attempt, "status": "added", "toc_entries": len(evidence.toc)})
+            attempts.append(
+                {
+                    **attempt,
+                    "status": "added",
+                    "toc_normalized": True,
+                    "toc_entries": len(evidence.toc),
+                    **({"toc_entries_parsed": len(evidence.toc)} if provider == "yes24" else {}),
+                }
+            )
+
+        request_count = int(getattr(collector, "request_count", len(attempts)))
+        page_request_count = int(
+            getattr(
+                collector,
+                "page_request_count",
+                sum(int(attempt.get("pages", 0)) for attempt in attempts),
+            )
+        )
+        logical_request_count = (
+            page_request_count if provider == "springer-metadata" else len(attempts)
+        )
+        telemetry = {
+            "requests": request_count,
+            "logical_requests": logical_request_count,
+            "retries": max(0, request_count - logical_request_count),
+            "http_status_counts": dict(getattr(collector, "response_status_counts", {})),
+        }
+        if provider == "springer-metadata":
+            telemetry["pages"] = page_request_count
 
     updated = _with_api_toc(dataset, additions)
     errors = validate_dataset(updated)
@@ -1700,6 +1815,7 @@ def enrich_api_toc(
         "toc_books_after": len(after),
         "status_counts": counts,
         "added_book_ids": sorted(after - with_toc),
+        "telemetry": telemetry,
         "attempts": attempts,
     }
     report_path = data_dir / "reports" / f"api-toc-enrichment-{provider}.json"
@@ -1712,7 +1828,7 @@ def enrich_api_toc(
         f"{len(after)}/{len(dataset.books)} {json.dumps(counts, sort_keys=True)}"
     )
     typer.echo(f"Enrichment report: {report_path}")
-    if counts.get("failed"):
+    if counts.get("network_failure") or counts.get("parse_failure"):
         raise typer.Exit(code=1)
 
 

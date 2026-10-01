@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "benchmark": "scale-50-v2",
+  "experiment_date": "2026-09-29",
+  "starting_head": "e99965628917e99d4073f9c5ff28c899f381ad73",
+  "branch": "feat/public-evidence-coverage-expansion",
+  "environment": {
+    "dotenv_loading_verified": true,
+    "yes24_api_key_configured": true,
+    "springer_api_key_configured": true,
+    "key_values_recorded": false,
+    "env_gitignored": true
+  },
+  "official_rate_limits": {
+    "yes24_basic": {
+      "requests_per_day": 20000,
+      "requests_per_second": 10,
+      "collector_interval_seconds": 0.25,
+      "source": "https://developers.yes24.com/docs"
+    },
+    "springer_meta_basic": {
+      "requests_per_day": 500,
+      "requests_per_minute": 100,
+      "collector_interval_seconds": 0.65,
+      "source": "https://dev.springernature.com/docs/rate-limit-details/rate-limits/"
+    }
+  },
+  "baseline": {
+    "source": "data/experiments/scale-50-public-evidence-20260929/processed",
+    "books": 50,
+    "toc_books": 25,
+    "toc_entries": 2954,
+    "description_books": 25,
+    "description_rows": 30,
+    "any_prose_books": 26,
+    "document_rows": 31,
+    "preface_books": 1,
+    "preface_rows": 1,
+    "introduction_books": 0,
+    "preview_books": 0,
+    "sample_chapter_books": 0,
+    "other_prose_books": 0,
+    "metadata_fallback_only_books": 25,
+    "toc_unresolved_books": 25,
+    "toc_unresolved_with_isbn13": 22,
+    "toc_unresolved_without_isbn13": 3,
+    "linear_algebra_toc_books": 11,
+    "operating_systems_toc_books": 14,
+    "sha256": {
+      "books.jsonl": "18a6a3e6315bf75e0a38a4a7daf978659c151781a3a186db910dd9de050ef74d",
+      "documents.jsonl": "4de329836d522b520196c9e9ce3510280a0c29449fa8c1a1bbc6538f082d105c",
+      "toc.jsonl": "29ac161d4d40160e13c1a36f5c8d8d2f1eb4fed019bb543bb9f3822ec1e9a492",
+      "sources.jsonl": "26b13001945e26ba0bc216460fa1d342eea2518642aaba5dbb74386f465c291f"
+    }
+  },
+  "experiment_directories": {
+    "baseline": "data/experiments/scale-50-api-enrichment-20260929/baseline",
+    "yes24_only": "data/experiments/scale-50-api-enrichment-20260929/yes24-only",
+    "springer_only": "data/experiments/scale-50-api-enrichment-20260929/springer-only",
+    "combined": "data/experiments/scale-50-api-enrichment-20260929/combined",
+    "initial_canonical_copies_byte_identical": true,
+    "generated_data_committed": false
+  },
+  "coverage": {
+    "public_web_baseline_toc_books": 25,
+    "yes24_only_toc_books": 25,
+    "yes24_independent_gain": 0,
+    "springer_only_toc_books": 25,
+    "springer_independent_gain": 0,
+    "combined_toc_books": 25,
+    "combined_unique_gain": 0,
+    "overlap": 0,
+    "final_unresolved_books": 25
+  },
+  "yes24": {
+    "toc_run": {
+      "target_books": 22,
+      "requests": 22,
+      "logical_requests_completed": 22,
+      "http_status_counts": {"404": 22},
+      "retries": 0,
+      "products_found": 1,
+      "no_product": 21,
+      "product_without_toc": 1,
+      "toc_matches": 0,
+      "parse_failures": 0,
+      "network_failures": 0,
+      "unique_toc_gain": 0,
+      "report": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/reports/api-toc-enrichment-yes24.json"
+    },
+    "item_detail_probe": {
+      "endpoint": "https://apis.yes24.com/v1/goods/itemDetail",
+      "official_documentation": "https://developers.yes24.com/api-doc/goods-item-detail",
+      "bounded_max_books": 25,
+      "target_books": 22,
+      "requests": 22,
+      "http_status_counts": {"200": 1, "404": 21},
+      "retries": 0,
+      "exact_product_matches": 1,
+      "books_with_book_introduction": 1,
+      "books_with_book_summary": 0,
+      "books_with_table_of_contents": 0,
+      "formula_potential_description_gain": 1,
+      "actionable_textbook_description_gain_after_selection_review": 0,
+      "selection_issue_book_id": "isbn13:9780136054276",
+      "selection_issue_returned_title": "Student Solutions Manual for Differential Equations and Linear Algebra",
+      "book_introduction_characters": 395,
+      "book_introduction_sha256": "14e3b5b31a72f69053d0259716d8e7132dceb4b91a9ce0f91ff172ed4100c90d",
+      "report": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/reports/yes24-item-detail-probe.json"
+    },
+    "assessment": "low",
+    "assessment_reason": "Exact-ISBN TOC gain was 0/22. The only detail introduction belongs to a known solutions-manual selection error, leaving 0 actionable textbook prose gains."
+  },
+  "springer": {
+    "target_books": 22,
+    "requests": 22,
+    "pages_requested": 22,
+    "logical_requests_completed": 22,
+    "http_status_counts": {"404": 22},
+    "retries": 0,
+    "books_with_records": 0,
+    "records_found": 0,
+    "matching_chapter_records": 0,
+    "toc_matches": 0,
+    "toc_entries_added": 0,
+    "books_with_nonblank_chapter_abstracts": 0,
+    "chapter_records_with_nonblank_abstracts": 0,
+    "no_result": 22,
+    "parse_failures": 0,
+    "network_failures": 0,
+    "unique_toc_gain": 0,
+    "report": "data/experiments/scale-50-api-enrichment-20260929/springer-only/reports/api-toc-enrichment-springer-metadata.json",
+    "assessment": "low",
+    "assessment_reason": "All 22 exact-ISBN lookups were normal no-result responses, with no chapter metadata or abstract potential."
+  },
+  "combined": {
+    "order": ["yes24", "springer-metadata"],
+    "yes24_requests": 22,
+    "springer_requests": 22,
+    "springer_pages_requested": 22,
+    "retries": 0,
+    "toc_books_before": 25,
+    "toc_books_after_yes24": 25,
+    "toc_books_after_springer": 25,
+    "final_toc_books": 25,
+    "final_toc_entries": 2954
+  },
+  "task_quota_accounting": {
+    "note": "Includes initial and instrumented independent/combined repetitions plus the final itemDetail probe; local DNS failures that reached no provider were excluded.",
+    "yes24_provider_requests": 110,
+    "yes24_http_status_counts": {"200": 1, "404": 109},
+    "yes24_retries_after_provider_response": 0,
+    "springer_provider_requests": 88,
+    "springer_http_status_counts": {"404": 88},
+    "springer_retries_after_provider_response": 0,
+    "excluded_local_no_dns_client_attempts": 66
+  },
+  "remaining_gaps": {
+    "total_unresolved": 25,
+    "mutually_exclusive_distribution": {
+      "missing_isbn": 3,
+      "canonical_selection_or_identity_issue": 4,
+      "exact_edition_public_evidence_or_access_gap": 18
+    },
+    "missing_isbn_book_ids": [
+      "book_09c91e7b456682eb19fb",
+      "book_2bd8811d69c06b3696e2",
+      "book_967599cb4ac88187f696"
+    ],
+    "selection_or_identity_issue_book_ids": [
+      "isbn13:9780132819824",
+      "isbn13:9780136054276",
+      "isbn13:9780136374060",
+      "isbn13:9780716721772"
+    ]
+  },
+  "book_results": [
+    {
+      "book_id": "isbn13:9780023660450", "isbn_13": "9780023660450", "title": "Elementary Linear Algebra", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115942268256Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120312327707Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T115956652517Z_6d5c26875823.json"}
+    },
+    {
+      "book_id": "isbn13:9780070394551", "isbn_13": "9780070394551", "title": "Operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115942441061Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120312367785Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T115957040466Z_e174c90b90e6.json"}
+    },
+    {
+      "book_id": "isbn13:9780070419209", "isbn_13": "9780070419209", "title": "Operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115942668130Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120312603741Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T115957316786Z_bb586bddea23.json"}
+    },
+    {
+      "book_id": "isbn13:9780074630839", "isbn_13": "9780074630839", "title": "Systems Programming and Operating Systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115942931529Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120312853060Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T115957978827Z_55bb7a43399b.json"}
+    },
+    {
+      "book_id": "isbn13:9780126736502", "isbn_13": "9780126736502", "title": "Linear algebra and its applications", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115943172756Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120313107396Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T115958620484Z_e594279d4689.json"}
+    },
+    {
+      "book_id": "isbn13:9780131907294", "isbn_13": "9780131907294", "title": "Linear algebra with applications", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115943432586Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120313361908Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T115959273848Z_816d003d644d.json"}
+    },
+    {
+      "book_id": "isbn13:9780132819824", "isbn_13": "9780132819824", "title": "Introductory Linear Algebra With Applications", "selection_issue": "solutions-manual ISBN",
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115943673399Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120313618323Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T115959924555Z_6720178b207e.json"}
+    },
+    {
+      "book_id": "isbn13:9780135370193", "isbn_13": "9780135370193", "title": "Linear algebra", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115943951058Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120313868380Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120000578953Z_75b441c86476.json"}
+    },
+    {
+      "book_id": "isbn13:9780136054276", "isbn_13": "9780136054276", "title": "Differential Equations and Linear Algebra", "selection_issue": "ISBN resolves to Student Solutions Manual",
+      "yes24": {"product_found": true, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_toc", "detail_status": "product_found", "book_introduction_present": true, "book_introduction_characters": 395, "book_introduction_sha256": "14e3b5b31a72f69053d0259716d8e7132dceb4b91a9ce0f91ff172ed4100c90d", "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115944206185Z_75dd27b5513a.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120314123721Z_842942c4c584.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120001237983Z_b0b49c9297a9.json"}
+    },
+    {
+      "book_id": "isbn13:9780136374060", "isbn_13": "9780136374060", "title": "Operating systems", "selection_issue": "canonical author identity conflicts with exact-edition records",
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115944463802Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120314391923Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120001887571Z_ec740f0555f4.json"}
+    },
+    {
+      "book_id": "isbn13:9780138493080", "isbn_13": "9780138493080", "title": "Linear algebra with applications", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115944698946Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120314629761Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120002543392Z_98acfd56aa6d.json"}
+    },
+    {
+      "book_id": "isbn13:9780201033922", "isbn_13": "9780201033922", "title": "Introduction to linear algebra", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115944965494Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120314881553Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120003197415Z_0d9607072209.json"}
+    },
+    {
+      "book_id": "isbn13:9780201111859", "isbn_13": "9780201111859", "title": "Operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115945220313Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120315140432Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120003847743Z_a6dc71f698bb.json"}
+    },
+    {
+      "book_id": "isbn13:9780201119497", "isbn_13": "9780201119497", "title": "Linear algebra", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115945469133Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120315397437Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120004498769Z_e766331698b8.json"}
+    },
+    {
+      "book_id": "isbn13:9780201509397", "isbn_13": "9780201509397", "title": "An introduction to operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115945725070Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120315646017Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120005152423Z_8bddfbf31235.json"}
+    },
+    {
+      "book_id": "isbn13:9780201612516", "isbn_13": "9780201612516", "title": "Operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115945987118Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120315897390Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120005803560Z_8b9b883bff06.json"}
+    },
+    {
+      "book_id": "isbn13:9780534074227", "isbn_13": "9780534074227", "title": "Elementary linear algebra", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115946235550Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120316152418Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120006458498Z_1fd08023839c.json"}
+    },
+    {
+      "book_id": "isbn13:9780534950934", "isbn_13": "9780534950934", "title": "Understanding operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115946488257Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120316411283Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120007111797Z_a87ee6a85a2d.json"}
+    },
+    {
+      "book_id": "isbn13:9780716721772", "isbn_13": "9780716721772", "title": "Linear algebra", "selection_issue": "solutions-manual/study-guide ISBN",
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/linear-algebra/20260929T115946747722Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/linear-algebra/20260929T120316664476Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/linear-algebra/20260929T120007765572Z_b0c6da370785.json"}
+    },
+    {
+      "book_id": "isbn13:9781549660115", "isbn_13": "9781549660115", "title": "Operating System", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115946984901Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120316915975Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120008413844Z_9d0dedd45323.json"}
+    },
+    {
+      "book_id": "isbn13:9781565920606", "isbn_13": "9781565920606", "title": "Learning the UNIX Operating System", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115947248572Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120317167474Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120009069570Z_509fa7b83e32.json"}
+    },
+    {
+      "book_id": "isbn13:9788131703045", "isbn_13": "9788131703045", "title": "Operating systems", "selection_issue": null,
+      "yes24": {"product_found": false, "toc_present": false, "toc_entries_parsed": 0, "content_status": "no_product", "detail_status": "no_product", "book_introduction_present": false, "book_summary_present": false, "detail_table_of_contents_present": false, "content_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24/operating-systems/20260929T115947496657Z_8c9340d5c6da.json", "detail_raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/yes24-only/raw/yes24_item_detail/operating-systems/20260929T120317423929Z_8c9340d5c6da.json"},
+      "springer": {"records_found": 0, "matching_chapter_records": 0, "toc_normalized": false, "toc_entries": 0, "nonblank_abstract_records": 0, "status": "no_result", "raw_artifact": "data/experiments/scale-50-api-enrichment-20260929/springer-only/raw/springer_metadata/operating-systems/20260929T120009728055Z_4e94d5d078ac.json"}
+    },
+    {
+      "book_id": "book_2bd8811d69c06b3696e2", "isbn_13": null, "title": "Applied linear algebra", "selection_issue": "missing ISBN",
+      "yes24": {"content_status": "skipped_no_isbn", "detail_status": "skipped_no_isbn", "content_raw_artifact": null, "detail_raw_artifact": null},
+      "springer": {"status": "skipped_no_isbn", "raw_artifact": null}
+    },
+    {
+      "book_id": "book_967599cb4ac88187f696", "isbn_13": null, "title": "Linear algebra", "selection_issue": "missing ISBN",
+      "yes24": {"content_status": "skipped_no_isbn", "detail_status": "skipped_no_isbn", "content_raw_artifact": null, "detail_raw_artifact": null},
+      "springer": {"status": "skipped_no_isbn", "raw_artifact": null}
+    },
+    {
+      "book_id": "book_09c91e7b456682eb19fb", "isbn_13": null, "title": "Linear algebra.", "selection_issue": "missing ISBN",
+      "yes24": {"content_status": "skipped_no_isbn", "detail_status": "skipped_no_isbn", "content_raw_artifact": null, "detail_raw_artifact": null},
+      "springer": {"status": "skipped_no_isbn", "raw_artifact": null}
+    }
+  ],
+  "recommendation": [
+    "Repair canonical selection and ISBN identity before importing any YES24 description.",
+    "Do not build production YES24 detail enrichment from this sample: actionable textbook prose gain was zero.",
+    "Do not prioritize Springer Meta API for this Scale-50 remainder: exact-ISBN chapter and abstract gain was zero.",
+    "Continue exact-edition publisher/public-web acquisition and lawful sample/preface discovery for the 18 evidence/access gaps."
+  ]
+}

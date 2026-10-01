@@ -1,6 +1,7 @@
 """Collector for exact-edition public HTML pages on a small allowlist."""
 
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -37,10 +38,23 @@ class PublicBookPageCollector:
         wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
         reraise=True,
     )
-    def _fetch_html(self, url: str) -> str:
-        response = self.client.get(url)
-        if response.is_redirect:
-            raise InvalidProviderResponse("public book page returned an unapproved redirect")
+    def _fetch_html(self, url: str, allowed_redirect_hosts: tuple[str, ...] = ()) -> str:
+        response = self.client.get(url, follow_redirects=False)
+        redirect_count = 0
+        while response.is_redirect:
+            location = response.headers.get("location")
+            redirect_url = urljoin(str(response.url), location) if location else ""
+            hostname = urlsplit(redirect_url).hostname
+            host_allowed = hostname is not None and any(
+                hostname == allowed or hostname.endswith(f".{allowed}")
+                for allowed in allowed_redirect_hosts
+            )
+            if urlsplit(redirect_url).scheme != "https" or not host_allowed:
+                raise InvalidProviderResponse("public book page returned an unapproved redirect")
+            redirect_count += 1
+            if redirect_count > 5:
+                raise InvalidProviderResponse("public book page exceeded redirect limit")
+            response = self.client.get(redirect_url, follow_redirects=False)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "").casefold()
         if "text/html" not in content_type:
@@ -58,11 +72,17 @@ class PublicBookPageCollector:
         return {
             "source_slug": source.slug,
             "url": source.url,
-            "html": self._fetch_html(source.url),
+            "html": self._fetch_html(source.url, source.allowed_redirect_hosts),
         }
 
     @staticmethod
-    def request_parameters(source_slug: str) -> dict[str, str]:
+    def request_parameters(source_slug: str) -> dict[str, str | list[str]]:
         """Return the allowlisted request inputs needed for offline rebuilding."""
         source = public_book_source(source_slug)
-        return {"source": source.slug, "url": source.url}
+        parameters: dict[str, str | list[str]] = {
+            "source": source.slug,
+            "url": source.url,
+        }
+        if source.allowed_redirect_hosts:
+            parameters["allowed_redirect_hosts"] = list(source.allowed_redirect_hosts)
+        return parameters

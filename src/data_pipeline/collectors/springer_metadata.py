@@ -23,7 +23,8 @@ API_URL = "https://api.springernature.com/meta/v2/json"
 API_KEY_ENV = "SPRINGER_API_KEY"
 PAGE_SIZE = 25
 MAX_PAGES = 8
-MIN_REQUEST_INTERVAL_SECONDS = 0.5
+# Basic Meta API policy is 100 requests/minute. Keep a small safety margin below it.
+MIN_REQUEST_INTERVAL_SECONDS = 0.65
 
 
 def hyphenated_isbn(isbn: str) -> str:
@@ -45,6 +46,9 @@ class SpringerMetadataCollector:
         )
         self._api_key = api_key
         self._last_request_at: float | None = None
+        self.request_count = 0
+        self.page_request_count = 0
+        self.response_status_counts: dict[str, int] = {}
 
     def close(self) -> None:
         if self._owns_client:
@@ -63,6 +67,15 @@ class SpringerMetadataCollector:
                 time.sleep(MIN_REQUEST_INTERVAL_SECONDS - elapsed)
         self._last_request_at = time.monotonic()
 
+    def _get(self, parameters: dict[str, Any]) -> httpx.Response:
+        """Send one quota-bearing request and retain only non-secret telemetry."""
+        self._wait_for_rate_limit()
+        self.request_count += 1
+        response = self.client.get(API_URL, params={**parameters, "api_key": self._api_key})
+        status = str(response.status_code)
+        self.response_status_counts[status] = self.response_status_counts.get(status, 0) + 1
+        return response
+
     @retry(
         retry=retry_if_exception(is_transient_http_error),
         stop=stop_after_attempt(3),
@@ -71,8 +84,7 @@ class SpringerMetadataCollector:
     )
     def _fetch_page(self, parameters: dict[str, Any]) -> dict[str, Any] | None:
         """Fetch one page; Springer answers an unmatched query with HTTP 404."""
-        self._wait_for_rate_limit()
-        response = self.client.get(API_URL, params={**parameters, "api_key": self._api_key})
+        response = self._get(parameters)
         if response.status_code == 404:
             return None
         response.raise_for_status()
@@ -84,6 +96,7 @@ class SpringerMetadataCollector:
         pages: list[dict[str, Any]] = []
         for page_index in range(MAX_PAGES):
             parameters = {"q": query, "p": PAGE_SIZE, "s": page_index * PAGE_SIZE + 1}
+            self.page_request_count += 1
             response = self._fetch_page(parameters)
             if response is None:
                 break
