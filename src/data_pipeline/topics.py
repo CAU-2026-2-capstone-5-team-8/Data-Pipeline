@@ -32,6 +32,7 @@ class TopicSpec(BaseModel):
     korean_query: str | None = None
     korean_relevance_term_pattern: str | None = None
     korean_conflicting_subjects_pattern: str | None = None
+    korean_allowed_category_pattern: str | None = None
 
 
 def _load_registry(path: Path) -> dict[str, TopicSpec]:
@@ -121,4 +122,14 @@ def topic_korean_relevance_pattern(topic: str) -> re.Pattern[str]:
 def topic_korean_conflicting_subjects_pattern(topic: str) -> re.Pattern[str] | None:
     """Return the compiled Korean-language competing-subject rejection pattern, if any."""
     pattern = _spec(topic).korean_conflicting_subjects_pattern
+    return re.compile(pattern) if pattern else None
+
+
+def topic_korean_allowed_category_pattern(topic: str) -> re.Pattern[str] | None:
+    """Return the compiled pattern a YES24 `goodsSortNm` category must match, if any.
+
+    A matching title alone is not enough: "부의 알고리즘" (self-help) or a high-school
+    "확률과 통계" workbook shares the topic term but sits in an unrelated category.
+    """
+    pattern = _spec(topic).korean_allowed_category_pattern
     return re.compile(pattern) if pattern else None

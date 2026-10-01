@@ -3,12 +3,14 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 import typer
+from typer.testing import CliRunner
 
-from data_pipeline.cli import _collect_payload
+from data_pipeline.cli import _collect_payload, app
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.normalizers import normalize_yes24_response
+from data_pipeline.storage import RawArtifact, read_dataset, write_raw_response
 from data_pipeline.validation import validate_dataset
 
 RETRIEVED_AT = datetime(2026, 9, 23, 12, 0, tzinfo=UTC)
@@ -43,6 +45,7 @@ def _item(**overrides: object) -> dict:
         "isbn10": "",
         "isbn13": "9791173400438",
         "publishDate": "20250115",
+        "goodsSortNm": "국내도서-대학교재",
         "link": "https://www.yes24.com/product/goods/105894639",
         "originalTranslation": "",
         "originalTitle": "",
@@ -56,13 +59,11 @@ def _item(**overrides: object) -> dict:
     return item
 
 
-def _response(*items: dict) -> dict:
-    return {
-        "success": True,
-        "message": "성공",
-        "data": {"meta": {"apiTitle": "상품 검색"}, "items": list(items)},
-        "errorCode": None,
-    }
+def _response(*items: dict, total_count: int | None = None) -> dict:
+    data: dict = {"meta": {"apiTitle": "상품 검색"}, "items": list(items)}
+    if total_count is not None:
+        data["totalCount"] = total_count
+    return {"success": True, "message": "성공", "data": data, "errorCode": None}
 
 
 # --- Collector ---------------------------------------------------------------
@@ -83,14 +84,31 @@ def test_collect_reports_missing_api_key_as_cli_error(monkeypatch: pytest.Monkey
 
 def test_search_parameters_uses_korean_topic_query() -> None:
     parameters = Yes24Collector.search_parameters("linear-algebra", 20)
-    assert parameters["query"] == "선형대수"
-    assert parameters["category"] == "BOOK"
-    assert parameters["detail"] == "Y"
-    assert parameters["pageSize"] == 20
+    assert parameters == {
+        "pages": [
+            {"query": "선형대수", "category": "BOOK", "detail": "Y", "pageSize": 20, "page": 1}
+        ]
+    }
 
 
 def test_search_parameters_caps_page_size_at_one_hundred() -> None:
-    assert Yes24Collector.search_parameters("linear-algebra", 5000)["pageSize"] == 100
+    pages = Yes24Collector.search_parameters("linear-algebra", 5000)["pages"]
+    assert {page["pageSize"] for page in pages} == {100}
+
+
+def test_search_parameters_pages_past_the_live_page_size_limit_of_one_hundred() -> None:
+    pages = Yes24Collector.search_parameters("linear-algebra", 400)["pages"]
+    assert [(page["page"], page["pageSize"]) for page in pages] == [
+        (1, 100),
+        (2, 100),
+        (3, 100),
+        (4, 100),
+    ]
+
+
+def test_search_parameters_keeps_one_page_size_so_page_offsets_line_up() -> None:
+    pages = Yes24Collector.search_parameters("linear-algebra", 150)["pages"]
+    assert [(page["page"], page["pageSize"]) for page in pages] == [(1, 100), (2, 100)]
 
 
 def test_search_parameters_rejects_non_positive_candidate_limit() -> None:
@@ -113,7 +131,45 @@ def test_search_books_sends_the_planned_request_and_returns_the_raw_response() -
     assert len(captured) == 1
     assert captured[0].headers["X-Api-Key"] == "test-key"
     assert captured[0].url.params["query"] == "선형대수"
-    assert payload["data"]["items"][0]["itemId"] == 105894639
+    assert captured[0].url.params["page"] == "1"
+    [page] = payload["pages"]
+    assert (
+        page["request_parameters"]
+        == Yes24Collector.search_parameters("linear-algebra", 5)["pages"][0]
+    )
+    assert page["response"]["data"]["items"][0]["itemId"] == 105894639
+
+
+def test_search_books_stops_paging_once_total_count_is_collected() -> None:
+    requested_pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_pages.append(request.url.params["page"])
+        items = [_item(itemId=index) for index in range(100)]
+        return httpx.Response(200, json=_response(*items, total_count=200), request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        payload = Yes24Collector(client=client, api_key="test-key").search_books(
+            "linear-algebra", candidate_limit=400
+        )
+
+    assert requested_pages == ["1", "2"]
+    assert len(payload["pages"]) == 2
+
+
+def test_search_books_stops_paging_after_a_short_page() -> None:
+    requested_pages: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_pages.append(request.url.params["page"])
+        return httpx.Response(200, json=_response(_item()), request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        Yes24Collector(client=client, api_key="test-key").search_books(
+            "linear-algebra", candidate_limit=400
+        )
+
+    assert requested_pages == ["1"]
 
 
 def test_search_books_treats_search_001_404_as_empty_results() -> None:
@@ -134,7 +190,7 @@ def test_search_books_treats_search_001_404_as_empty_results() -> None:
             "linear-algebra", candidate_limit=5
         )
 
-    assert payload["data"]["items"] == []
+    assert payload["pages"][0]["response"]["data"]["items"] == []
 
 
 def test_search_books_reraises_other_404_errors() -> None:
@@ -581,3 +637,216 @@ def test_normalize_requires_items_to_be_a_list() -> None:
         normalize_yes24_response(
             {"data": {"items": {}}}, topic="linear-algebra", limit=5, retrieved_at=RETRIEVED_AT
         )
+
+
+# --- Normalizer: provider category gate ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("topic", "title", "category"),
+    [
+        ("algorithms", "부의 알고리즘", "국내도서-경제 경영"),
+        ("algorithms", "알고리즘으로 철학하기", "국내도서-인문"),
+        ("algorithms", "무자비한 알고리즘", "국내도서-자연과학"),
+        ("algorithms", "컵라면에도 알고리즘이 필요하다고?", "국내도서-어린이"),
+        ("probability-statistics", "개념원리 확률과 통계", "국내도서-중고등학습서-고등학교"),
+        ("probability-statistics", "바쁜 초등학생을 위한 빠른 확률과 통계", "국내도서-초등학습서"),
+        ("discrete-mathematics", "IT영재를 위한 이산수학 (중등)", "국내도서-중고등학습서-중학교"),
+        ("databases", "전통무예 데이터베이스 구축 및 활용방안 연구", "국내도서-사회 정치"),
+        ("operating-systems", "K-스테이블코인: 금융 운영체제의 대전환", "국내도서-경제 경영"),
+    ],
+)
+def test_normalize_skips_topic_titles_filed_under_an_unrelated_category(
+    topic: str, title: str, category: str
+) -> None:
+    """A topic term in the title is not enough when YES24 files the book elsewhere."""
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, goodsSortNm=category)),
+        topic=topic,
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+@pytest.mark.parametrize(
+    ("topic", "title", "category"),
+    [
+        ("algorithms", "이것이 취업을 위한 코딩 테스트다", "국내도서-IT 모바일"),
+        ("databases", "코딩 자율학습 SQL 데이터베이스 입문", "국내도서-IT 모바일-컴퓨터수험서"),
+        ("operating-systems", "독학사 컴퓨터공학과 2단계 운영체제", "국내도서-수험서 자격증"),
+        ("linear-algebra", "선형대수학원론", "국내도서-자연과학"),
+        ("probability-statistics", "수리통계학", "국내도서-대학교재"),
+    ],
+)
+def test_normalize_accepts_topic_titles_in_the_topic_field(
+    topic: str, title: str, category: str
+) -> None:
+    title = title if topic != "algorithms" else f"{title} 알고리즘"
+    title = title if topic != "probability-statistics" else f"{title}과 확률"
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, goodsSortNm=category)),
+        topic=topic,
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert len(dataset.books) == 1
+
+
+def test_normalize_skips_items_without_a_provider_category() -> None:
+    dataset = normalize_yes24_response(
+        _response(_item(goodsSortNm=None)),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+@pytest.mark.parametrize(
+    "title", ["알고리즘 공탁법", "2025 알고리즘 직관민법", "알고리즘 객관식 민사집행법"]
+)
+def test_normalize_skips_law_exam_books_that_use_algorithm_as_a_brand_name(title: str) -> None:
+    """These sit in the same 수험서 자격증 category as CS exam books, so only the title tells."""
+    dataset = normalize_yes24_response(
+        _response(_item(title=title, goodsSortNm="국내도서-수험서 자격증")),
+        topic="algorithms",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []
+
+
+# --- Normalizer and build replay: paginated search -------------------------------
+
+
+def _paged_response(topic: str, candidate_limit: int, *pages: list[dict]) -> dict:
+    plan = Yes24Collector.search_parameters(topic, candidate_limit)["pages"]
+    return {
+        "pages": [
+            {"request_parameters": plan[index], "response": _response(*items)}
+            for index, items in enumerate(pages)
+        ]
+    }
+
+
+def test_normalize_reads_items_from_every_page_in_order() -> None:
+    first = [_item(itemId=1, isbn13="9791173400438")]
+    second = [_item(itemId=2, isbn13="9791162243022", title="선형대수와 군")]
+    dataset = normalize_yes24_response(
+        _paged_response("linear-algebra", 400, first, second),
+        topic="linear-algebra",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert [book.title for book in dataset.books] == ["스트랭 선형대수학", "선형대수와 군"]
+
+
+def _build(tmp_path, *artifacts: RawArtifact):
+    raw_args: list[str] = []
+    for index, artifact in enumerate(artifacts):
+        raw_path = tmp_path / f"raw-{index}.json"
+        write_raw_response(artifact, raw_path)
+        raw_args += ["--raw", str(raw_path)]
+    output = tmp_path / "processed"
+    result = CliRunner().invoke(app, ["build", *raw_args, "--output", str(output)])
+    return result, output
+
+
+def test_build_replays_a_paginated_yes24_discovery_artifact(tmp_path) -> None:
+    artifact = RawArtifact(
+        provider="yes24",
+        topic="linear-algebra",
+        requested_limit=100,
+        retrieved_at=RETRIEVED_AT,
+        request_parameters=Yes24Collector.search_parameters("linear-algebra", 400),
+        response=_paged_response("linear-algebra", 400, [_item()]),
+    )
+
+    result, output = _build(tmp_path, artifact)
+
+    assert result.exit_code == 0, result.output
+    assert [book.book_id for book in read_dataset(output).books] == ["isbn13:9791173400438"]
+
+
+def test_build_replays_a_pre_paging_single_request_yes24_artifact(tmp_path) -> None:
+    """Artifacts collected before paging (pageSize=400 in one request) stay replayable."""
+    artifact = RawArtifact(
+        provider="yes24",
+        topic="linear-algebra",
+        requested_limit=100,
+        retrieved_at=RETRIEVED_AT,
+        request_parameters={
+            "query": "선형대수",
+            "category": "BOOK",
+            "detail": "Y",
+            "pageSize": 400,
+        },
+        response=_response(_item()),
+    )
+
+    result, output = _build(tmp_path, artifact)
+
+    assert result.exit_code == 0, result.output
+    assert len(read_dataset(output).books) == 1
+
+
+def test_build_rejects_yes24_pages_that_stop_while_results_remain(tmp_path) -> None:
+    full_page = [_item(itemId=index, isbn13="9791173400438") for index in range(100)]
+    response = _paged_response("linear-algebra", 400, full_page)
+    response["pages"][0]["response"]["data"]["totalCount"] = 300
+    artifact = RawArtifact(
+        provider="yes24",
+        topic="linear-algebra",
+        requested_limit=100,
+        retrieved_at=RETRIEVED_AT,
+        request_parameters=Yes24Collector.search_parameters("linear-algebra", 400),
+        response=response,
+    )
+
+    result, _output = _build(tmp_path, artifact)
+
+    assert result.exit_code != 0
+    assert "yes24 raw pages ended before plan was satisfied" in result.output
+
+
+def test_build_still_routes_yes24_isbn_lookups_to_toc_enrichment(tmp_path) -> None:
+    discovery = RawArtifact(
+        provider="yes24",
+        topic="linear-algebra",
+        requested_limit=100,
+        retrieved_at=RETRIEVED_AT,
+        request_parameters=Yes24Collector.search_parameters("linear-algebra", 400),
+        response=_paged_response(
+            "linear-algebra", 400, [_item(contentDetail={"tableOfContents": None})]
+        ),
+    )
+    lookup = RawArtifact(
+        provider="yes24",
+        topic="linear-algebra",
+        requested_limit=1,
+        retrieved_at=datetime(2026, 9, 23, 12, 5, tzinfo=UTC),
+        request_parameters=Yes24Collector.request_parameters("9791173400438"),
+        response={
+            "success": True,
+            "data": {"data": {"itemId": 105894639, "contents": "1장 벡터\r\n1.1 내적\r\n1.2 외적"}},
+        },
+    )
+
+    result, output = _build(tmp_path, discovery, lookup)
+
+    assert result.exit_code == 0, result.output
+    dataset = read_dataset(output)
+    assert len(dataset.toc) == 3
+    assert len(dataset.sources) == 2
+
+
+def test_normalize_skips_nursing_algorithm_textbooks() -> None:
+    """Nursing protocol books share the 대학교재 category with CS textbooks."""
+    dataset = normalize_yes24_response(
+        _response(_item(title="간호 알고리즘 PRO-A7 : 신경외과", goodsSortNm="국내도서-대학교재")),
+        topic="algorithms",
+        limit=5,
+        retrieved_at=RETRIEVED_AT,
+    )
+    assert dataset.books == []

@@ -279,6 +279,36 @@ an item's files (scans, OCR text, PDFs) to read its actual text, and instead rec
 restriction in the source's `rights_note` while leaving `license` `null`. A live 5-book search for
 `linear-algebra` collected metadata for 5/5 candidates and description text for 4/5.
 
+YES24 is also implemented (`--provider yes24`, requires `YES24_API_KEY`). It searches the Korean
+catalog with each topic's `korean_query`. The `itemList` endpoint accepted `pageSize=400` on
+2026-09-25. It rejected it during the 2026-09-29 Discovery-600 run and again on 2026-09-30 (HTTP
+400 `PARAM_006`, 1-100 only). The 4x candidate budget is therefore split into 1-based `page`
+requests of one fixed `pageSize`. Each page keeps its exact request parameters and response
+in one raw artifact, and paging stops at `totalCount` or at a short page. `build --raw` still
+replays pre-paging artifacts (one request with `pageSize` up to 400), and it keeps a topic search
+separate from an `enrich-api-toc` ISBN lookup, although both are recorded as provider `yes24`.
+
+A topic term in the title is not enough on its own. *부의 알고리즘* (self-help) and high-school
+*확률과 통계* workbooks match the title pattern. Each topic therefore also requires YES24's
+`goodsSortNm` category to match `korean_allowed_category_pattern` in `configs/topics.json`:
+
+- Computer-science topics accept IT/mobile, university textbook, and exam/certification books.
+- Mathematics topics also accept natural science.
+
+An item without a category is skipped. Title exclusions handle cases that share an accepted
+category, for example law-exam and nursing books that use "알고리즘" as a brand name. On the
+2026-09-25 local raw artifacts (100 books per topic), the gate replaced 35 algorithms books, 4
+discrete-mathematics books, 3 databases books, and 1 operating-systems book with later on-topic
+candidates. Probability/statistics fell from 100 to 63 books, because 81 of the first 100 were
+high-school workbooks. A live paged run on 2026-09-30 fetched 400/979 algorithms, 400/667
+databases, 145/145 discrete-mathematics, 245/245 linear-algebra, 400/415 operating-systems, and
+400/1,180 probability/statistics candidates. The first five topics reached 100 books each (455/500
+with a TOC). Probability/statistics again produced 63 eligible books, so `collect` kept its raw
+artifact and exited 1 without publishing, as it does for any topic below `--limit`. The dated
+Discovery-600 report (471 books from one 100-item page per topic) was measured before this
+category gate and paging, so rebuilding its raw artifacts with the current code gives different
+counts.
+
 HathiTrust's free Bibliographic API is implemented differently from the other providers because it
 has no topic or subject search: it only accepts an exact ISBN and returns catalog identity plus a
 rights code, never item text or a table of contents. Every ISBN checked during development

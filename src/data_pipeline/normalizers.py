@@ -42,6 +42,7 @@ from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
 from data_pipeline.topics import (
     TOPICS,
+    topic_korean_allowed_category_pattern,
     topic_korean_conflicting_subjects_pattern,
     topic_korean_relevance_pattern,
 )
@@ -643,6 +644,25 @@ def _yes24_published_year(value: Any) -> int | None:
 
 
 def _yes24_records(response: dict[str, Any]) -> list[Any]:
+    """Return itemList rows from one response or, in page order, from a paginated one."""
+    if "pages" not in response:
+        return _yes24_page_records(response)
+    pages = _provider_records(response, "pages", "yes24")
+    items: list[Any] = []
+    for page_index, page in enumerate(pages):
+        if not isinstance(page, dict):
+            raise InvalidProviderResponse(f"yes24 returned an invalid page at index {page_index}")
+        parameters = page.get("request_parameters")
+        page_response = page.get("response")
+        if not isinstance(parameters, dict) or not isinstance(page_response, dict):
+            raise InvalidProviderResponse(
+                f"yes24 page {page_index} lacks request parameters or response"
+            )
+        items.extend(_yes24_page_records(page_response))
+    return items
+
+
+def _yes24_page_records(response: dict[str, Any]) -> list[Any]:
     data = response.get("data", {})
     if not isinstance(data, dict):
         raise InvalidProviderResponse("yes24 response missing 'data' object")
@@ -666,6 +686,12 @@ def _normalize_yes24_item(
     conflicting_pattern = topic_korean_conflicting_subjects_pattern(topic)
     if conflicting_pattern is not None and conflicting_pattern.search(title):
         return None
+    category_pattern = topic_korean_allowed_category_pattern(topic)
+    if category_pattern is not None:
+        # A missing category cannot show the book belongs to the topic's field.
+        category = item.get("goodsSortNm")
+        if not isinstance(category, str) or not category_pattern.search(category.strip()):
+            return None
 
     author_field = item.get("author")
     authors = (
