@@ -1,5 +1,6 @@
 """Command-line entry point for the small MVP collection slice."""
 
+import hashlib
 import json
 import os
 import re
@@ -82,6 +83,11 @@ from data_pipeline.relevance_review import finalize_relevance_review, prepare_re
 from data_pipeline.reporting import format_book_coverage, format_coverage
 from data_pipeline.scale_comparison import compare_scale_reports
 from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
+from data_pipeline.selection_audit import (
+    audit_selection,
+    write_selection_report,
+    write_selection_review,
+)
 from data_pipeline.source_registry import config_path
 from data_pipeline.storage import (
     RawArtifact,
@@ -1334,6 +1340,51 @@ def finalize_relevance_review_command(
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Reviewed v1 audit: {v1_output}")
     typer.echo(f"Reviewed v2 audit: {v2_output}")
+
+
+@app.command("audit-selection")
+def audit_selection_command(
+    data_dir: Annotated[Path, typer.Option(help="Existing raw and processed data root.")] = Path(
+        "data"
+    ),
+    report: Annotated[Path, typer.Option(dir_okay=False)] = Path("selection-audit.json"),
+    review: Annotated[Path, typer.Option(dir_okay=False)] = Path("selection-review.csv"),
+    topic: Annotated[
+        str | None, typer.Option(help="Audit one topic instead of each book's own.")
+    ] = None,
+    include_context: Annotated[
+        bool, typer.Option(help="Include short verbatim match context for local review.")
+    ] = False,
+) -> None:
+    """Report traceable evidence and review signals, without deciding eligibility."""
+    processed = data_dir / "processed"
+    if report.resolve() == review.resolve() or report.exists() or review.exists():
+        raise typer.BadParameter(
+            "choose distinct new report/review paths; existing files are preserved"
+        )
+    written_report = False
+    try:
+        if not dataset_exists(processed):
+            raise ValueError("audit-selection requires an existing canonical dataset")
+        dataset = read_dataset(processed)
+        result = audit_selection(dataset, topic, include_context=include_context)
+        result["canonical_hashes"] = {
+            name: "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest()
+            for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+        }
+        write_selection_report(result, report)
+        written_report = True
+        write_selection_review(result, review)
+    except (OSError, ValueError) as exc:
+        if written_report:
+            report.unlink(missing_ok=True)
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Audited books: {result['book_count']}")
+    for name, count in sorted(result["status_counts"].items()):
+        typer.echo(f"  {name}: {count}")
+    typer.echo(f"Report: {report}")
+    typer.echo(f"Blank human review sheet: {review}")
+    typer.echo("No book was removed; the review sheet records the human decision.")
 
 
 @app.command("bulk-status")

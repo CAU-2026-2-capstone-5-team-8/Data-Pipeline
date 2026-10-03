@@ -1100,3 +1100,53 @@ the new evidence flows through concept matching into difficulty scoring; they ar
 that either score is correct. The low match rate on the Sinha TOC reflects distributed-systems
 headings such as *Remote Procedure Calls*, *Distributed Shared Memory*, and *Naming* that the
 current ML concept list does not cover.
+
+## Selection audit v3
+
+`audit-selection` reports collected evidence and review signals. It never decides that a book
+is a valid textbook, impossible to resolve, or ready for recommendation, and never removes a book.
+
+```bash
+uv run data-pipeline audit-selection \
+  --data-dir <dataset root containing processed/> \
+  --report <new output directory>/selection-audit.json \
+  --review <new output directory>/selection-review.csv
+```
+
+Report schema v3 retains v2's cautious status vocabulary:
+
+| Status | Meaning |
+| --- | --- |
+| `review_required` | A missing ISBN, topic-term gap, study-aid/exam/subject marker, or alternate-edition TOC needs inspection |
+| `metadata_only` | No documents or TOC were collected and no other review signal took priority |
+| `evidence_present` | Some documents or TOC exist; relevance, completeness and recommendation suitability remain unverified |
+
+`evidence_state` separately distinguishes metadata, descriptions, TOC, and documents labelled
+preface/introduction/preview/sample. Document presence and character count are not prose quality,
+text difficulty, or deep concept coverage. `no_isbn` does not exclude title/author/provider lookup.
+
+English and Korean patterns inspect actual title/subtitle/description text. Assigned topic slugs
+are excluded from the matching evidence. The report records each matched phrase's field, record ID,
+character offsets, document source ID where available, and a source registry with URLs, hashes and
+edition metadata. Book-level source IDs are candidates for tracing metadata, not an assertion that
+every source supplied every field. Multiple configured leaf topics produce distinct audit rows;
+parent domains such as mathematics are not evaluated as leaf topics.
+
+V3 separates `exam_context_marker` (수능, 모의고사, 기출, 고2/고3) from the configured
+`conflicting_subject_marker`: a coding-interview book's mention of past questions is not proof of
+another subject. This changes audit labels only, not the discovery gate or selected books.
+Use `--include-context` to add up to 80 original characters on each side of a match, with a
+`context_start` offset. Keep these verbatim local review reports outside Git; default reports
+include matched terms and offsets without surrounding text.
+
+Both outputs are deterministic and must use new, distinct paths. Existing reports, canonical
+files and human review sheets cannot be overwritten. `human_decision`, `replacement_isbn_13` and
+`notes` remain blank; CSV formula-like text is escaped only in the exported review sheet.
+Canonical hashes and the applied rules are recorded in the JSON report. No extra service is called.
+
+The [471-book measured audit](docs/experiments/selection-signals-2026-10-03.md) found 439 books with
+TOC, no documents labelled prose in this snapshot, and 42 books with review signals. These are
+not 42 confirmed bad books. Generic term matching can flag a relevant textbook's description too.
+The [follow-up review](docs/experiments/selection-review-2026-10-03.md) records the agent's
+observations for all 42 books separately from blank human decisions. Historical v2 measurements
+remain unchanged; v3 reruns flag the same 42 identities.
