@@ -1352,6 +1352,9 @@ def audit_selection_command(
     topic: Annotated[
         str | None, typer.Option(help="Audit one topic instead of each book's own.")
     ] = None,
+    include_context: Annotated[
+        bool, typer.Option(help="Include short verbatim match context for local review.")
+    ] = False,
 ) -> None:
     """Report traceable evidence and review signals, without deciding eligibility."""
     processed = data_dir / "processed"
@@ -1364,7 +1367,7 @@ def audit_selection_command(
         if not dataset_exists(processed):
             raise ValueError("audit-selection requires an existing canonical dataset")
         dataset = read_dataset(processed)
-        result = audit_selection(dataset, topic)
+        result = audit_selection(dataset, topic, include_context=include_context)
         result["canonical_hashes"] = {
             name: "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest()
             for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")

@@ -12,7 +12,10 @@ from data_pipeline.scale_reporting import spreadsheet_safe_csv_value
 from data_pipeline.topics import TOPIC_REGISTRY
 from data_pipeline.validation import validate_dataset
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+# The existing Korean discovery gate mixes school/exam terms with subject terms.
+# Retain its matches but do not describe exam mentions as a subject conflict.
+EXAM_CONTEXT_PATTERN = re.compile(r"수능|모의고사|기출|고[23]", re.IGNORECASE)
 # Explicit title/subtitle markers, not a classifier of all textbooks or workbooks.
 STUDY_AID_PATTERN = re.compile(
     r"\b(?:solutions?\s+manual|study\s+guide|solved\s+problems?|schaum'?s\s+outline"
@@ -60,7 +63,9 @@ class BookAudit:
     documents: list[dict]
 
 
-def _matches(pattern: str, fields: list[dict], finding: str) -> list[dict]:
+def _matches(
+    pattern: str, fields: list[dict], finding: str, *, include_context: bool = False
+) -> list[dict]:
     result = []
     for field in fields:
         for match in re.finditer(pattern, field["text"], re.IGNORECASE):
@@ -71,12 +76,22 @@ def _matches(pattern: str, fields: list[dict], finding: str) -> list[dict]:
                     "matched_text": match.group(),
                     "start": match.start(),
                     "end": match.end(),
+                    **(
+                        {
+                            "context": field["text"][max(0, match.start() - 80) : match.end() + 80],
+                            "context_start": max(0, match.start() - 80),
+                        }
+                        if include_context
+                        else {}
+                    ),
                 }
             )
     return result
 
 
-def _audit_book(book, topic: str, dataset: CanonicalDataset) -> BookAudit:
+def _audit_book(
+    book, topic: str, dataset: CanonicalDataset, *, include_context: bool = False
+) -> BookAudit:
     spec = TOPIC_REGISTRY[topic]
     documents = sorted(
         (d for d in dataset.documents if d.book_id == book.book_id),
@@ -102,10 +117,24 @@ def _audit_book(book, topic: str, dataset: CanonicalDataset) -> BookAudit:
         if pattern
         for field in text_fields
     )
-    signals = _matches(STUDY_AID_PATTERN.pattern, metadata_fields, "study_aid_marker")
+    signals = _matches(
+        STUDY_AID_PATTERN.pattern,
+        metadata_fields,
+        "study_aid_marker",
+        include_context=include_context,
+    )
     for pattern in (spec.conflicting_subjects_pattern, spec.korean_conflicting_subjects_pattern):
         if pattern:
-            signals.extend(_matches(pattern, text_fields, "conflicting_subject_marker"))
+            matches = _matches(
+                pattern,
+                text_fields,
+                "conflicting_subject_marker",
+                include_context=include_context,
+            )
+            for signal in matches:
+                if EXAM_CONTEXT_PATTERN.fullmatch(signal["matched_text"]):
+                    signal["finding"] = "exam_context_marker"
+            signals.extend(matches)
     findings = {signal["finding"] for signal in signals}
     if not book.isbn_13 and not book.isbn_10:
         findings.add("no_isbn")  # Title/author/provider IDs may still identify this book.
@@ -145,6 +174,7 @@ def _audit_book(book, topic: str, dataset: CanonicalDataset) -> BookAudit:
         "no_isbn",
         "topic_terms_not_observed",
         "study_aid_marker",
+        "exam_context_marker",
         "conflicting_subject_marker",
         "alternate_edition_toc",
     }
@@ -182,7 +212,9 @@ def _audit_book(book, topic: str, dataset: CanonicalDataset) -> BookAudit:
     )
 
 
-def audit_selection(dataset: CanonicalDataset, topic: str | None = None) -> dict:
+def audit_selection(
+    dataset: CanonicalDataset, topic: str | None = None, *, include_context: bool = False
+) -> dict:
     """One row per book/leaf topic; no inference of textbook validity or text difficulty."""
     errors = validate_dataset(dataset)
     if errors:
@@ -194,12 +226,16 @@ def audit_selection(dataset: CanonicalDataset, topic: str | None = None) -> dict
         topics = [topic] if topic else sorted(set(book.topics) & TOPIC_REGISTRY.keys())
         if not topics:
             raise ValueError(f"book has no usable topic for audit: {book.book_id}")
-        audits.extend(_audit_book(book, leaf, dataset) for leaf in topics)
+        audits.extend(
+            _audit_book(book, leaf, dataset, include_context=include_context) for leaf in topics
+        )
     return {
         "schema_version": SCHEMA_VERSION,
-        "policy": "selection-signals-v2",
+        "policy": "selection-signals-v3",
+        "includes_context": include_context,
         "rules": {
             "study_aid_pattern": STUDY_AID_PATTERN.pattern,
+            "exam_context_pattern": EXAM_CONTEXT_PATTERN.pattern,
             "topics": {
                 leaf: {
                     field: getattr(TOPIC_REGISTRY[leaf], field)

@@ -388,3 +388,30 @@ def test_review_export_escapes_formula_titles_without_altering_canonical_text(tm
         row = next(csv.DictReader(stream))
     assert row["title"] == "'=Operating Systems"
     assert report["books"][0]["title"] == source.books[0].title == "=Operating Systems"
+
+
+def test_exam_mentions_remain_review_signals_without_claiming_another_subject():
+    target = book("isbn13:9780306406157", "알고리즘 코딩 테스트")
+    target = target.model_copy(update={"topics": ["algorithms"], "language": "ko"})
+    document = description(
+        target.book_id, "  알고리즘\r\n기출 문제를 살펴보고 모의고사를 풉니다.  "
+    )
+    report = audit_selection(dataset([target], (), [document]), include_context=True)
+    row = report["books"][0]
+    assert row["status"] == "review_required"
+    assert "exam_context_marker" in row["findings"]
+    assert "conflicting_subject_marker" not in row["findings"]
+    for signal in row["signals"]:
+        start = signal["context_start"]
+        assert signal["context"] == document.text[start : start + len(signal["context"])]
+        assert "\r\n" in signal["context"]
+    default = audit_selection(dataset([target], (), [document]))
+    assert all("context" not in s for s in default["books"][0]["signals"])
+
+
+def test_law_subject_and_exam_context_are_recorded_independently():
+    target = book("isbn13:9780306406157", "알고리즘 상업등기법")
+    target = target.model_copy(update={"topics": ["algorithms"], "language": "ko"})
+    document = description(target.book_id, "등기법의 기출 문제를 설명합니다.")
+    row = audit_selection(dataset([target], (), [document]))["books"][0]
+    assert {"conflicting_subject_marker", "exam_context_marker"} <= set(row["findings"])
