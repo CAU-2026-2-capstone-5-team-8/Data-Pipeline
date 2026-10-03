@@ -1,0 +1,141 @@
+{
+  "original_fields_unchanged": true,
+  "api_requests": 0,
+  "books": [
+    {
+      "book_id": "isbn13:9788952117441",
+      "title": "선형대수와 군",
+      "toc_rows": 134,
+      "paired_rows": 134,
+      "original_concept_count": 10,
+      "english_concept_count": 13,
+      "added_concept_count": 4,
+      "removed_concept_count": 1
+    },
+    {
+      "book_id": "isbn13:9788961055680",
+      "title": "현대 선형대수학",
+      "toc_rows": 69,
+      "paired_rows": 69,
+      "original_concept_count": 1,
+      "english_concept_count": 18,
+      "added_concept_count": 17,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9788970505329",
+      "title": "인공지능 시대의 선형대수학",
+      "toc_rows": 137,
+      "paired_rows": 137,
+      "original_concept_count": 1,
+      "english_concept_count": 15,
+      "added_concept_count": 14,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791156644910",
+      "title": "프리드버그 선형대수학",
+      "toc_rows": 56,
+      "paired_rows": 56,
+      "original_concept_count": 0,
+      "english_concept_count": 15,
+      "added_concept_count": 15,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791156644972",
+      "title": "딥러닝을 위한 선형대수학",
+      "toc_rows": 60,
+      "paired_rows": 60,
+      "original_concept_count": 0,
+      "english_concept_count": 9,
+      "added_concept_count": 9,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791156645009",
+      "title": "응용이 보이는 선형대수학",
+      "toc_rows": 74,
+      "paired_rows": 74,
+      "original_concept_count": 0,
+      "english_concept_count": 14,
+      "added_concept_count": 14,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791156645399",
+      "title": "기초 선형대수학",
+      "toc_rows": 42,
+      "paired_rows": 42,
+      "original_concept_count": 0,
+      "english_concept_count": 17,
+      "added_concept_count": 17,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791173400438",
+      "title": "스트랭 선형대수학",
+      "toc_rows": 71,
+      "paired_rows": 71,
+      "original_concept_count": 1,
+      "english_concept_count": 14,
+      "added_concept_count": 13,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791190017114",
+      "title": "알기 쉬운 선형대수",
+      "toc_rows": 12,
+      "paired_rows": 12,
+      "original_concept_count": 0,
+      "english_concept_count": 9,
+      "added_concept_count": 9,
+      "removed_concept_count": 0
+    },
+    {
+      "book_id": "isbn13:9791190017183",
+      "title": "선형대수학과 응용",
+      "toc_rows": 11,
+      "paired_rows": 11,
+      "original_concept_count": 0,
+      "english_concept_count": 7,
+      "added_concept_count": 7,
+      "removed_concept_count": 0
+    }
+  ],
+  "toc_rows": 666,
+  "english_toc_rows": 666,
+  "english_documents": 0,
+  "input_hashes": {
+    "books.jsonl": "sha256:c8ca0b04e3035e8937f323af14b27c92dfed3d78a3457e0c67044a3b948d0bc7",
+    "documents.jsonl": "sha256:7c69d6cea1ef840dfefac04afebe5bf2013ab56160ec1cdd484b842c7fce2de8",
+    "toc.jsonl": "sha256:68461ea87c821ab363e021a52f3ed06e8225cf1b8d2b18d77e291e4079a9a02b",
+    "sources.jsonl": "sha256:52d512750d178864b6ac3fba481185296ab8f68c5202dabf4bda91713d8635a3"
+  },
+  "translation_run_hash": "sha256:8b0662db0d19504c15653a22a8aa4d7f23e26be16320ddfbedb07e65dc955a8a",
+  "v3_export_hash": "sha256:db5675fe05ce6bd7c1da1dfbfe09007842fe32855e646c02d9207801b31e4ca9",
+  "v2_legacy_bytes_unchanged": true,
+  "byte_identical_exports": 2,
+  "v1_legacy_bytes_unchanged": true,
+  "comparison_byte_identical": true,
+  "comparison_hash": "sha256:64a272a7ea5fa2d4b1528340dc7034e478efc4b9232348e6ab8466deea350ba6",
+  "summary": {
+    "book_count": 10,
+    "english_book_concept_pairs": 131,
+    "english_matched_books": 10,
+    "original_book_concept_pairs": 13,
+    "original_matched_books": 4,
+    "paired_rows": 666,
+    "stored_english_prose_documents": 0,
+    "toc_rows": 666
+  },
+  "evaluation_status": "not_evaluated",
+  "comparison_scope": "paired_toc_only",
+  "feature_config_hash": "sha256:6230d12facf94e46c1daa11d9d83b3929322af2f69a36614d3f553684bfb21d6",
+  "graph_hash": "sha256:a30a726f28b27215df5aa397bca62ecea7badd8dbbdb90e0a46a43ac05cb2245",
+  "matching_config_hash": "sha256:9f8f348f40fb4ffc7d7238c4b9ac5b79a8c8f1b2168bd0960b2b58db9a4e0638",
+  "tests": {
+    "data_pipeline": 476,
+    "ml": 342
+  }
+}

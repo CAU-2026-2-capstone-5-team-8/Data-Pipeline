@@ -14,6 +14,32 @@ other. No generated TOC or description is added.
 
 ## Artifact
 
+### Version 3: stored English analysis fields
+
+Canonical `Book.en_title/en_subtitle`, `TocEntry.en_title` and `Document.en_text` are optional
+analysis fields. They do not replace original text or change the original document content hash.
+Absent fields are omitted from canonical serialization to preserve historical record shapes;
+nonblank values and document/evidence text retain their exact whitespace.
+
+Export with `--contract-version book-evidence-v3` when any English analysis field is present.
+V3 retains every v2 field and adds **required, nullable** `en_text` on every evidence row.
+Titles combine English title/subtitle only when both required parts are present; TOCs/documents
+copy their corresponding English field; subjects and missing translations remain null.
+English text participates in provenance hashing and canonical-projection validation. It is never
+silently substituted for `text`. V3 IDs use their own namespace.
+
+V1/v2 exports reject canonical inputs containing English fields. V1/v2 artifacts with translated
+book fields are also rejected; experimental older English exports must be regenerated as v3.
+The measured historical v1 and v2 exports without English fields remain byte-identical.
+Upgrade ML before sending v3 or English-bearing canonical files to older strict readers.
+
+This slice supports loading/exporting **already stored** English fields. It does not activate
+the separate unfinished translation command, infer English from character ranges, automatically
+copy text, or call a translation provider. The contract verifies integrity, not translation
+correctness or translation authorship: keep the original translation-run/cache provenance.
+The [offline 10-book comparison](experiments/english-evidence-comparison-2026-10-03.md) records
+input/translation-run hashes and the original-field equality check.
+
 ### Version 2: text extent and source rights
 
 `--contract-version book-evidence-v2` emits `schema_version=2` and four additional required,

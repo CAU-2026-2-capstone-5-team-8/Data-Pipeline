@@ -75,8 +75,7 @@ class MlEvidenceItem(CanonicalModel):
     @field_validator("text")
     @classmethod
     def text_must_not_be_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
+        if not value.strip():
             raise ValueError("evidence text must not be blank")
         return value
 
@@ -158,6 +157,14 @@ class MlBookEvidence(CanonicalModel):
     book_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     evidence: list[MlEvidenceItem] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def english_book_requires_v3(self) -> "MlBookEvidence":
+        if self.schema_version < 3 and (
+            self.book.en_title is not None or self.book.en_subtitle is not None
+        ):
+            raise ValueError("English book fields require book-evidence-v3")
+        return self
+
 
 class MlEvidenceItemV2(MlEvidenceItem):
     source_external_id: str | None
@@ -178,6 +185,23 @@ class MlBookEvidenceV2(MlBookEvidence):
     evidence: list[MlEvidenceItemV2] = Field(min_length=1)
 
 
+class MlEvidenceItemV3(MlEvidenceItemV2):
+    en_text: str | None = Field(min_length=1)
+
+    @field_validator("en_text")
+    @classmethod
+    def english_text_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("English analysis text must not be blank")
+        return value
+
+
+class MlBookEvidenceV3(MlBookEvidence):
+    schema_version: Literal[3] = 3
+    contract_version: Literal["book-evidence-v3"] = "book-evidence-v3"
+    evidence: list[MlEvidenceItemV3] = Field(min_length=1)
+
+
 def _provenance_payload(item: MlEvidenceItem | dict[str, Any]) -> dict[str, Any]:
     payload = item.model_dump(mode="json") if isinstance(item, MlEvidenceItem) else dict(item)
     payload.pop("evidence_id", None)
@@ -194,7 +218,11 @@ def _evidence_item(**values: Any) -> MlEvidenceItem:
     identity = str(values.pop("identity"))
     version = values.pop("contract_version", CONTRACT_VERSION)
     evidence_id = stable_id("evidence", version, identity)
-    model = MlEvidenceItemV2 if version == "book-evidence-v2" else MlEvidenceItem
+    model = {
+        "book-evidence-v1": MlEvidenceItem,
+        "book-evidence-v2": MlEvidenceItemV2,
+        "book-evidence-v3": MlEvidenceItemV3,
+    }[version]
     draft = model.model_validate(
         {
             "evidence_id": evidence_id,
@@ -269,6 +297,7 @@ def _toc_entries_in_order(entries: list[TocEntry]) -> list[tuple[TocEntry, list[
 def _source_fields(source: Source, contract_version: str = CONTRACT_VERSION) -> dict[str, Any]:
     return {
         "contract_version": contract_version,
+        **({"en_text": None} if contract_version == "book-evidence-v3" else {}),
         **(
             {
                 "source_external_id": source.external_id,
@@ -276,7 +305,7 @@ def _source_fields(source: Source, contract_version: str = CONTRACT_VERSION) -> 
                 "source_rights_note": source.rights_note,
                 "text_extent": None,
             }
-            if contract_version == "book-evidence-v2"
+            if contract_version in {"book-evidence-v2", "book-evidence-v3"}
             else {}
         ),
         "source_id": source.source_id,
@@ -294,11 +323,22 @@ def export_ml_evidence(
     dataset: CanonicalDataset, contract_version: str = CONTRACT_VERSION
 ) -> list[MlBookEvidence]:
     """Project canonical records into deterministic per-book ML evidence records."""
-    if contract_version not in {"book-evidence-v1", "book-evidence-v2"}:
+    if contract_version not in {"book-evidence-v1", "book-evidence-v2", "book-evidence-v3"}:
         raise ValueError("unsupported ML evidence contract version")
+    has_english = (
+        any(b.en_title is not None or b.en_subtitle is not None for b in dataset.books)
+        or any(t.en_title is not None for t in dataset.toc)
+        or any(d.en_text is not None for d in dataset.documents)
+    )
+    if has_english and contract_version != "book-evidence-v3":
+        raise ValueError("English analysis fields require --contract-version book-evidence-v3")
     if contract_version == "book-evidence-v1" and any(d.text_extent for d in dataset.documents):
         raise ValueError("explicit text extent requires --contract-version book-evidence-v2")
-    record_model = MlBookEvidenceV2 if contract_version == "book-evidence-v2" else MlBookEvidence
+    record_model = {
+        "book-evidence-v1": MlBookEvidence,
+        "book-evidence-v2": MlBookEvidenceV2,
+        "book-evidence-v3": MlBookEvidenceV3,
+    }[contract_version]
     sources_by_id = {source.source_id: source for source in dataset.sources}
     sources_by_book: dict[str, list[Source]] = defaultdict(list)
     documents_by_book: dict[str, list[Document]] = defaultdict(list)
@@ -320,7 +360,18 @@ def export_ml_evidence(
                 text=" — ".join(value for value in (book.title, book.subtitle) if value),
                 edition_relation="canonical_record",
                 metadata_field="title",
-                **_source_fields(metadata_source, contract_version),
+                **{
+                    **_source_fields(metadata_source, contract_version),
+                    **(
+                        {
+                            "en_text": " — ".join(v for v in (book.en_title, book.en_subtitle) if v)
+                            if book.en_title and (not book.subtitle or book.en_subtitle)
+                            else None
+                        }
+                        if contract_version == "book-evidence-v3"
+                        else {}
+                    ),
+                },
             )
         ]
         evidence.extend(
@@ -357,7 +408,12 @@ def export_ml_evidence(
                         **_source_fields(source, contract_version),
                         **(
                             {"text_extent": document.text_extent}
-                            if contract_version == "book-evidence-v2"
+                            if contract_version in {"book-evidence-v2", "book-evidence-v3"}
+                            else {}
+                        ),
+                        **(
+                            {"en_text": document.en_text}
+                            if contract_version == "book-evidence-v3"
                             else {}
                         ),
                     },
@@ -386,7 +442,14 @@ def export_ml_evidence(
                     order_index=entry.order_index,
                     label=entry.label,
                     toc_path=toc_path,
-                    **_source_fields(source, contract_version),
+                    **{
+                        **_source_fields(source, contract_version),
+                        **(
+                            {"en_text": entry.en_title}
+                            if contract_version == "book-evidence-v3"
+                            else {}
+                        ),
+                    },
                 )
             )
 
@@ -590,7 +653,9 @@ def read_ml_evidence(path: Path) -> list[MlBookEvidence]:
             continue
         decoded = json.loads(line)
         model = (
-            MlBookEvidenceV2
+            MlBookEvidenceV3
+            if isinstance(decoded, dict) and decoded.get("schema_version") == 3
+            else MlBookEvidenceV2
             if isinstance(decoded, dict) and decoded.get("schema_version") == 2
             else MlBookEvidence
         )

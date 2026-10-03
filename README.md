@@ -128,6 +128,11 @@ For explicit document scope and source rights, use `--contract-version book-evid
 The default remains v1 for historical datasets, but refuses documents with explicit `text_extent`
 instead of silently losing that information. Upgrade the ML reader before using v2.
 
+Already stored English fields (`en_title`, `en_subtitle`, `en_text`) require
+`--contract-version book-evidence-v3`. V3 preserves original text, English text, extent and rights;
+it performs no translation and rejects silent downgrade to v1/v2. See the
+[offline original/English comparison](docs/experiments/english-evidence-comparison-2026-10-03.md).
+
 ```bash
 uv run data-pipeline export-ml-evidence \
   --dataset-dir data/experiments/scale-50-bulk-web-20260922/processed \

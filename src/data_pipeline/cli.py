@@ -1753,7 +1753,10 @@ def report_toc_acquisition(
 @app.command("export-ml-evidence")
 def export_ml_evidence_command(
     contract_version: Annotated[
-        str, typer.Option(help="book-evidence-v1 (legacy) or book-evidence-v2 (extent and rights).")
+        str,
+        typer.Option(
+            help="Evidence contract: book-evidence-v1, book-evidence-v2, or book-evidence-v3."
+        ),
     ] = "book-evidence-v1",
     dataset_dir: Annotated[
         Path,
