@@ -99,14 +99,20 @@ uv run data-pipeline report-toc-acquisition \
   --loc-result /path/to/scale50-structured-discovery.json
 ```
 
-The measured result is exact-edition baseline 14/50, Open Library alternate +1, LOC +0,
-and five new exact-edition public-web TOCs, for 20/50 usable TOCs. Because the 14-book baseline
+The historical 2026-09-22 result is exact-edition baseline 14/50, Open Library alternate +1,
+LOC +0, and five new exact-edition public-web TOCs, for 20/50 usable TOCs. Because the 14-book baseline
 already includes ten previously reviewed public/publisher pages, it is not an API-only number.
 The independent structured/API-only view is 6/50 (four original canonical TOCs plus two usable
 bulk same-Work resolutions); reviewed public-web evidence raises the result to 20/50. The remaining
 30 books retain metadata fallback rather than being mislabeled as TOC-derived evidence. Large raw
 inputs, indexes, and fetched HTML remain ignored; the source audit, pinned manifest, experiment
 policy, machine-readable report, parsers, and tiny fixtures are committed.
+
+The latest-main replay and exact-edition search sweep are reported separately in
+[`scale-50-public-evidence-coverage-2026-09-29.md`](docs/experiments/scale-50-public-evidence-coverage-2026-09-29.md).
+It verifies the three later eCampus additions (23/50), adds reviewed Purdue Xinu and Springer
+Greub sources, and reaches **25/50** with 2,954 TOC entries. TOC and prose coverage are reported
+separately; the final data has descriptions for 25 books and one preface for one additional book.
 
 ## ML evidence export
 
@@ -125,10 +131,11 @@ uv run data-pipeline export-ml-evidence \
   --report data/experiments/scale-50-bulk-web-20260922/ml-evidence-v1/summary.json
 ```
 
-The measured Scale-50 export has 50 records: 20 books with TOC evidence, 30 metadata-fallback-only
-books, and zero books without evidence. The generated artifact is deterministic local data and is
-ignored by Git. Rebuilding it requires the canonical four-file input, not the 12.59 GB Open Library
-raw dump.
+The historical 2026-09-22 Scale-50 export has 50 records: 20 books with TOC evidence,
+30 metadata-fallback-only books, and zero books without evidence. The 2026-09-29 coverage replay
+reaches 25 TOC books but does not commit a generated ML export. The generated artifact is
+deterministic local data and is ignored by Git. Rebuilding it requires the canonical four-file
+input, not the 12.59 GB Open Library raw dump.
 
 ## Current vertical slice
 
@@ -271,6 +278,36 @@ are controlled-digital-lending items (`"access-restricted-item": true`); the col
 an item's files (scans, OCR text, PDFs) to read its actual text, and instead records that
 restriction in the source's `rights_note` while leaving `license` `null`. A live 5-book search for
 `linear-algebra` collected metadata for 5/5 candidates and description text for 4/5.
+
+YES24 is also implemented (`--provider yes24`, requires `YES24_API_KEY`). It searches the Korean
+catalog with each topic's `korean_query`. The `itemList` endpoint accepted `pageSize=400` on
+2026-09-25. It rejected it during the 2026-09-29 Discovery-600 run and again on 2026-09-30 (HTTP
+400 `PARAM_006`, 1-100 only). The 4x candidate budget is therefore split into 1-based `page`
+requests of one fixed `pageSize`. Each page keeps its exact request parameters and response
+in one raw artifact, and paging stops at `totalCount` or at a short page. `build --raw` still
+replays pre-paging artifacts (one request with `pageSize` up to 400), and it keeps a topic search
+separate from an `enrich-api-toc` ISBN lookup, although both are recorded as provider `yes24`.
+
+A topic term in the title is not enough on its own. *부의 알고리즘* (self-help) and high-school
+*확률과 통계* workbooks match the title pattern. Each topic therefore also requires YES24's
+`goodsSortNm` category to match `korean_allowed_category_pattern` in `configs/topics.json`:
+
+- Computer-science topics accept IT/mobile, university textbook, and exam/certification books.
+- Mathematics topics also accept natural science.
+
+An item without a category is skipped. Title exclusions handle cases that share an accepted
+category, for example law-exam and nursing books that use "알고리즘" as a brand name. On the
+2026-09-25 local raw artifacts (100 books per topic), the gate replaced 35 algorithms books, 4
+discrete-mathematics books, 3 databases books, and 1 operating-systems book with later on-topic
+candidates. Probability/statistics fell from 100 to 63 books, because 81 of the first 100 were
+high-school workbooks. A live paged run on 2026-09-30 fetched 400/979 algorithms, 400/667
+databases, 145/145 discrete-mathematics, 245/245 linear-algebra, 400/415 operating-systems, and
+400/1,180 probability/statistics candidates. The first five topics reached 100 books each (455/500
+with a TOC). Probability/statistics again produced 63 eligible books, so `collect` kept its raw
+artifact and exited 1 without publishing, as it does for any topic below `--limit`. The dated
+Discovery-600 report (471 books from one 100-item page per topic) was measured before this
+category gate and paging, so rebuilding its raw artifacts with the current code gives different
+counts.
 
 HathiTrust's free Bibliographic API is implemented differently from the other providers because it
 has no topic or subject search: it only accepts an exact ISBN and returns catalog identity plus a
@@ -1010,9 +1047,43 @@ second run of both commands left `books.jsonl`, `documents.jsonl`, and `toc.json
 identical; only `sources.jsonl` changed, because a repeated retrieval updates its source
 snapshot as documented above.
 
-Applied to the Scale-50 selection these three sources project 20/50 to 23/50 usable TOCs. That
-projection has not been run against the Scale-50 dataset, which is not checked in; only the
-25-book result above was measured.
+The 2026-09-29 replay subsequently verified these three sources against Scale-50: usable TOC
+coverage rose from the historical 20/50 result to 23/50 before the Purdue and Springer additions.
+
+### Latest-main unresolved-book sweep (2026-09-29 KST)
+
+The dated
+[coverage report](docs/experiments/scale-50-public-evidence-coverage-2026-09-29.md) records a new
+exact-edition public-web search for all 27 books unresolved on the replayed latest-`main` baseline.
+Two high-confidence sources were implemented:
+
+| Book | Identity boundary | Evidence |
+| --- | --- | ---: |
+| Comer, *Operating System Design: The Xinu Approach*, 2e | Official Purdue author site, explicit edition/platform markers, complete reviewed hierarchy | 492 TOC entries + 1 preface |
+| Greub, *Linear Algebra*, 2e (1963) | Official Springer title, author, edition, year, DOI/eISBN, complete reviewed sequence | 17 TOC entries |
+
+The result is 25/50 usable TOCs: Linear Algebra 11/25 and Operating Systems 14/25. Twenty-four are
+same-edition sources and one is an explicitly labeled same-Work alternate. The 2,954 TOC entries
+are not counted as prose; prose remains 30 descriptions across 25 books plus the one Xinu preface.
+Both API keys were unavailable, so no YES24 or Springer Metadata API gain is claimed.
+
+The lower-level offline replay accepts the same opt-in relevance gate used by Scale-50 v2:
+
+```bash
+uv run data-pipeline build \
+  --raw <scale-50-open-library-operating-systems.json> \
+  --raw <scale-50-open-library-linear-algebra.json> \
+  --raw <reviewed-public-evidence.json> \
+  --output <rebuilt-directory> \
+  --relevance-gate topic-evidence-v1
+```
+
+Two independent offline builds plus pinned Open Library bulk enrichment were byte-identical. The
+report includes all four SHA-256 hashes, remaining-book classifications, raw artifact paths, and
+source limitations. Four canonical records still lack ISBNs, and three exact ISBNs select solution
+manuals rather than the named textbook; those require selection repair, not relaxed matching.
+The unchanged `book-evidence-v1` exporter also emitted all 50 records with zero validation errors;
+the new Xinu and Greub TOCs and the Xinu preface are present with their original provenance.
 
 #### Downstream effect
 

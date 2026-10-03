@@ -13,6 +13,7 @@ from typing import Annotated, Any
 
 import httpx
 import typer
+from dotenv import load_dotenv
 
 from data_pipeline.api_toc import (
     normalize_springer_metadata_response,
@@ -31,7 +32,7 @@ from data_pipeline.collectors.springer_metadata import (
     SpringerMetadataCollector,
     hyphenated_isbn,
 )
-from data_pipeline.collectors.yes24 import Yes24Collector
+from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
 from data_pipeline.manifest import (
     load_manifest,
@@ -56,6 +57,7 @@ from data_pipeline.normalizers import (
     normalize_public_book_page_response,
     normalize_publisher_document_response,
     normalize_publisher_page_response,
+    normalize_yes24_response,
 )
 from data_pipeline.open_library_bulk import (
     build_targeted_open_library_index,
@@ -98,11 +100,14 @@ from data_pipeline.storage import (
 from data_pipeline.toc_acquisition_report import build_toc_acquisition_report
 from data_pipeline.validation import validate_dataset
 
+load_dotenv()
+
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book evidence.")
 TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
 LimitOption = Annotated[int, typer.Option(min=1, max=100, help="Books to normalize.")]
 ProviderOption = Annotated[
-    str, typer.Option(help="Metadata provider: open-library, google-books, or internet-archive.")
+    str,
+    typer.Option(help="Metadata provider: open-library, google-books, internet-archive, or yes24."),
 ]
 PublisherSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition publisher source slug.")
@@ -145,12 +150,13 @@ def _collect_payload(
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
         "internet-archive": InternetArchiveCollector,
+        "yes24": Yes24Collector,
     }
     try:
         collector_class = collectors[provider]
     except KeyError as exc:
         raise typer.BadParameter(
-            "provider must be open-library, google-books, or internet-archive"
+            "provider must be open-library, google-books, internet-archive, or yes24"
         ) from exc
     try:
         with collector_class() as collector:
@@ -168,6 +174,8 @@ def _collect_payload(
                     "collection_failures": getattr(collector, "detail_failures", []),
                 }
             return payload, request_parameters
+    except MissingApiKey as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
     except httpx.HTTPStatusError as exc:
         raise typer.BadParameter(
             f"{provider} returned HTTP {exc.response.status_code}; no data was written"
@@ -257,6 +265,17 @@ def _collect_open_textbook_payload(source_slug: str) -> tuple[dict, dict]:
 API_TOC_PROVIDERS = {"yes24": "YES24_API_KEY", "springer-metadata": "SPRINGER_API_KEY"}
 
 
+def _is_api_toc_artifact(artifact: RawArtifact) -> bool:
+    """Tell an ISBN TOC lookup apart from a topic search under the same provider name.
+
+    YES24 raw artifacts come from both `enrich-api-toc` (an ISBN13 content lookup) and
+    `collect --provider yes24` (an itemList topic search).
+    """
+    if artifact.provider not in API_TOC_PROVIDERS:
+        return False
+    return artifact.provider != "yes24" or artifact.request_parameters.get("searchType") == "ISBN13"
+
+
 def _api_toc_isbn(artifact: RawArtifact) -> str:
     """Return the ISBN-13 an API TOC raw artifact was looked up by."""
     parameters = artifact.request_parameters
@@ -288,7 +307,7 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
     provider = artifact.provider
     topic = artifact.topic
     limit = artifact.requested_limit
-    if provider in API_TOC_PROVIDERS:
+    if _is_api_toc_artifact(artifact):
         if limit != 1:
             raise typer.BadParameter(f"{provider} raw artifact requested_limit must be 1")
         isbn_13 = _api_toc_isbn(artifact)
@@ -339,6 +358,7 @@ def _expected_request_parameters(artifact: RawArtifact) -> dict:
         "google-books": GoogleBooksCollector,
         "open-library": OpenLibraryCollector,
         "internet-archive": InternetArchiveCollector,
+        "yes24": Yes24Collector,
     }
     try:
         collector_class = collectors[provider]
@@ -400,11 +420,50 @@ def _validate_google_page_provenance(artifact: RawArtifact) -> None:
             raise typer.BadParameter("google-books raw pages ended before plan was satisfied")
 
 
+def _validate_yes24_page_provenance(artifact: RawArtifact) -> None:
+    """Require fetched YES24 pages to be an ordered prefix of the plan that ended honestly."""
+    if artifact.provider != "yes24" or "pages" not in artifact.response:
+        return
+    planned_pages = artifact.request_parameters.get("pages")
+    fetched_pages = artifact.response.get("pages")
+    if not isinstance(planned_pages, list) or not isinstance(fetched_pages, list):
+        raise typer.BadParameter("paginated yes24 raw artifact has invalid page lists")
+    if not fetched_pages or len(fetched_pages) > len(planned_pages):
+        raise typer.BadParameter("paginated yes24 raw artifact has an invalid page count")
+    collected_count = 0
+    for index, fetched_page in enumerate(fetched_pages):
+        if not isinstance(fetched_page, dict):
+            raise typer.BadParameter(f"paginated yes24 raw artifact has invalid page {index}")
+        if fetched_page.get("request_parameters") != planned_pages[index]:
+            raise typer.BadParameter(f"paginated yes24 raw artifact page {index} request mismatch")
+        response = fetched_page.get("response")
+        data = response.get("data") if isinstance(response, dict) else None
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise typer.BadParameter(f"paginated yes24 raw artifact page {index} has no item list")
+        collected_count += len(items)
+    if len(fetched_pages) < len(planned_pages):
+        total_count = data.get("totalCount")
+        reached_total = (
+            isinstance(total_count, int)
+            and not isinstance(total_count, bool)
+            and collected_count >= total_count
+        )
+        if not reached_total and len(items) >= planned_pages[len(fetched_pages) - 1]["pageSize"]:
+            raise typer.BadParameter("yes24 raw pages ended before plan was satisfied")
+
+
 def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
-    """Accept the current plan or the pre-pagination Google single-request identity."""
+    """Accept the current plan or a provider's pre-pagination single-request identity."""
     if artifact.request_parameters == expected:
         return True
-    if artifact.provider != "google-books" or "pages" in artifact.response:
+    if "pages" in artifact.response:
+        return False
+    if artifact.provider == "yes24" and not _is_api_toc_artifact(artifact):
+        return artifact.request_parameters == Yes24Collector.legacy_search_parameters(
+            artifact.topic, _metadata_candidate_limit("yes24", artifact.requested_limit)
+        )
+    if artifact.provider != "google-books":
         return False
     legacy_plan = GoogleBooksCollector.search_parameters(
         artifact.topic, max(artifact.requested_limit * 4, artifact.requested_limit)
@@ -439,6 +498,10 @@ def _normalize(
             return normalize_internet_archive_response(
                 payload, topic=topic, limit=limit, retrieved_at=retrieved_at
             )
+        if provider == "yes24":
+            return normalize_yes24_response(
+                payload, topic=topic, limit=limit, retrieved_at=retrieved_at
+            )
         if provider == "publisher-page":
             return normalize_publisher_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
@@ -454,8 +517,8 @@ def _normalize(
         if provider == "open-textbook":
             return normalize_open_textbook_response(payload, topic=topic, retrieved_at=retrieved_at)
         raise typer.BadParameter(
-            "provider must be open-library, google-books, internet-archive, publisher-page, "
-            "public-book-page, publisher-document, or open-textbook"
+            "provider must be open-library, google-books, internet-archive, yes24, "
+            "publisher-page, public-book-page, publisher-document, or open-textbook"
         )
     except InvalidProviderResponse as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -481,10 +544,11 @@ def _dataset_from_raw_paths(
             raise typer.BadParameter(
                 f"raw artifact topic/query mismatch or unsupported query shape: {raw_path}"
             )
-        if artifact.provider in API_TOC_PROVIDERS:
+        if _is_api_toc_artifact(artifact):
             api_toc_artifacts.append(artifact)
             continue
         _validate_google_page_provenance(artifact)
+        _validate_yes24_page_provenance(artifact)
         normalization_args = (
             artifact.response,
             artifact.provider,
@@ -1069,9 +1133,15 @@ def build(
     output: Annotated[Path, typer.Option(help="Canonical output directory.")] = Path(
         "data/processed"
     ),
+    relevance_gate: Annotated[
+        str | None,
+        typer.Option(help="Optional metadata selection policy recorded by the source experiment."),
+    ] = None,
 ) -> None:
     """Rebuild canonical JSONL solely from preserved raw artifact metadata."""
-    dataset, requested_by_topic = _dataset_from_raw_paths(raw)
+    if relevance_gate not in {None, "topic-evidence-v1"}:
+        raise typer.BadParameter("relevance-gate must be topic-evidence-v1 when provided")
+    dataset, requested_by_topic = _dataset_from_raw_paths(raw, relevance_gate)
     errors = validate_dataset(dataset)
     if errors:
         raise typer.BadParameter("; ".join(errors))
@@ -1621,6 +1691,73 @@ def _normalize_api_toc(
     return normalize_springer_metadata_response(payload, book=book, retrieved_at=retrieved_at)
 
 
+def _api_toc_observation(provider: str, payload: dict, book: Book) -> dict[str, Any]:
+    """Summarize one raw lookup without copying prose or credentials into the report."""
+    if provider == "yes24":
+        error_code = payload.get("errorCode")
+        data = payload.get("data")
+        record = data.get("data") if isinstance(data, dict) else None
+        contents = record.get("contents") if isinstance(record, dict) else None
+        return {
+            "product_found": error_code != "GOODS_002",
+            "toc_present": isinstance(contents, str) and bool(contents.strip()),
+            "toc_normalized": False,
+            "toc_entries_parsed": 0,
+            "provider_error_code": error_code,
+        }
+
+    pages = payload.get("pages")
+    page_items = pages if isinstance(pages, list) else []
+    records = [
+        record
+        for page in page_items
+        if isinstance(page, dict)
+        for record in page.get("response", {}).get("records", [])
+        if isinstance(record, dict)
+    ]
+    target = book.isbn_13
+
+    def normalized_isbn(value: Any) -> str | None:
+        return re.sub(r"[^0-9X]", "", value.upper()) if isinstance(value, str) else None
+
+    matching_chapters = [
+        record
+        for record in records
+        if record.get("contentType") == "Chapter"
+        and target
+        in {
+            normalized_isbn(record.get("printIsbn")),
+            normalized_isbn(record.get("electronicIsbn")),
+        }
+    ]
+    abstract_count = sum(
+        isinstance(record.get("abstract"), str) and bool(record["abstract"].strip())
+        for record in matching_chapters
+    )
+    return {
+        "pages": len(page_items),
+        "records_found": len(records),
+        "matching_chapter_records": len(matching_chapters),
+        "chapter_records_with_nonblank_abstract": abstract_count,
+        "toc_normalized": False,
+        "toc_entries": 0,
+    }
+
+
+def _api_toc_empty_status(provider: str, payload: dict, observation: dict[str, Any]) -> str:
+    if provider == "yes24":
+        if payload.get("errorCode") == "GOODS_002":
+            return "no_product"
+        if observation["toc_present"]:
+            return "parse_failure"
+        return "no_toc"
+    if observation["records_found"] == 0:
+        return "no_result"
+    if observation["matching_chapter_records"] == 0:
+        return "no_matching_chapters"
+    return "no_toc"
+
+
 @app.command("enrich-api-toc")
 def enrich_api_toc(
     provider: Annotated[str, typer.Option(help="TOC API provider: yes24 or springer-metadata.")],
@@ -1668,19 +1805,29 @@ def enrich_api_toc(
     attempts: list[dict[str, Any]] = []
     with collector_class(api_key) as collector:
         for book in targets:
-            attempt: dict[str, Any] = {"book_id": book.book_id, "isbn_13": book.isbn_13}
+            attempt: dict[str, Any] = {
+                "book_id": book.book_id,
+                "isbn_13": book.isbn_13,
+                "title": book.title,
+            }
             retrieved_at = datetime.now(UTC)
             try:
                 parameters, payload = _fetch_api_toc(provider, collector, book)
             except httpx.HTTPStatusError as exc:
                 error = f"HTTP {exc.response.status_code}"
-                attempts.append({**attempt, "status": "failed", "error": error})
+                attempts.append({**attempt, "status": "network_failure", "error": error})
                 continue
             except httpx.RequestError as exc:
-                attempts.append({**attempt, "status": "failed", "error": f"network: {exc}"})
+                attempts.append(
+                    {
+                        **attempt,
+                        "status": "network_failure",
+                        "error": f"network: {type(exc).__name__}",
+                    }
+                )
                 continue
             except ValueError as exc:
-                attempts.append({**attempt, "status": "failed", "error": str(exc)})
+                attempts.append({**attempt, "status": "parse_failure", "error": str(exc)})
                 continue
             artifact = RawArtifact(
                 provider=provider,
@@ -1693,16 +1840,48 @@ def enrich_api_toc(
             raw_path = raw_artifact_path(data_dir, artifact)
             write_raw_response(artifact, raw_path)
             attempt["raw_path"] = raw_path.as_posix()
+            observation = _api_toc_observation(provider, payload, book)
+            attempt.update(observation)
             try:
                 evidence = _normalize_api_toc(provider, payload, book, retrieved_at)
             except ValueError as exc:
-                attempts.append({**attempt, "status": "failed", "error": str(exc)})
+                attempts.append({**attempt, "status": "parse_failure", "error": str(exc)})
                 continue
             if evidence is None:
-                attempts.append({**attempt, "status": "no_toc"})
+                attempts.append(
+                    {**attempt, "status": _api_toc_empty_status(provider, payload, observation)}
+                )
                 continue
             additions.append(evidence)
-            attempts.append({**attempt, "status": "added", "toc_entries": len(evidence.toc)})
+            attempts.append(
+                {
+                    **attempt,
+                    "status": "added",
+                    "toc_normalized": True,
+                    "toc_entries": len(evidence.toc),
+                    **({"toc_entries_parsed": len(evidence.toc)} if provider == "yes24" else {}),
+                }
+            )
+
+        request_count = int(getattr(collector, "request_count", len(attempts)))
+        page_request_count = int(
+            getattr(
+                collector,
+                "page_request_count",
+                sum(int(attempt.get("pages", 0)) for attempt in attempts),
+            )
+        )
+        logical_request_count = (
+            page_request_count if provider == "springer-metadata" else len(attempts)
+        )
+        telemetry = {
+            "requests": request_count,
+            "logical_requests": logical_request_count,
+            "retries": max(0, request_count - logical_request_count),
+            "http_status_counts": dict(getattr(collector, "response_status_counts", {})),
+        }
+        if provider == "springer-metadata":
+            telemetry["pages"] = page_request_count
 
     updated = _with_api_toc(dataset, additions)
     errors = validate_dataset(updated)
@@ -1725,6 +1904,7 @@ def enrich_api_toc(
         "toc_books_after": len(after),
         "status_counts": counts,
         "added_book_ids": sorted(after - with_toc),
+        "telemetry": telemetry,
         "attempts": attempts,
     }
     report_path = data_dir / "reports" / f"api-toc-enrichment-{provider}.json"
@@ -1737,7 +1917,7 @@ def enrich_api_toc(
         f"{len(after)}/{len(dataset.books)} {json.dumps(counts, sort_keys=True)}"
     )
     typer.echo(f"Enrichment report: {report_path}")
-    if counts.get("failed"):
+    if counts.get("network_failure") or counts.get("parse_failure"):
         raise typer.Exit(code=1)
 
 

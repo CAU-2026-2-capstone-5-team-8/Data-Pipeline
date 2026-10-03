@@ -21,7 +21,7 @@ class PublicBookSourceSpec:
     provider: str
     topic: str
     book_id: str
-    isbn_13: str
+    isbn_13: str | None
     title: str
     edition: int
     url: str
@@ -34,6 +34,8 @@ class PublicBookSourceSpec:
         "paragraph_sequence",
         "bold_chapter_paragraphs",
         "flat_periods",
+        "xinu_author_table",
+        "springer_book_chapters",
     ]
     expected_toc_count: int
     expected_root_titles: tuple[str, ...]
@@ -44,6 +46,20 @@ class PublicBookSourceSpec:
     expected_descendant_counts: tuple[int, ...] = ()
     preferred_toc: bool = False
     root_indent_threshold: int = 0
+    identity_format: Literal["ecampus_product", "xinu_second_edition", "springer_book"] = (
+        "ecampus_product"
+    )
+    document_format: Literal["ecampus_summary", "none"] = "ecampus_summary"
+    source_type: Literal["other", "author_page", "publisher_page"] = "other"
+    rights_note: str = "Public bookstore catalog page; no license statement found."
+    evidence_tier: Literal["exact_edition_toc", "validated_public_web_toc"] = "exact_edition_toc"
+    expected_identity_markers: tuple[str, ...] = ()
+    source_title: str | None = None
+    source_authors: tuple[str, ...] = ()
+    source_isbn: str | None = None
+    source_edition_id: str | None = None
+    published_year: int | None = None
+    allowed_redirect_hosts: tuple[str, ...] = ()
 
 
 PUBLIC_BOOK_SOURCES: dict[str, PublicBookSourceSpec] = load_registry_dir(

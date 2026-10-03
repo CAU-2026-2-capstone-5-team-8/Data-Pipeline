@@ -20,6 +20,7 @@ from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     is_valid_isbn_10,
     is_valid_isbn_13,
+    isbn_10_to_13,
     normalize_bibliographic_text,
     sha256_bytes,
     sha256_json,
@@ -39,7 +40,12 @@ from data_pipeline.public_book_sources import public_book_source
 from data_pipeline.publisher_document_sources import publisher_document_source
 from data_pipeline.publisher_sources import publisher_source
 from data_pipeline.relevance import open_library_relevance
-from data_pipeline.topics import TOPICS
+from data_pipeline.topics import (
+    TOPICS,
+    topic_korean_allowed_category_pattern,
+    topic_korean_conflicting_subjects_pattern,
+    topic_korean_relevance_pattern,
+)
 
 logger = logging.getLogger(__name__)
 logging.getLogger("pypdf").setLevel(logging.ERROR)
@@ -478,6 +484,375 @@ def normalize_internet_archive_response(
             break
 
     return CanonicalDataset(books=books, documents=documents, toc=[], sources=sources)
+
+
+_YES24_TAG_RE = re.compile(r"</?[a-zA-Z][^>]*>")
+_YES24_BREAK_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_YES24_BOLD_RE = re.compile(r"<b\b", re.IGNORECASE)
+_YES24_TITLE_MARKER_RE = re.compile(r"^『.*』$")
+_YES24_BRACKET_RE = re.compile(r"^\[(.+)\]$")
+# "PART 0. 기초상식", "PART 01 운영체제", "Part 1 개관", "PART 1? 왜 ...", "제1부 기초", "Ⅰ 가상화"
+_YES24_PART_RE = re.compile(
+    r"^(?:part\s*([0-9]+)(?=[\s.:?]|$)|제\s*([0-9]+)\s*부|([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+)(?=\s))"
+    r"[\s.:?]*(.*)$",
+    re.IGNORECASE,
+)
+# "Chapter 01 제목", "제11장장치관리", "1장 벡터와 행렬" -- but not "1장에 대한 고찰".
+_YES24_CHAPTER_RE = re.compile(
+    r"^(?:chapter\s*([0-9]+)(?=[\s.:]|$)|제\s*([0-9]+)\s*장|([0-9]+)\s*장(?=\s|$))",
+    re.IGNORECASE,
+)
+# Matches both hyphen-separated ("0-1. 제목") and dot-separated ("1.2.1 제목")
+# compound labels, with or without a trailing period before the title.
+_YES24_NUMBERED_RE = re.compile(r"^(\d+(?:[.\-]\d+)*)\.?\s+(.+)$")
+_YES24_BACK_MATTER_RE = re.compile(
+    r"^(?:부록|appendix|찾아보기|index|참고\s*문헌|참고\s*자료)", re.IGNORECASE
+)
+_YES24_PART_RANK = 1
+_YES24_CHAPTER_RANK = 2
+
+
+def _parse_yes24_toc(text: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse YES24's free-text `contents` blob into a TOC hierarchy.
+
+    Only signals written in the source text create hierarchy, ranked
+    part > chapter > numbered section:
+    - "PART N" / "제N부" / Roman-numeral lines are parts;
+    - "Chapter N" / "제N장" / "N장" lines and bold (`<b>`) headings are chapters;
+    - compound numbers nest by segment count ("1.1" under chapter 1,
+      "1.2.1" under "1.2") when their leading segment matches the open
+      chapter number, and a single number ("1.", "01") nests under the
+      innermost open chapter or part;
+    - a "__" prefix nests under the previous entry, and tab/4-space
+      indentation nests under the previous unindented entry.
+    Anything matching none of these (e.g. "요약", "[확인 문제]") becomes its own
+    flat root rather than a guessed child, without closing the open chapter,
+    consistent with this project's rule against inventing hierarchy the
+    source text does not encode. Back matter such as "[부록]" closes it.
+
+    One order_index counter runs over the whole book, so order is total and
+    entry IDs cannot collide when titles such as "요약" repeat across chapters.
+    `<br>` separates lines, and other HTML tags are removed from titles.
+    """
+    entries: list[TocEntry] = []
+    # (rank, entry, is part/chapter): only parts and chapters contain single-numbered sections.
+    stack: list[tuple[int, TocEntry, bool]] = []
+    chapter_number: int | None = None
+    previous: TocEntry | None = None
+    previous_unindented: TocEntry | None = None
+
+    def add(parent: TocEntry | None, label: str | None, title: str) -> TocEntry:
+        order_index = len(entries)
+        entry = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), title),
+            book_id=book_id,
+            parent_entry_id=parent.toc_entry_id if parent is not None else None,
+            level=parent.level + 1 if parent is not None else 1,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(entry)
+        return entry
+
+    def push(rank: int, label: str | None, title: str, *, container: bool = False) -> TocEntry:
+        while stack and stack[-1][0] >= rank:
+            stack.pop()
+        entry = add(stack[-1][1] if stack else None, label, title)
+        stack.append((rank, entry, container))
+        return entry
+
+    for raw_line in _YES24_BREAK_RE.sub("\n", text).splitlines():
+        if not raw_line.strip():
+            continue
+        indented = raw_line.startswith(("\t", "    "))
+        bold = bool(_YES24_BOLD_RE.search(raw_line))
+        line = _YES24_TAG_RE.sub("", raw_line).strip()
+        underscored = line.startswith("__")
+        line = line.lstrip("_").strip()
+        if not line or _YES24_TITLE_MARKER_RE.match(line):
+            continue
+
+        if underscored and previous is not None:
+            add(previous, None, line)
+            continue
+
+        numbered = _YES24_NUMBERED_RE.match(line)
+        part = _YES24_PART_RE.match(line)
+        chapter = _YES24_CHAPTER_RE.match(line)
+        if part:
+            label = next(group for group in part.groups()[:3] if group)
+            entry = push(_YES24_PART_RANK, label, part.group(4).strip() or line, container=True)
+            chapter_number = None
+        elif chapter or bold:
+            entry = push(_YES24_CHAPTER_RANK, None, line, container=True)
+            number = next((group for group in chapter.groups() if group), None) if chapter else None
+            chapter_number = int(number) if number is not None else None
+        elif indented and previous_unindented is not None:
+            label, title = (
+                (numbered.group(1), numbered.group(2).strip()) if numbered else (None, line)
+            )
+            previous = add(previous_unindented, label, title)
+            continue
+        elif numbered and (
+            rank := _yes24_section_rank(
+                numbered.group(1),
+                chapter_number,
+                container_rank=max(
+                    (open_rank for open_rank, _, container in stack if container),
+                    default=None,
+                ),
+            )
+        ):
+            entry = push(rank, numbered.group(1), numbered.group(2).strip())
+        else:
+            bracket = _YES24_BRACKET_RE.match(line)
+            if numbered:
+                label, title = numbered.group(1), numbered.group(2).strip()
+            elif bracket:
+                label, title = None, bracket.group(1).strip()
+            else:
+                label, title = None, line
+            if _YES24_BACK_MATTER_RE.match(title):
+                stack.clear()
+                chapter_number = None
+            entry = add(None, label, title)
+        previous = entry
+        previous_unindented = entry
+    return entries
+
+
+def _yes24_section_rank(
+    label: str, chapter_number: int | None, *, container_rank: int | None
+) -> int | None:
+    """Rank of a numbered line under the open part/chapter, or None when it does not nest."""
+    segments = re.split(r"[.\-]", label)
+    if len(segments) == 1:
+        return container_rank + 1 if container_rank is not None else None
+    if chapter_number is not None and int(segments[0]) == chapter_number:
+        return _YES24_CHAPTER_RANK + len(segments) - 1
+    return None
+
+
+def _yes24_published_year(value: Any) -> int | None:
+    """Parse YES24's compact `publishDate` (YYYYMMDD, e.g. "20260917")."""
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"^(1\d{3}|20\d{2}|21\d{2})", value.strip())
+    return int(match.group(1)) if match else None
+
+
+def _yes24_records(response: dict[str, Any]) -> list[Any]:
+    """Return itemList rows from one response or, in page order, from a paginated one."""
+    if "pages" not in response:
+        return _yes24_page_records(response)
+    pages = _provider_records(response, "pages", "yes24")
+    items: list[Any] = []
+    for page_index, page in enumerate(pages):
+        if not isinstance(page, dict):
+            raise InvalidProviderResponse(f"yes24 returned an invalid page at index {page_index}")
+        parameters = page.get("request_parameters")
+        page_response = page.get("response")
+        if not isinstance(parameters, dict) or not isinstance(page_response, dict):
+            raise InvalidProviderResponse(
+                f"yes24 page {page_index} lacks request parameters or response"
+            )
+        items.extend(_yes24_page_records(page_response))
+    return items
+
+
+def _yes24_page_records(response: dict[str, Any]) -> list[Any]:
+    data = response.get("data", {})
+    if not isinstance(data, dict):
+        raise InvalidProviderResponse("yes24 response missing 'data' object")
+    return _provider_records(data, "items", "yes24")
+
+
+def _normalize_yes24_item(
+    item: dict[str, Any], topic: str, retrieved_at: datetime
+) -> tuple[Book, Source, list[Document], list[TocEntry]] | None:
+    """Normalize one YES24 itemList row (identity, description, and TOC if present)."""
+    item_id_value = item.get("itemId")
+    if not isinstance(item_id_value, int) or isinstance(item_id_value, bool):
+        return None
+    item_id = str(item_id_value)
+    title_value = item.get("title")
+    if not isinstance(title_value, str) or not title_value.strip():
+        return None
+    title = title_value.strip()
+    if not topic_korean_relevance_pattern(topic).search(title):
+        return None
+    conflicting_pattern = topic_korean_conflicting_subjects_pattern(topic)
+    if conflicting_pattern is not None and conflicting_pattern.search(title):
+        return None
+    category_pattern = topic_korean_allowed_category_pattern(topic)
+    if category_pattern is not None:
+        # A missing category cannot show the book belongs to the topic's field.
+        category = item.get("goodsSortNm")
+        if not isinstance(category, str) or not category_pattern.search(category.strip()):
+            return None
+
+    author_field = item.get("author")
+    authors = (
+        _deduplicate_authors([author_field])
+        if isinstance(author_field, str) and author_field
+        else []
+    )
+    isbn_10 = normalize_isbn(item.get("isbn10"), 10)
+    isbn_13 = normalize_isbn(item.get("isbn13"), 13)
+    if isbn_10 is not None and isbn_13 is not None and isbn_10_to_13(isbn_10) != isbn_13:
+        # A 979-prefixed ISBN-13 (most Korean books) has no ISBN-10, yet YES24 still
+        # fills `isbn10` with a checksum-valid value that identifies a different
+        # book. ISBN-13 is authoritative; the raw response keeps YES24's value.
+        isbn_10 = None
+    if isbn_10 is None and isbn_13 is None:
+        # YES24 lists bundles/sets alongside individual books; Korean law requires
+        # a real ISBN for an actual book, so an item without one is treated as
+        # ineligible rather than given a synthetic fallback identity.
+        return None
+    book_id = _book_id(isbn_10, isbn_13, title, authors, "yes24", item_id)
+    source_id = stable_id("source", "yes24", item_id, book_id, retrieved_at.isoformat())
+
+    publisher_value = item.get("publisher")
+    publisher = (
+        publisher_value.strip() if isinstance(publisher_value, str) and publisher_value else None
+    )
+
+    book = Book(
+        book_id=book_id,
+        isbn_10=isbn_10,
+        isbn_13=isbn_13,
+        title=title,
+        subtitle=None,
+        authors=authors,
+        publisher=publisher,
+        published_year=_yes24_published_year(item.get("publishDate")),
+        language="ko",
+        topics=TOPICS[topic],
+    )
+
+    is_translation = str(item.get("originalTranslation", "")).strip().upper() == "Y"
+    original_title_value = item.get("originalTitle")
+    original_title = (
+        original_title_value.strip()
+        if isinstance(original_title_value, str) and original_title_value.strip()
+        else None
+    )
+    rights_note = None
+    if is_translation:
+        rights_note = (
+            f'Translated edition (original title: "{original_title}")'
+            if original_title
+            else "Translated edition (original title not provided by YES24)"
+        )
+
+    link_value = item.get("link")
+    url = (
+        link_value.strip()
+        if isinstance(link_value, str) and link_value.strip()
+        else (f"https://www.yes24.com/product/goods/{item_id}")
+    )
+    source = Source(
+        source_id=source_id,
+        book_id=book_id,
+        provider="yes24",
+        source_type="metadata_api",
+        url=url,
+        external_id=item_id,
+        retrieved_at=retrieved_at,
+        license=None,
+        rights_note=rights_note,
+        content_hash=sha256_json(item),
+    )
+
+    documents: list[Document] = []
+    content_detail = item.get("contentDetail")
+    if isinstance(content_detail, dict):
+        intro_value = content_detail.get("bookIntroduction")
+        if isinstance(intro_value, str) and intro_value.strip():
+            intro_text = intro_value.strip()
+            documents.append(
+                Document(
+                    document_id=stable_id("doc", book_id, "description", source_id),
+                    book_id=book_id,
+                    document_type="description",
+                    text=intro_text,
+                    source_id=source_id,
+                    content_hash=sha256_text(intro_text),
+                )
+            )
+
+    toc_entries: list[TocEntry] = []
+    if isinstance(content_detail, dict):
+        toc_value = content_detail.get("tableOfContents")
+        if isinstance(toc_value, str) and toc_value.strip():
+            toc_entries = _parse_yes24_toc(toc_value, book_id, source_id)
+
+    return book, source, documents, toc_entries
+
+
+def normalize_yes24_response(
+    response: dict[str, Any],
+    *,
+    topic: str,
+    limit: int,
+    retrieved_at: datetime,
+    diagnostics: NormalizationDiagnostics | None = None,
+) -> CanonicalDataset:
+    """Normalize one YES24 itemList (detail=Y) search response."""
+    if topic not in TOPICS:
+        raise ValueError(f"unsupported topic: {topic}")
+
+    books: list[Book] = []
+    documents: list[Document] = []
+    toc: list[TocEntry] = []
+    sources: list[Source] = []
+    seen_books: set[str] = set()
+
+    records = _yes24_records(response)
+    if diagnostics is not None:
+        diagnostics.candidate_count += len(records)
+    for record in records:
+        if not isinstance(record, dict):
+            logger.warning("event=normalization_skipped provider=yes24 reason=record_not_object")
+            if diagnostics is not None:
+                diagnostics.fail("invalid_provider_response")
+            continue
+        try:
+            result = _normalize_yes24_item(record, topic, retrieved_at)
+        except (AttributeError, TypeError, ValueError, ValidationError) as exc:
+            logger.warning(
+                "event=normalization_skipped provider=yes24 item_id=%s error=%s",
+                record.get("itemId"),
+                exc,
+            )
+            if diagnostics is not None:
+                diagnostics.fail("parse_failure")
+            continue
+        if result is None:
+            if diagnostics is not None:
+                diagnostics.fail("ineligible_candidate")
+            continue
+        book, source, item_documents, item_toc = result
+        book_id = book.book_id
+        if book_id in seen_books:
+            if diagnostics is not None:
+                diagnostics.duplicate_candidate_count += 1
+            continue
+        if diagnostics is not None:
+            diagnostics.normalized_candidate_count += 1
+        seen_books.add(book_id)
+        if len(books) >= limit:
+            continue
+        documents.extend(item_documents)
+        toc.extend(item_toc)
+        books.append(book)
+        sources.append(source)
+        if len(books) >= limit and diagnostics is None:
+            break
+
+    return CanonicalDataset(books=books, documents=documents, toc=toc, sources=sources)
 
 
 def normalize_hathitrust_response(
@@ -1116,6 +1491,14 @@ def _extract_pdf_text(content: bytes) -> str:
     return text
 
 
+def _pdf_page_count(content: bytes) -> int:
+    """Count PDF pages for source contracts that pin a reviewed public document."""
+    try:
+        return len(PdfReader(BytesIO(content)).pages)
+    except (PdfReadError, ValueError) as exc:
+        raise InvalidProviderResponse(f"publisher PDF could not be parsed: {exc}") from exc
+
+
 def normalize_publisher_document_response(
     response: dict[str, Any], *, topic: str, retrieved_at: datetime
 ) -> CanonicalDataset:
@@ -1152,19 +1535,35 @@ def normalize_publisher_document_response(
 
     home_text = HTMLParser(home_html).root.text(separator=" ", strip=True)
     normalized_home = normalize_bibliographic_text(home_text)
-    if (
-        normalize_bibliographic_text(source_spec.title) not in normalized_home
-        or source_spec.isbn_10 not in home_html
-    ):
-        raise InvalidProviderResponse("publisher document identity page does not match the book")
-    if source_spec.edition not in _edition_numbers(home_text):
-        raise InvalidProviderResponse(
-            "publisher document identity page does not match the expected edition"
-        )
+    if source_spec.identity_format == "wiley_isbn_page":
+        if (
+            normalize_bibliographic_text(source_spec.title) not in normalized_home
+            or source_spec.isbn_10 not in home_html
+        ):
+            raise InvalidProviderResponse(
+                "publisher document identity page does not match the book"
+            )
+        if source_spec.edition not in _edition_numbers(home_text):
+            raise InvalidProviderResponse(
+                "publisher document identity page does not match the expected edition"
+            )
+    elif source_spec.identity_format == "xinu_second_edition":
+        missing_markers = [
+            marker
+            for marker in source_spec.expected_identity_markers
+            if normalize_bibliographic_text(marker) not in normalized_home
+        ]
+        if missing_markers:
+            raise InvalidProviderResponse(
+                "publisher document identity page does not match the reviewed Xinu edition"
+            )
+    else:  # pragma: no cover - registry validation makes this unreachable
+        raise InvalidProviderResponse("publisher document identity format is unsupported")
     referrer_text = HTMLParser(referrer_html).root.text(separator=" ", strip=True)
     if source_spec.referrer_heading.casefold() not in referrer_text.casefold():
         raise InvalidProviderResponse("publisher document referrer is missing its reviewed heading")
-    if source_spec.require_document_link and source_spec.document_url not in referrer_html:
+    expected_link = source_spec.document_link_href or source_spec.document_url
+    if source_spec.require_document_link and expected_link not in referrer_html:
         raise InvalidProviderResponse(
             "publisher document is not linked from its reviewed exact-edition page"
         )
@@ -1174,6 +1573,13 @@ def normalize_publisher_document_response(
         raise InvalidProviderResponse("publisher document contains invalid base64") from exc
     if not document_bytes.startswith(b"%PDF-"):
         raise InvalidProviderResponse("publisher document content is not a PDF")
+    if (
+        source_spec.expected_page_count is not None
+        and _pdf_page_count(document_bytes) != source_spec.expected_page_count
+    ):
+        raise InvalidProviderResponse(
+            "publisher PDF page count does not match the reviewed document"
+        )
 
     text = _extract_pdf_text(document_bytes)
     normalized_text = normalize_bibliographic_text(text)
@@ -3639,6 +4045,182 @@ def _flat_period_toc_entries(html: str, book_id: str, source_id: str) -> list[To
     ]
 
 
+def _xinu_author_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
+    """Parse the official Xinu second-edition TOC without guessing missing hierarchy."""
+    tree = HTMLParser(html)
+    headings = tree.css("h3")
+    if not headings:
+        raise InvalidProviderResponse("Xinu TOC page contained no reviewed headings")
+
+    entries: list[TocEntry] = []
+    for heading in headings:
+        text = " ".join(heading.text(separator=" ", strip=True).split())
+        page_match = re.fullmatch(r"(.+?)\s+(?:[ivxlcdm]+|\d+)", text, flags=re.IGNORECASE)
+        if page_match is None:
+            raise InvalidProviderResponse(f"Xinu TOC heading lacks a page number: {text!r}")
+        entry_text = page_match.group(1).strip().replace(r"\-", "-")
+        chapter_match = re.fullmatch(r"Chapter\s+(\d+)\s+(.+)", entry_text)
+        appendix_match = re.fullmatch(r"Appendix\s+(\d+)\s+(.+)", entry_text)
+        if chapter_match is not None:
+            label = chapter_match.group(1)
+            title = chapter_match.group(2).strip()
+            expects_table = True
+        elif appendix_match is not None:
+            label = f"A{appendix_match.group(1)}"
+            title = appendix_match.group(2).strip()
+            expects_table = True
+        elif entry_text in {"Preface", "About The Author", "Index"}:
+            label = None
+            title = entry_text
+            expects_table = False
+        else:
+            raise InvalidProviderResponse(f"Xinu TOC contained an unsupported heading: {text!r}")
+
+        order_index = len(entries)
+        root = TocEntry(
+            toc_entry_id=stable_id("toc", book_id, source_id, str(order_index), label or "", title),
+            book_id=book_id,
+            parent_entry_id=None,
+            level=1,
+            order_index=order_index,
+            label=label,
+            title=title,
+            source_id=source_id,
+        )
+        entries.append(root)
+
+        node = heading.next
+        while node is not None and node.tag == "-text":
+            node = node.next
+        if not expects_table:
+            if node is not None and node.tag == "table":
+                raise InvalidProviderResponse(
+                    "Xinu front or back matter gained an unsupported table"
+                )
+            continue
+        if node is None or node.tag != "table":
+            raise InvalidProviderResponse("Xinu chapter or appendix is missing its reviewed table")
+
+        label_entries: dict[str, TocEntry] = {}
+        for row in _direct_table_rows(node):
+            cells = [cell for cell in row.css("td") if cell.parent.mem_id == row.mem_id]
+            if len(cells) not in {2, 3}:
+                raise InvalidProviderResponse("Xinu TOC contained a malformed table row")
+            cell_texts = [" ".join(cell.text(separator=" ", strip=True).split()) for cell in cells]
+            child_label = next((value for value in cell_texts[:-1] if value), None)
+            child_match = re.fullmatch(
+                r"(.+?)\s+(?:[ivxlcdm]+|\d+)", cell_texts[-1], flags=re.IGNORECASE
+            )
+            if child_match is None:
+                raise InvalidProviderResponse("Xinu TOC row lacks a title and page number")
+            child_title = child_match.group(1).strip().replace(r"\^/\^", "/").replace(r"\-", "-")
+            if child_label is None:
+                if child_title != "Exercises":
+                    raise InvalidProviderResponse(
+                        "Xinu TOC contained an unlabeled non-exercise row"
+                    )
+                parent = root
+                level = 2
+            else:
+                if re.fullmatch(r"[A-Z]?\d+(?:\.\d+)+", child_label) is None:
+                    raise InvalidProviderResponse("Xinu TOC contained an invalid section label")
+                parts = child_label.split(".")
+                if parts[0] != label:
+                    raise InvalidProviderResponse("Xinu TOC section belongs to a different chapter")
+                if len(parts) == 2:
+                    parent = root
+                elif len(parts) == 3:
+                    parent = label_entries.get(".".join(parts[:2]))
+                    if parent is None:
+                        raise InvalidProviderResponse("Xinu TOC subsection is missing its parent")
+                else:
+                    raise InvalidProviderResponse("Xinu TOC section depth is unsupported")
+                level = parent.level + 1
+            child_order = len(entries)
+            child = TocEntry(
+                toc_entry_id=stable_id(
+                    "toc",
+                    book_id,
+                    source_id,
+                    str(child_order),
+                    child_label or "",
+                    child_title,
+                ),
+                book_id=book_id,
+                parent_entry_id=parent.toc_entry_id,
+                level=level,
+                order_index=child_order,
+                label=child_label,
+                title=child_title,
+                source_id=source_id,
+            )
+            entries.append(child)
+            if child_label is not None:
+                label_entries[child_label] = child
+    return entries
+
+
+def _springer_book_toc_entries(
+    html: str, book_id: str, source_id: str, source_edition_id: str
+) -> list[TocEntry]:
+    """Parse a reviewed Springer book TOC as a strict flat chapter sequence."""
+    tree = HTMLParser(html)
+    sections = tree.css('section[data-title="Table of contents"]')
+    if len(sections) != 1:
+        raise InvalidProviderResponse("Springer book page must contain one table of contents")
+    items = sections[0].css('li[data-test="chapter"]')
+    if not items:
+        raise InvalidProviderResponse("Springer book TOC contained no chapter entries")
+
+    entries: list[TocEntry] = []
+    numbered_labels: list[str] = []
+    for index, item in enumerate(items):
+        headings = item.css("h3.app-card-open__heading")
+        page_nodes = item.css('[data-test="page-number"]')
+        if len(headings) != 1 or len(page_nodes) != 1:
+            raise InvalidProviderResponse("Springer book TOC entry has malformed metadata")
+        title = " ".join(headings[0].text(separator=" ", strip=True).split())
+        pages = " ".join(page_nodes[0].text(separator=" ", strip=True).split())
+        if (
+            not title
+            or re.fullmatch(r"Pages\s+(?:[ivxlcdm]+|\d+)-(?:[ivxlcdm]+|\d+)", pages, re.I) is None
+        ):
+            raise InvalidProviderResponse("Springer book TOC entry lacks a reviewed page range")
+
+        data_test = headings[0].attributes.get("data-test", "")
+        links = headings[0].css("a")
+        if data_test in {"front-matter", "back-matter"}:
+            expected_title = "Front Matter" if data_test == "front-matter" else "Back Matter"
+            if title != expected_title or links:
+                raise InvalidProviderResponse("Springer book TOC matter entry changed shape")
+            label = None
+        else:
+            if len(links) != 1:
+                raise InvalidProviderResponse("Springer book chapter is missing its canonical link")
+            href = links[0].attributes.get("href", "")
+            chapter_match = re.fullmatch(rf"/chapter/{re.escape(source_edition_id)}_(\d+)", href)
+            if chapter_match is None:
+                raise InvalidProviderResponse("Springer book chapter link changed identity")
+            label = chapter_match.group(1)
+            numbered_labels.append(label)
+
+        entries.append(
+            TocEntry(
+                toc_entry_id=stable_id("toc", book_id, source_id, str(index), label or "", title),
+                book_id=book_id,
+                parent_entry_id=None,
+                level=1,
+                order_index=index,
+                label=label,
+                title=title,
+                source_id=source_id,
+            )
+        )
+    if numbered_labels != [str(number) for number in range(1, len(numbered_labels) + 1)]:
+        raise InvalidProviderResponse("Springer book chapters are not a complete sequence")
+    return entries
+
+
 def _paragraph_sequence_toc_entries(html: str, book_id: str, source_id: str) -> list[TocEntry]:
     """Parse strict Part/Chapter paragraphs into a two-level TOC."""
     content = _public_page_section(HTMLParser(html), "Table of Contents")
@@ -3781,35 +4363,147 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse("public book response must contain an HTML string")
 
     tree = HTMLParser(html)
-    title_node = tree.css_first("h1.title")
-    isbn_node = tree.css_first('[itemprop="isbn"]')
-    edition_node = tree.css_first('[itemprop="bookEdition"]')
-    page_title = title_node.text(separator=" ", strip=True) if title_node is not None else ""
-    page_isbn = isbn_node.text(separator=" ", strip=True) if isbn_node is not None else ""
-    page_edition = edition_node.text(separator=" ", strip=True) if edition_node is not None else ""
-    if not page_isbn or not page_edition:
+    source_edition_id: str
+    source_isbns: list[str]
+    match_basis: list[str]
+    if source_spec.identity_format == "ecampus_product":
+        title_node = tree.css_first("h1.title")
+        isbn_node = tree.css_first('[itemprop="isbn"]')
+        edition_node = tree.css_first('[itemprop="bookEdition"]')
+        page_title = title_node.text(separator=" ", strip=True) if title_node is not None else ""
+        page_isbn = isbn_node.text(separator=" ", strip=True) if isbn_node is not None else ""
+        page_edition = (
+            edition_node.text(separator=" ", strip=True) if edition_node is not None else ""
+        )
+        if not page_isbn or not page_edition:
+            for script in tree.css('script[type="application/ld+json"]'):
+                try:
+                    structured = json.loads(script.text())
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                candidates = structured if isinstance(structured, list) else [structured]
+                for candidate in candidates:
+                    if not isinstance(candidate, dict):
+                        continue
+                    if not page_isbn and isinstance(candidate.get("isbn"), str):
+                        page_isbn = candidate["isbn"]
+                    if not page_edition and isinstance(candidate.get("bookEdition"), str):
+                        page_edition = candidate["bookEdition"]
+        if (
+            normalize_bibliographic_text(page_title)
+            != normalize_bibliographic_text(source_spec.title)
+            or page_isbn != source_spec.isbn_13
+        ):
+            raise InvalidProviderResponse(
+                "public book identity page does not match the expected book"
+            )
+        if source_spec.edition not in _edition_numbers(f"{page_edition} edition"):
+            raise InvalidProviderResponse(
+                "public book identity page does not match the expected edition"
+            )
+        source_isbns = [source_spec.isbn_13]
+        source_edition_id = source_spec.isbn_13
+        match_basis = ["exact_isbn", "exact_edition", "normalized_title"]
+    elif source_spec.identity_format == "xinu_second_edition":
+        heading = tree.css_first("h2")
+        heading_text = heading.text(separator=" ", strip=True) if heading is not None else ""
+        if normalize_bibliographic_text(heading_text) != normalize_bibliographic_text(
+            "Table of Contents For Xinu 2nd Edition"
+        ):
+            raise InvalidProviderResponse(
+                "public book identity page does not match the reviewed Xinu edition"
+            )
+        isbn_node = tree.css_first('[itemprop="isbn"]')
+        if (
+            isbn_node is not None
+            and isbn_node.text(separator=" ", strip=True) != source_spec.isbn_13
+        ):
+            raise InvalidProviderResponse("public book identity page claims a different ISBN")
+        normalized_page = normalize_bibliographic_text(tree.root.text(separator=" ", strip=True))
+        missing_markers = [
+            marker
+            for marker in source_spec.expected_identity_markers
+            if normalize_bibliographic_text(marker) not in normalized_page
+        ]
+        if missing_markers:
+            raise InvalidProviderResponse(
+                "public book identity page is missing reviewed Xinu edition markers"
+            )
+        source_isbns = []
+        source_edition_id = source_spec.source_edition_id or "purdue-xinu-second-edition-2015"
+        match_basis = [
+            "official_author_page",
+            "explicit_second_edition",
+            "reviewed_platform_markers",
+            "reviewed_toc_shape",
+        ]
+    elif source_spec.identity_format == "springer_book":
+        source_title = source_spec.source_title or source_spec.title
+        if not source_spec.source_isbn or not source_spec.source_edition_id:
+            raise InvalidProviderResponse("Springer source identity config is incomplete")
+        title_node = tree.css_first('[data-test="book-title"]')
+        edition_node = tree.css_first('[data-test="edition-number"]')
+        page_title = title_node.text(separator=" ", strip=True) if title_node else ""
+        page_edition = edition_node.text(separator=" ", strip=True) if edition_node else ""
+        page_authors = tuple(
+            node.text(separator=" ", strip=True) for node in tree.css('[data-test="author-name"]')
+        )
+        copyright_years = {
+            match.group(1)
+            for node in tree.css("li.c-article-identifiers__item")
+            if (match := re.search(r"\b(\d{4})\b", node.text(separator=" ", strip=True)))
+        }
+
+        structured_book: dict[str, Any] | None = None
         for script in tree.css('script[type="application/ld+json"]'):
             try:
-                structured = json.loads(script.text())
+                parsed = json.loads(script.text())
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
-            candidates = structured if isinstance(structured, list) else [structured]
+            candidates = parsed if isinstance(parsed, list) else [parsed]
             for candidate in candidates:
-                if not isinstance(candidate, dict):
-                    continue
-                if not page_isbn and isinstance(candidate.get("isbn"), str):
-                    page_isbn = candidate["isbn"]
-                if not page_edition and isinstance(candidate.get("bookEdition"), str):
-                    page_edition = candidate["bookEdition"]
-    if (
-        normalize_bibliographic_text(page_title) != normalize_bibliographic_text(source_spec.title)
-        or page_isbn != source_spec.isbn_13
-    ):
-        raise InvalidProviderResponse("public book identity page does not match the expected book")
-    if source_spec.edition not in _edition_numbers(f"{page_edition} edition"):
-        raise InvalidProviderResponse(
-            "public book identity page does not match the expected edition"
+                if isinstance(candidate, dict) and candidate.get("@type") == "Book":
+                    structured_book = candidate
+                    break
+            if structured_book is not None:
+                break
+        if structured_book is None:
+            raise InvalidProviderResponse("Springer book page is missing Book structured data")
+        structured_authors = tuple(
+            author.get("name", "")
+            for author in structured_book.get("author", [])
+            if isinstance(author, dict)
         )
+        normalized_source_isbn = re.sub(r"[^0-9X]", "", source_spec.source_isbn.upper())
+        normalized_page_isbn = re.sub(r"[^0-9X]", "", str(structured_book.get("isbn", "")).upper())
+        if (
+            normalize_bibliographic_text(page_title) != normalize_bibliographic_text(source_title)
+            or normalize_bibliographic_text(str(structured_book.get("name", "")))
+            != normalize_bibliographic_text(source_title)
+            or source_spec.edition not in _edition_numbers(page_edition)
+            or page_authors != source_spec.source_authors
+            or structured_authors != source_spec.source_authors
+            or normalized_page_isbn != normalized_source_isbn
+            or structured_book.get("copyrightYear") != str(source_spec.published_year)
+            or str(source_spec.published_year) not in copyright_years
+        ):
+            raise InvalidProviderResponse(
+                "Springer book identity does not match the reviewed title, author, "
+                "edition, year, and eISBN"
+            )
+        source_isbns = [normalized_source_isbn]
+        source_edition_id = source_spec.source_edition_id
+        match_basis = [
+            "official_publisher_page",
+            "normalized_title",
+            "exact_author",
+            "exact_edition",
+            "exact_copyright_year",
+            "source_eisbn",
+            "reviewed_toc_shape",
+        ]
+    else:  # pragma: no cover - registry validation makes this unreachable
+        raise InvalidProviderResponse("public book identity format is unsupported")
 
     source_id = stable_id("source", source_spec.provider, source_spec.url, source_spec.book_id)
     if source_spec.toc_format == "indented_table":
@@ -3836,6 +4530,14 @@ def normalize_public_book_page_response(
         toc = _bold_chapter_paragraph_toc_entries(html, source_spec.book_id, source_id)
     elif source_spec.toc_format == "flat_periods":
         toc = _flat_period_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "xinu_author_table":
+        toc = _xinu_author_toc_entries(html, source_spec.book_id, source_id)
+    elif source_spec.toc_format == "springer_book_chapters":
+        if source_spec.source_edition_id is None:
+            raise InvalidProviderResponse("Springer TOC config is missing its edition identity")
+        toc = _springer_book_toc_entries(
+            html, source_spec.book_id, source_id, source_spec.source_edition_id
+        )
     else:
         toc = _heading_sequence_toc_entries(html, source_spec.book_id, source_id)
     if len(toc) != source_spec.expected_toc_count:
@@ -3847,7 +4549,17 @@ def normalize_public_book_page_response(
         raise InvalidProviderResponse(
             "public book page TOC does not match the reviewed top-level structure"
         )
-    chapter_level = 1 if source_spec.toc_format in {"flat_bold", "bold_chapter_paragraphs"} else 2
+    chapter_level = (
+        1
+        if source_spec.toc_format
+        in {
+            "flat_bold",
+            "bold_chapter_paragraphs",
+            "xinu_author_table",
+            "springer_book_chapters",
+        }
+        else 2
+    )
     chapter_labels = tuple(
         entry.label for entry in toc if entry.level == chapter_level and entry.label
     )
@@ -3903,41 +4615,48 @@ def normalize_public_book_page_response(
                 "public book page TOC does not match the reviewed descendant counts"
             )
 
-    description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)
-    if not description:
-        raise InvalidProviderResponse("public book page contained an empty summary")
-    document = Document(
-        document_id=stable_id("doc", source_spec.book_id, "description", source_id),
-        book_id=source_spec.book_id,
-        document_type="description",
-        text=description,
-        source_id=source_id,
-        content_hash=sha256_text(description),
-    )
+    documents: list[Document] = []
+    if source_spec.document_format == "ecampus_summary":
+        description = _public_page_section(tree, "Summary").text(separator=" ", strip=True)
+        if not description:
+            raise InvalidProviderResponse("public book page contained an empty summary")
+        documents.append(
+            Document(
+                document_id=stable_id("doc", source_spec.book_id, "description", source_id),
+                book_id=source_spec.book_id,
+                document_type="description",
+                text=description,
+                source_id=source_id,
+                content_hash=sha256_text(description),
+            )
+        )
+    elif source_spec.document_format != "none":  # pragma: no cover - registry validation
+        raise InvalidProviderResponse("public book document format is unsupported")
     source = Source(
         source_id=source_id,
         book_id=source_spec.book_id,
         provider=source_spec.provider,
-        source_type="other",
+        source_type=source_spec.source_type,
         url=source_spec.url,
-        external_id=source_spec.isbn_13,
+        external_id=source_spec.source_edition_id or source_spec.source_isbn or source_spec.isbn_13,
         retrieved_at=retrieved_at,
         license=None,
-        rights_note="Public bookstore catalog page; no license statement found.",
+        rights_note=source_spec.rights_note,
         content_hash=sha256_text(html),
         evidence=EvidenceProvenance(
             evidence_type="toc",
-            tier="exact_edition_toc",
+            tier=source_spec.evidence_tier,
             target_isbn=source_spec.isbn_13,
             target_title=source_spec.title,
             target_authors=list(source_spec.authors),
-            source_isbns=[source_spec.isbn_13],
-            source_title=source_spec.title,
+            source_edition_id=source_edition_id,
+            source_isbns=source_isbns,
+            source_title=source_spec.source_title or source_spec.title,
             same_edition=True,
             source_document_type="public_html",
             discovery_method="reviewed_public_page_registry",
-            match_basis=["exact_isbn", "exact_edition", "normalized_title"],
+            match_basis=match_basis,
             validation_status="strong",
         ),
     )
-    return CanonicalDataset(books=[], documents=[document], toc=toc, sources=[source])
+    return CanonicalDataset(books=[], documents=documents, toc=toc, sources=[source])
