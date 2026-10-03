@@ -1,0 +1,25 @@
+{
+  "experiment_version": "korean-prose-pilot-v1",
+  "input_relative_to_data_experiments": "text-extent-handoff-20261003/replay1",
+  "topic": "linear-algebra",
+  "targets": [
+    {
+      "isbn": "9791160736571",
+      "url": "https://www.kyungmoon.com/shop/item.php?it_id=1698302408&device=pc",
+      "raw_relative_to_data_experiments": "korean-prose-pilot-20261003/9791160736571/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T113303507916Z_c4306110531f.json",
+      "raw_hash": "sha256:c4306110531f7dac17fef1ed6e6751badd45aea1af256947a75bc7c94382c31c"
+    },
+    {
+      "isbn": "9791160737615",
+      "url": "https://www.kyungmoon.com/shop/item.php?it_id=1739843960&device=pc",
+      "raw_relative_to_data_experiments": "korean-prose-pilot-20261003/9791160737615/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T113303845932Z_2ba9c151b5a9.json",
+      "raw_hash": "sha256:2ba9c151b5a941896ab14c1146d9bc473dcac1c6b15c92d837101489f2422ef1"
+    },
+    {
+      "isbn": "9791190017183",
+      "url": "https://www.kyungmoon.com/shop/item.php?it_id=1706857705&device=pc",
+      "raw_relative_to_data_experiments": "korean-prose-pilot-20261003/9791190017183/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T113304144586Z_1e2962aebb44.json",
+      "raw_hash": "sha256:1e2962aebb4484ba1dd01bbb5f96c9ce4b8240d02a1786b340fa8a8040117b44"
+    }
+  ]
+}

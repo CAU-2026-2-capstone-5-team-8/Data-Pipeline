@@ -1160,7 +1160,8 @@ remain unchanged; v3 reruns flag the same 42 identities.
 `enrich-publisher-excerpt` copies an existing canonical dataset into a **new experiment root**
 and adds an explicitly attributed partial preface. The first adapter supports ordinary public
 Kyungmoon product pages. It checks the product ISBN, canonical title and Korean language, then
-requires the introduction section to end with `머리말 중에서`. Generic marketing text, a TOC
+requires the introduction section to end with `머리말 중에서` or `머리말 中에서`, including
+HTML line breaks within the attribution. Generic marketing text, a TOC
 heading, another edition, and an image-only preview do not satisfy this check. There are no
 per-book URL or ISBN allowlists and no change to the curated MVP or original discovery snapshot.
 
@@ -1208,3 +1209,8 @@ uv run data-pipeline export-ml-evidence \
 The [98-book v2 handoff verification](docs/experiments/text-extent-handoff-2026-10-03.json)
 preserves extent and source rights through ML import, while the archived v1 input still exports
 byte-identically. Historical documents without recorded extent remain unknown.
+
+The [follow-up Korean prose pilot](docs/experiments/korean-prose-pilot-2026-10-03.md) recovers
+one 230-character excerpt from the publisher's `中에서` variant. The 98-book copy now has two
+explicit preface excerpts, with no new complete chapter. The other two product descriptions
+remain unpromoted, and a linked exercise-answer PDF is excluded from prose evidence.

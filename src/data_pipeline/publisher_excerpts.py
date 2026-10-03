@@ -17,7 +17,7 @@ from data_pipeline.models import Book, CanonicalDataset, Document, Source, TextE
 
 PROVIDER = "kyungmoon-preface-excerpt"
 MAX_HTML_BYTES = 2 * 1024 * 1024
-PREFACE_ATTRIBUTION = re.compile(r"[-–—]?\s*머리말\s+중에서\s*[-–—]?\s*$")
+PREFACE_ATTRIBUTION = re.compile(r"[-–—]?\s*머리말\s+(?:중|中)\s*에서\s*[-–—]?\s*$")
 
 
 def validate_excerpt_url(url: str) -> None:
@@ -105,8 +105,10 @@ def normalize_preface_excerpt(
     for hidden in section.css("script, style, noscript, [hidden], [aria-hidden='true']"):
         hidden.decompose()
     text = section.text(separator="\n").strip()
-    if not PREFACE_ATTRIBUTION.search(text) or len(text) < 120:
+    attribution = PREFACE_ATTRIBUTION.search(text)
+    if attribution is None or len(text) < 120:
         raise InvalidProviderResponse("no sufficiently long explicitly attributed preface excerpt")
+    attribution_label = "머리말 中에서" if "中" in attribution.group() else "머리말 중에서"
     source_id = stable_id("source", PROVIDER, book.book_id, url)
     return CanonicalDataset(
         books=[book],
@@ -124,7 +126,8 @@ def normalize_preface_excerpt(
                 license=None,
                 rights_note=(
                     "Public publisher product page explicitly attributes this section to a "
-                    "preface excerpt (머리말 중에서). Partial excerpt, not a complete preface or "
+                    f"preface excerpt ({attribution_label}). "
+                    "Partial excerpt, not a complete preface or "
                     "sample chapter. Matched product ISBN and title to the Korean canonical "
                     "edition; printing-specific differences were not verified. "
                     "No reuse license established. HTML text extraction only; "
@@ -139,7 +142,9 @@ def normalize_preface_excerpt(
                 document_type="preface",
                 text_extent=TextExtent(
                     scope="excerpt",
-                    basis="Publisher introduction section explicitly ends with 머리말 중에서.",
+                    basis=(
+                        f"Publisher introduction section explicitly ends with {attribution_label}."
+                    ),
                 ),
                 text=text,
                 source_id=source_id,
