@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`book-evidence-v1` is a provider-independent handoff from Data-Pipeline to ML. It does not try to
+`book-evidence-v1/v2` is a provider-independent handoff from Data-Pipeline to ML. It does not try to
 turn all books into TOC-bearing books, infer concepts, or assign confidence and ranking weights.
 Instead, it preserves the strongest available collected evidence for every canonical book and
 makes its origin explicit.
@@ -13,6 +13,40 @@ structured data and reviewed public-web data are complementary sources; neither 
 other. No generated TOC or description is added.
 
 ## Artifact
+
+### Version 2: text extent and source rights
+
+`--contract-version book-evidence-v2` emits `schema_version=2` and four additional required,
+nullable fields on every evidence row:
+
+| Field | Canonical origin |
+| --- | --- |
+| `source_external_id` | `Source.external_id` |
+| `source_license` | `Source.license` |
+| `source_rights_note` | `Source.rights_note` |
+| `text_extent` | `Document.text_extent`; null for non-document rows |
+
+`text_extent` contains `scope` (`excerpt` or `complete_section`) and a nonblank collection
+`basis`. Complete section refers only to the named document, such as a preface or chapter,
+never the whole book. Missing/null extent means **unknown**, including historical documents;
+type, provider and length do not establish completeness. The publisher-excerpt adapter records
+the explicit `머리말 중에서` marker as its basis. No source license is inferred.
+
+All four fields participate in the evidence provenance hash, and source fields are repeated
+consistently across rows. IDs use the v2 namespace. The canonical-projection validator catches
+changes even if an artifact's hash is recomputed. A file must contain only one contract version.
+
+The default v1 export remains byte-compatible for old canonical inputs. It rejects explicit
+extent rather than dropping it. Historical documents omit the new canonical field when unknown.
+Older strict canonical and v1-only readers must be upgraded before consuming new extent-bearing
+canonical data or v2 artifacts. In ML, v2 is supported by inspection, concept-candidate/mapping
+adapters; frozen gold-review and holdout workflows remain v1-only and explicitly reject v2.
+
+The shared `tests/fixtures/book-evidence-v2.jsonl` contains synthetic text only. The
+[real 98-book verification](experiments/text-extent-handoff-2026-10-03.json) records hashes,
+two identical offline replays and ML profile results without committing collected book text.
+
+### Common fields
 
 The output is deterministic JSONL with one `MlBookEvidence` record per canonical book:
 

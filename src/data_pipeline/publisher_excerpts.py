@@ -13,7 +13,7 @@ from selectolax.parser import HTMLParser
 
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.identifiers import normalize_bibliographic_text, sha256_text, stable_id
-from data_pipeline.models import Book, CanonicalDataset, Document, Source
+from data_pipeline.models import Book, CanonicalDataset, Document, Source, TextExtent
 
 PROVIDER = "kyungmoon-preface-excerpt"
 MAX_HTML_BYTES = 2 * 1024 * 1024
@@ -137,6 +137,10 @@ def normalize_preface_excerpt(
                 document_id=stable_id("doc", source_id, "preface", sha256_text(text)),
                 book_id=book.book_id,
                 document_type="preface",
+                text_extent=TextExtent(
+                    scope="excerpt",
+                    basis="Publisher introduction section explicitly ends with 머리말 중에서.",
+                ),
                 text=text,
                 source_id=source_id,
                 content_hash=sha256_text(text),

@@ -3,7 +3,14 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from data_pipeline.identifiers import is_valid_isbn_10, is_valid_isbn_13
 
@@ -93,6 +100,20 @@ class Book(CanonicalModel):
         return self
 
 
+class TextExtent(CanonicalModel):
+    """Explicit collection evidence about coverage of the named document, not the whole book."""
+
+    scope: Literal["excerpt", "complete_section"]
+    basis: str = Field(min_length=1)
+
+    @field_validator("basis")
+    @classmethod
+    def basis_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text extent requires a nonblank collection basis")
+        return value
+
+
 class Document(CanonicalModel):
     document_id: str = Field(min_length=1)
     book_id: str = Field(min_length=1)
@@ -100,6 +121,14 @@ class Document(CanonicalModel):
     text: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    text_extent: TextExtent | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_shape(self, handler):
+        result = handler(self)
+        if self.text_extent is None:
+            result.pop("text_extent", None)
+        return result
 
     @field_validator("text")
     @classmethod

@@ -1752,6 +1752,9 @@ def report_toc_acquisition(
 
 @app.command("export-ml-evidence")
 def export_ml_evidence_command(
+    contract_version: Annotated[
+        str, typer.Option(help="book-evidence-v1 (legacy) or book-evidence-v2 (extent and rights).")
+    ] = "book-evidence-v1",
     dataset_dir: Annotated[
         Path,
         typer.Option(
@@ -1775,7 +1778,10 @@ def export_ml_evidence_command(
     if canonical_errors:
         raise typer.BadParameter("; ".join(canonical_errors))
 
-    records = export_ml_evidence(canonical)
+    try:
+        records = export_ml_evidence(canonical, contract_version)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     evidence_errors = validate_ml_evidence(records, canonical)
     summary = summarize_ml_evidence(records, evidence_errors)
     if evidence_errors:
