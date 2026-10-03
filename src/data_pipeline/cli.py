@@ -1,5 +1,6 @@
 """Command-line entry point for the small MVP collection slice."""
 
+import hashlib
 import json
 import os
 import re
@@ -1352,20 +1353,29 @@ def audit_selection_command(
         str | None, typer.Option(help="Audit one topic instead of each book's own.")
     ] = None,
 ) -> None:
-    """Report why each selected book can or cannot support difficulty work."""
+    """Report traceable evidence and review signals, without deciding eligibility."""
     processed = data_dir / "processed"
-    if not dataset_exists(processed):
-        raise typer.BadParameter("audit-selection requires an existing canonical dataset")
-    dataset = read_dataset(processed)
-    errors = validate_dataset(dataset)
-    if errors:
-        raise typer.BadParameter("; ".join(errors))
+    if report.resolve() == review.resolve() or report.exists() or review.exists():
+        raise typer.BadParameter(
+            "choose distinct new report/review paths; existing files are preserved"
+        )
+    written_report = False
     try:
+        if not dataset_exists(processed):
+            raise ValueError("audit-selection requires an existing canonical dataset")
+        dataset = read_dataset(processed)
         result = audit_selection(dataset, topic)
-    except ValueError as exc:
+        result["canonical_hashes"] = {
+            name: "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest()
+            for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+        }
+        write_selection_report(result, report)
+        written_report = True
+        write_selection_review(result, review)
+    except (OSError, ValueError) as exc:
+        if written_report:
+            report.unlink(missing_ok=True)
         raise typer.BadParameter(str(exc)) from exc
-    write_selection_report(result, report)
-    write_selection_review(result, review)
     typer.echo(f"Audited books: {result['book_count']}")
     for name, count in sorted(result["status_counts"].items()):
         typer.echo(f"  {name}: {count}")

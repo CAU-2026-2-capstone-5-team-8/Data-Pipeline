@@ -1101,59 +1101,42 @@ that either score is correct. The low match rate on the Sinha TOC reflects distr
 headings such as *Remote Procedure Calls*, *Distributed Shared Memory*, and *Naming* that the
 current ML concept list does not cover.
 
-## Selection audit
+## Selection audit v2
 
-TOC acquisition stalls on books no catalog describes, and a book from another field can
-supply confident but wrong concepts downstream. `audit-selection` reports, per selected
-book, the machine-checkable facts behind both problems. It never removes a book: dropping a
-title is a human decision, so the command writes a report plus a blank review sheet.
+`audit-selection` reports collected evidence and review signals. It never decides that a book
+is a valid textbook, impossible to resolve, or ready for recommendation, and never removes a book.
 
 ```bash
 uv run data-pipeline audit-selection \
-  --data-dir <dataset root> \
-  --report selection-audit.json \
-  --review selection-review.csv
+  --data-dir <dataset root containing processed/> \
+  --report <new output directory>/selection-audit.json \
+  --review <new output directory>/selection-review.csv
 ```
 
-Findings are independent observations; the status names the most serious one.
+Report schema v2 replaces the unmerged v1 status vocabulary:
 
 | Status | Meaning |
 | --- | --- |
-| `wrong_subject` | The topic's conflicting-subject pattern matched the title, subtitle, topics, or collected description |
-| `unresolvable` | No ISBN-13 and no ISBN-10, so no provider can resolve an exact edition |
-| `study_aid` | A reviewed title marker for a solutions manual, outline, or problem book |
-| `no_usable_evidence` | No TOC, no description, and no prose: title metadata only |
-| `toc_missing` | Some evidence exists but no TOC |
-| `usable` | A TOC is present |
+| `review_required` | A missing ISBN, topic-term gap, title study-aid marker, competing-subject marker, or alternate-edition TOC needs inspection |
+| `metadata_only` | No documents or TOC were collected and no other review signal took priority |
+| `evidence_present` | Some documents or TOC exist; relevance, completeness and recommendation suitability remain unverified |
 
-`wrong_subject` deliberately outranks having a TOC. A book about another field with a full
-TOC is worse than a book with none, because its chapter titles reach concept matching.
-`no_usable_evidence` and `toc_missing` are kept apart so a current edition awaiting
-collection is not confused with a record that has nothing to collect from.
+`evidence_state` separately distinguishes metadata, descriptions, TOC, and documents labelled
+preface/introduction/preview/sample. Document presence and character count are not prose quality,
+text difficulty, or deep concept coverage. `no_isbn` does not exclude title/author/provider lookup.
 
-The review sheet leaves `human_decision`, `replacement_isbn_13`, and `notes` blank. The audit
-proposes nothing about replacement, because whether a title-only record should be replaced or
-simply collected from is a judgment about the benchmark, not a fact about the data.
+English and Korean patterns inspect actual title/subtitle/description text. Assigned topic slugs
+are excluded from the matching evidence. The report records each matched phrase's field, record ID,
+character offsets, document source ID where available, and a source registry with URLs, hashes and
+edition metadata. Book-level source IDs are candidates for tracing metadata, not an assertion that
+every source supplied every field. Multiple configured leaf topics produce distinct audit rows;
+parent domains such as mathematics are not evaluated as leaf topics.
 
-### Measured result: 25-book Operating Systems set (2026-09-23)
+Both outputs are deterministic and must use new, distinct paths. Existing reports, canonical
+files and human review sheets cannot be overwritten. `human_decision`, `replacement_isbn_13` and
+`notes` remain blank; CSV formula-like text is escaped only in the exported review sheet.
+Canonical hashes and the applied rules are recorded in the JSON report. No extra service is called.
 
-| Status | Books |
-| --- | --- |
-| `usable` | 7 |
-| `toc_missing` | 3 |
-| `study_aid` | 1 |
-| `no_usable_evidence` | 13 |
-| `wrong_subject` | 1 |
-
-The `wrong_subject` book is *The Operating System* (9781849353878, AK Press, 2021), a work of
-anarchist political theory. It was selected because its title matches the topic phrase, and it
-had already contributed fourteen TOC entries, including *Toward an Anarchist Theory of the
-State* and *The State and COVID-19*. Its collected description matches the configured
-`anarchism` conflicting subject, which is how the audit catches it.
-
-Two `no_usable_evidence` books, *Power system operation* and *Computer aided power system
-operation and analysis*, also carry the `title_off_topic` finding.
-
-Every one of the 25 books carries `no_prose`. No book in this set has a preface, introduction,
-preview, or sample chapter, so the text difficulty half of a book profile cannot be computed
-for any of them.
+The [471-book measured audit](docs/experiments/selection-signals-2026-10-03.md) found 439 books with
+TOC, no documents labelled prose in this snapshot, and 42 books with review signals. These are
+not 42 confirmed bad books. Generic term matching can flag a relevant textbook's description too.
