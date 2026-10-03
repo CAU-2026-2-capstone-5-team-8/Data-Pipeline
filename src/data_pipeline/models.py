@@ -1,7 +1,7 @@
 """Provider-independent canonical dataset models."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -46,12 +46,33 @@ class CanonicalModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Book(CanonicalModel):
+class EnglishFieldsModel(CanonicalModel):
+    """Optional analysis text; preserve originals and omit absent legacy fields."""
+
+    @model_serializer(mode="wrap")
+    def omit_absent_english_fields(self, handler: Any) -> dict[str, Any]:
+        result = handler(self)
+        for field in ("en_title", "en_subtitle", "en_text"):
+            if result.get(field) is None:
+                result.pop(field, None)
+        return result
+
+    @field_validator("en_title", "en_subtitle", "en_text", check_fields=False)
+    @classmethod
+    def english_field_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("English analysis text must not be blank")
+        return value
+
+
+class Book(EnglishFieldsModel):
     book_id: str = Field(pattern=r"^(isbn13:[0-9]{13}|isbn10:[0-9]{9}[0-9X]|book_[0-9a-f]{20})$")
     isbn_10: str | None = None
     isbn_13: str | None = None
     title: str = Field(min_length=1)
+    en_title: str | None = Field(default=None, min_length=1)
     subtitle: str | None = None
+    en_subtitle: str | None = Field(default=None, min_length=1)
     authors: list[str]
     publisher: str | None = None
     published_year: int | None = Field(default=None, ge=1000, le=9999)
@@ -114,11 +135,12 @@ class TextExtent(CanonicalModel):
         return value
 
 
-class Document(CanonicalModel):
+class Document(EnglishFieldsModel):
     document_id: str = Field(min_length=1)
     book_id: str = Field(min_length=1)
     document_type: DocumentType
     text: str = Field(min_length=1)
+    en_text: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
     content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     text_extent: TextExtent | None = None
@@ -126,20 +148,20 @@ class Document(CanonicalModel):
     @model_serializer(mode="wrap")
     def preserve_legacy_shape(self, handler):
         result = handler(self)
-        if self.text_extent is None:
-            result.pop("text_extent", None)
+        for field in ("text_extent", "en_text"):
+            if getattr(self, field) is None:
+                result.pop(field, None)
         return result
 
     @field_validator("text")
     @classmethod
     def text_must_not_be_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
+        if not value.strip():
             raise ValueError("document text must not be blank")
         return value
 
 
-class TocEntry(CanonicalModel):
+class TocEntry(EnglishFieldsModel):
     toc_entry_id: str = Field(min_length=1)
     book_id: str = Field(min_length=1)
     parent_entry_id: str | None = None
@@ -147,6 +169,7 @@ class TocEntry(CanonicalModel):
     order_index: int = Field(ge=0)
     label: str | None = None
     title: str = Field(min_length=1)
+    en_title: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
 
 
