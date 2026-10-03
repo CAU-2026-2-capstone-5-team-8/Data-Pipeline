@@ -1150,3 +1150,43 @@ not 42 confirmed bad books. Generic term matching can flag a relevant textbook's
 The [follow-up review](docs/experiments/selection-review-2026-10-03.md) records the agent's
 observations for all 42 books separately from blank human decisions. Historical v2 measurements
 remain unchanged; v3 reruns flag the same 42 identities.
+
+## Public publisher preface excerpts
+
+`enrich-publisher-excerpt` copies an existing canonical dataset into a **new experiment root**
+and adds an explicitly attributed partial preface. The first adapter supports ordinary public
+Kyungmoon product pages. It checks the product ISBN, canonical title and Korean language, then
+requires the introduction section to end with `머리말 중에서`. Generic marketing text, a TOC
+heading, another edition, and an image-only preview do not satisfy this check. There are no
+per-book URL or ISBN allowlists and no change to the curated MVP or original discovery snapshot.
+
+```bash
+uv run data-pipeline enrich-publisher-excerpt \
+  --data-dir data/experiments/discovery-600-20260929/topics/linear-algebra \
+  --output-dir data/experiments/new-preface/live \
+  --isbn 9788961055680 --topic linear-algebra \
+  --url 'https://www.kyungmoon.com/shop/item.php?device=pc&it_id=1652670201'
+
+# Offline replay: same original canonical input, immutable raw artifact, new output.
+uv run data-pipeline enrich-publisher-excerpt \
+  --data-dir data/experiments/discovery-600-20260929/topics/linear-algebra \
+  --output-dir data/experiments/new-preface/replay \
+  --isbn 9788961055680 --topic linear-algebra \
+  --raw <live/raw/kyungmoon_preface_excerpt/linear-algebra/artifact.json>
+```
+
+Use this command's `--raw` mode for excerpt replay; the generic metadata `build` command does
+not consume this new artifact type. The raw response is saved before parsing. Identity or parser
+failure retains it for inspection without publishing canonical files. Redirects, non-HTML,
+HTTP access restrictions and responses over 2 MiB stop collection. Existing output roots are
+rejected so prior inputs and human work cannot be overwritten.
+
+The canonical document uses `preface`; its source `external_id` and `rights_note` and the
+`enrichment.json` manifest explicitly identify **a partial excerpt**, not a complete preface or
+sample chapter. License remains unknown; matching ISBN does not verify printing-specific changes.
+Raw HTML is retained exactly, while HTML text extraction normalizes HTML line endings. No OCR,
+translation, textual difficulty score, or recommendation change is performed.
+
+The [first measured collection](docs/experiments/preface-excerpt-2026-10-03.md) added 1,362
+characters for one of 98 linear-algebra books, with two byte-identical offline replays and an
+unchanged `book-evidence-v1` handoff. Third-party raw HTML and book text remain outside Git.
