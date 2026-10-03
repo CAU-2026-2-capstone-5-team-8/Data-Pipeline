@@ -76,6 +76,27 @@ def test_preface_excerpt_has_exact_identity_original_text_and_partial_rights_not
 
 
 @pytest.mark.parametrize(
+    "marker", ["-머리말 中에서-", "-\n머리말 \n中\n에서\n-", "머리말 중\n에서"]
+)
+def test_explicit_attribution_variants_preserve_original_text_and_extent(marker):
+    result = normalize(HTML.replace("-머리말 중에서-", marker))
+    doc, source = result.documents[0], result.sources[0]
+    assert doc.text.endswith(marker)
+    assert doc.text_extent.scope == "excerpt"
+    assert ("中" in doc.text_extent.basis) == ("中" in marker)
+    assert ("中" in source.rights_note) == ("中" in marker)
+    assert doc.content_hash == sha256_text(doc.text)
+
+
+@pytest.mark.parametrize(
+    "marker", ["머리말 中", "머리말 中에서 가져올 예정", "中에서", "서문 중에서"]
+)
+def test_incomplete_or_nonterminal_attribution_is_not_promoted(marker):
+    with pytest.raises(ValueError, match="explicitly attributed"):
+        normalize(HTML.replace("-머리말 중에서-", marker))
+
+
+@pytest.mark.parametrize(
     "html",
     [
         HTML.replace("-머리말 중에서-", "일반 도서소개"),
