@@ -124,6 +124,10 @@ or recommendation weight. See
 [`docs/ml-evidence-contract.md`](docs/ml-evidence-contract.md) for the contract and validation
 rules.
 
+For explicit document scope and source rights, use `--contract-version book-evidence-v2`.
+The default remains v1 for historical datasets, but refuses documents with explicit `text_extent`
+instead of silently losing that information. Upgrade the ML reader before using v2.
+
 ```bash
 uv run data-pipeline export-ml-evidence \
   --dataset-dir data/experiments/scale-50-bulk-web-20260922/processed \
@@ -1181,8 +1185,8 @@ failure retains it for inspection without publishing canonical files. Redirects,
 HTTP access restrictions and responses over 2 MiB stop collection. Existing output roots are
 rejected so prior inputs and human work cannot be overwritten.
 
-The canonical document uses `preface`; its source `external_id` and `rights_note` and the
-`enrichment.json` manifest explicitly identify **a partial excerpt**, not a complete preface or
+The canonical document uses `preface` and `text_extent.scope=excerpt`; its source `external_id`,
+`rights_note` and the `enrichment.json` manifest explicitly identify **a partial excerpt**, not a complete preface or
 sample chapter. License remains unknown; matching ISBN does not verify printing-specific changes.
 Raw HTML is retained exactly, while HTML text extraction normalizes HTML line endings. No OCR,
 translation, textual difficulty score, or recommendation change is performed.
@@ -1190,3 +1194,17 @@ translation, textual difficulty score, or recommendation change is performed.
 The [first measured collection](docs/experiments/preface-excerpt-2026-10-03.md) added 1,362
 characters for one of 98 linear-algebra books, with two byte-identical offline replays and an
 unchanged `book-evidence-v1` handoff. Third-party raw HTML and book text remain outside Git.
+
+That result predates structured extent metadata. Current collection/replay records the explicit
+excerpt basis and requires v2 export:
+
+```bash
+uv run data-pipeline export-ml-evidence \
+  --contract-version book-evidence-v2 \
+  --dataset-dir data/experiments/new-preface/replay/processed \
+  --output data/experiments/new-preface/book-evidence-v2.jsonl
+```
+
+The [98-book v2 handoff verification](docs/experiments/text-extent-handoff-2026-10-03.json)
+preserves extent and source rights through ML import, while the archived v1 input still exports
+byte-identically. Historical documents without recorded extent remain unknown.
