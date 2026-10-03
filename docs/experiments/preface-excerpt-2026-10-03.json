@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "book_id": "isbn13:9788961055680",
+  "topic": "linear-algebra",
+  "raw_content_hash": "sha256:26406001adb7f625bf78774b48f43b2ecb87ff5969ed00b3999c3f83633e7d11",
+  "input_canonical_hashes": {
+    "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+    "documents.jsonl": "sha256:57d218fa07ee131d540469a7a6093af925a9c900cf427b65350d70460db3d8ab",
+    "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf",
+    "sources.jsonl": "sha256:aec1947acad699fd3799da0118c38689b27ea53827370152c2156bab0f627ce2"
+  },
+  "output_canonical_hashes": {
+    "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+    "documents.jsonl": "sha256:7a8ed1a9088dc3538174e669021a9148332ea7bbc1c3735d4acc1b5796f2b5c9",
+    "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf",
+    "sources.jsonl": "sha256:76b13ae250e61e3197cb391e3ad984d7eb640b50488c1152d4d7bb877bfdcf5b"
+  },
+  "document_ids": [
+    "doc_2f756e59aff18fe9da65"
+  ],
+  "coverage": "preface_excerpt_only",
+  "complete_preface": false,
+  "sample_chapter": false,
+  "raw_artifact_relative": "preface-excerpt-20261003/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T094715230398Z_26406001adb7.json",
+  "source_url": "https://www.kyungmoon.com/shop/item.php?device=pc&it_id=1652670201",
+  "character_count": 1362,
+  "document_content_hash": "sha256:cbdf8c14cc3465ccaf16a6aa8f5c5b9a6d957ad41487556d7545e9a6fd7b686f",
+  "source_content_hash": "sha256:1a6b51e72b9112bfa3bfdbe2e22f06cf3939afd1ec78afd9491df87e3f38832c",
+  "book_count": 98,
+  "toc_book_count": 83,
+  "before_prose_books": 0,
+  "after_prose_books": 1,
+  "byte_identical_replays": 2,
+  "ml_export_records": 98,
+  "ml_validation_errors": [],
+  "ml_export_sha256": "sha256:bc4a252d54496ba0561b5ae4f69b821c6e858f8f2c2f124dafc44d8928a135f8"
+}

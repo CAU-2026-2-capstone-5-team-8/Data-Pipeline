@@ -78,6 +78,14 @@ from data_pipeline.publisher_document_sources import (
     PUBLISHER_DOCUMENT_SOURCES,
     publisher_document_source,
 )
+from data_pipeline.publisher_excerpts import (
+    PROVIDER as EXCERPT_PROVIDER,
+)
+from data_pipeline.publisher_excerpts import (
+    fetch_excerpt_page,
+    normalize_preface_excerpt,
+    validate_excerpt_url,
+)
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
 from data_pipeline.relevance_review import finalize_relevance_review, prepare_relevance_review
 from data_pipeline.reporting import format_book_coverage, format_coverage
@@ -1001,6 +1009,102 @@ def enrich_bibliography(
     write_dataset(updated, processed)
     typer.echo(f"HathiTrust source added for {book.book_id}: {source.url}")
     typer.echo(source.rights_note or "")
+
+
+@app.command("enrich-publisher-excerpt")
+def enrich_publisher_excerpt(
+    data_dir: Annotated[Path, typer.Option(help="Existing canonical data root; read only.")],
+    output_dir: Annotated[Path, typer.Option(help="New experiment root; must not exist.")],
+    isbn: Annotated[str, typer.Option(help="Exact canonical ISBN-13.")],
+    topic: TopicOption,
+    url: Annotated[str | None, typer.Option(help="Public publisher product URL.")] = None,
+    raw: Annotated[
+        Path | None, typer.Option(help="Replay an immutable excerpt raw artifact.")
+    ] = None,
+) -> None:
+    """Add an explicitly attributed preface excerpt to a separate canonical copy."""
+    if (url is None) == (raw is None):
+        raise typer.BadParameter("provide exactly one of --url or --raw")
+    if output_dir.exists() or output_dir.resolve() == data_dir.resolve():
+        raise typer.BadParameter("output-dir must be a new experiment directory")
+    raw_path = raw
+    try:
+        _ensure_topic(topic)
+        processed = data_dir / "processed"
+        hashes = {
+            name: "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest()
+            for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+        }
+        existing = read_dataset(processed)
+        errors = validate_dataset(existing)
+        if errors:
+            raise ValueError("; ".join(errors))
+        book = next((b for b in existing.books if b.isbn_13 == isbn), None)
+        if book is None or topic not in book.topics:
+            raise ValueError("ISBN and topic must identify an existing canonical book")
+        if raw is not None:
+            artifact = read_raw_response(raw)
+            request_url = artifact.response.get("url")
+            if (
+                artifact.provider != EXCERPT_PROVIDER
+                or artifact.topic != topic
+                or artifact.requested_limit != 1
+                or artifact.request_parameters != {"isbn": isbn, "url": request_url}
+            ):
+                raise ValueError("excerpt raw artifact request identity mismatch")
+        else:
+            validate_excerpt_url(url)
+            retrieved_at = datetime.now(UTC)
+            artifact = RawArtifact(
+                provider=EXCERPT_PROVIDER,
+                topic=topic,
+                requested_limit=1,
+                retrieved_at=retrieved_at,
+                request_parameters={"isbn": isbn, "url": url},
+                response=fetch_excerpt_page(url),
+            )
+            raw_path = raw_artifact_path(output_dir, artifact)
+            write_raw_response(artifact, raw_path)
+        evidence = normalize_preface_excerpt(artifact.response, book, artifact.retrieved_at)
+        combined = merge_datasets([existing, evidence])
+        errors = validate_dataset(combined)
+        if errors:
+            raise ValueError("; ".join(errors))
+        if any(
+            "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest() != digest
+            for name, digest in hashes.items()
+        ):
+            raise ValueError(
+                "canonical inputs changed during enrichment; retry from a stable snapshot"
+            )
+        write_dataset(combined, output_dir / "processed")
+        manifest = {
+            "schema_version": 1,
+            "book_id": book.book_id,
+            "topic": topic,
+            "raw_artifact": str(raw_path.resolve()),
+            "raw_content_hash": artifact.content_hash,
+            "input_canonical_hashes": hashes,
+            "output_canonical_hashes": {
+                name: "sha256:"
+                + hashlib.sha256((output_dir / "processed" / name).read_bytes()).hexdigest()
+                for name in hashes
+            },
+            "document_ids": [d.document_id for d in evidence.documents],
+            "coverage": "preface_excerpt_only",
+            "complete_preface": False,
+            "sample_chapter": False,
+        }
+        (output_dir / "enrichment.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    except (ValueError, OSError, httpx.HTTPError) as exc:
+        preserved = (
+            f"; raw response preserved at {raw_path}" if raw_path and raw_path.exists() else ""
+        )
+        raise typer.BadParameter(f"{exc}{preserved}") from exc
+    typer.echo(f"Canonical copy: {output_dir / 'processed'}")
+    typer.echo("Added an attributed preface excerpt; full preface/sample coverage is not implied.")
 
 
 @app.command("collect-publisher-document")
