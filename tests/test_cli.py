@@ -144,7 +144,9 @@ def test_build_accepts_legacy_single_page_google_raw_artifact(tmp_path) -> None:
     )
 
     assert result.exit_code == 0
-    assert len(read_dataset(tmp_path / "processed").books) == 1
+    dataset = read_dataset(tmp_path / "processed")
+    assert len(dataset.books) == 1
+    assert dataset.books[0].en_title == dataset.books[0].title == "Legacy Linear Algebra"
 
 
 def test_build_reports_invalid_provider_collection_without_traceback(tmp_path) -> None:

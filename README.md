@@ -4,6 +4,93 @@ Evidence-first data collection and normalization for the CAU Capstone Team 8 boo
 recommendation project. This repository emits provider-independent book data for downstream
 ML work; it does not perform concept extraction, difficulty scoring, or recommendation.
 
+## Common multilingual browsing fields
+
+`configs/discovery-subjects.json` owns reviewed English field IDs, Korean/English labels,
+aliases, parent domains, search terms, and metadata evidence patterns. The initial common fields
+are economics, microeconomics, and macroeconomics. A `field-` namespace separates these browsing
+IDs from existing curated assessment IDs. For example, `미시경제`, `미시경제학`, and
+`Microeconomics` all resolve to `field-microeconomics` under `social-sciences`; the displayed
+label is `미시경제학`, YES24 searches `미시경제학`, and foreign providers search `microeconomics`.
+
+`common_fields.py` resolves only reviewed aliases. `common_field_scope()` has no YES24 category
+prerequisite. Provider adapters retain native categories and original responses separately;
+normalization verifies topic evidence, language/edition, identifiers, and provider-specific
+constraints. The backend worker searches YES24, Open Library, and Google Books independently in
+parallel, retains up to 20 normalized books per source, and merges ISBN overlaps with provenance.
+A provider failure does not discard successful sources. The four canonical JSONL contracts and
+curated experiment identities stay unchanged. Search results are browsing evidence, not proof
+of textbook quality, difficulty, or diagnosis readiness; title-only matches remain recorded as
+weaker evidence in the filter audits.
+
+Unknown names do not get an invented English translation or a common identity. The existing
+observed-source-category discovery path remains available for them. Extend this small reviewed
+registry when adding a supported multilingual field; generic translation/mapping suggestions
+are a later stage. Existing `search-*` fields retain their identities and snapshots.
+
+A real local run on 2026-10-06 added `미시경제학` using the English input `Microeconomics`:
+20 Korean YES24 books + 20 English Open Library books were published. Google Books returned
+HTTP 429 and was reported separately. This verifies collection and local publication, not
+recommendation precision or question generation. Tests cover alias identity, rejected policy
+changes, independent-source failure, immutable evidence, and refresh with the original Korean query.
+
+## English analysis fields
+
+Collection preserves the original `title`, `subtitle`, TOC `title`, document `text`, language,
+identifiers, and source hashes. Optional `en_title`, `en_subtitle`, and document `en_text` carry
+English text for ML. Display clients continue to use the original book `title`. Authors, ISBNs,
+URLs, and other identity fields are not translated. Canonical topic IDs are already English.
+
+All collection providers share the same normalization/merge boundary. English title, subtitle,
+TOC, and document text fill the matching `en_*` fields directly, with no Gemini call. Korean fields
+remain pending until translation; English headings in Korean records are copied too. Routing uses
+the supported book language and field contents, so a domestic provider's English data does not
+incur translation cost. This shared step is independent of the individual collectors.
+
+Translation is a separate enrichment step after collection. It writes another dataset directory;
+it never overwrites its input. To inspect work without a key or network request:
+
+```bash
+uv run data-pipeline enrich-english \
+  --dataset-dir data/experiments/discovery-600-20260929/topics/linear-algebra/processed \
+  --output-dir data/experiments/english-linear-algebra-pilot-20261002/processed \
+  --book-id isbn13:9788961055680 \
+  --scope toc --workers 3 --dry-run
+```
+
+Remove `--dry-run` to translate, supplying `GEMINI_API_KEY` through the environment or an explicit
+`--env-file .env` only when untranslated text needs a live request. English-only datasets and
+complete cache replay need no Gemini key. `--scope toc` sends TOC titles with original book title,
+topic, and parent-heading
+context; it does not send document bodies. The default `--scope all` also translates book title,
+subtitle, and collected document text. Translation does not create missing chapters or passages.
+Use `--limit` or repeated `--book-id` options to bound a run.
+
+Requests are grouped by book, split without truncating long text, and run with bounded concurrency
+(`--workers` 1–8). The cache is keyed by exact input, context, model, and prompt version. Repeating
+the same command and output directory reuses successful requests; failed books retain their source
+records and cause a nonzero exit. Existing English fields are reused when enriching an already
+enriched input into another output directory. HTTP 429 and transient server errors have bounded
+retries; concurrency does not reduce token charges or raise the provider's project quota.
+
+`translation-run.json` records the latest run's scope, source hash, failures, token usage including
+thinking, time, and estimated USD at the documented standard rate. It is a per-run record, not a
+cumulative bill. Export enriched data with the existing `export-ml-evidence` command. Consumers
+must support the optional English fields described in [the evidence contract](docs/ml-evidence-contract.md).
+
+The pinned [10-book selection](configs/experiments/english-linear-algebra-pilot-v1.json) was tested
+with 666 TOC titles. All were translated after one resumed request, while original fields stayed
+equal to the source snapshot. The measured runs took about 38 seconds in total and cost an
+estimated $0.092; cache replay made zero API requests and reproduced all four JSONL files exactly.
+This is a TOC pilot, not a measured cost or throughput guarantee for the full catalog.
+Pinned hashes, separate first/resumed usage totals, and downstream coverage are recorded in
+[the pilot metrics](docs/experiments/english-analysis-pilot-2026-10-02.json).
+
+The existing native-English ten-book dataset was also copied locally: 31 documents and 1,163
+TOC entries produced zero API requests, passed evidence export/import, and yielded identical ML
+profiles. Copied analysis fields retain the original whitespace; export/import does not trim
+evidence text and invalidate its provenance hash. The original snapshot remained untouched.
+
 ## Evidence acquisition hierarchy
 
 Runtime collection is an enrichment layer, not the primary bibliographic database builder. The
@@ -1100,3 +1187,98 @@ the new evidence flows through concept matching into difficulty scoring; they ar
 that either score is correct. The low match rate on the Sinha TOC reflects distributed-systems
 headings such as *Remote Procedure Calls*, *Distributed Shared Memory*, and *Naming* that the
 current ML concept list does not cover.
+
+## Literal-query book discovery (2026-10-06)
+
+`Yes24Collector.search_query(query, candidate_limit=100)` can discover books outside the
+curated topic registry. `query_discovery.discover_categories` returns only observed
+`goodsSortNm` paths with valid, deduplicated ISBN books whose titles match the literal
+query. `discovery_policy` and `normalize_yes24_response(..., discovery_spec=policy)`
+normalize a selected exact provider category into the unchanged four canonical JSONL
+files. Registered topic filters cannot be overridden by a discovery policy.
+
+This is bounded book browsing evidence, not approval of a diagnostic field or a measured
+relevance classifier. Categories with missing identities and books without usable ISBNs
+remain excluded. Counts describe eligible editions in the fetched response, not total
+store inventory. The Backend owns asynchronous jobs, original raw-response preservation,
+user selection, import, and diagnosis activation; this repository performs no inference.
+
+```sh
+uv run pytest tests/test_query_discovery.py tests/test_yes24.py
+```
+
+### Cross-provider collection scope
+
+`collection_scope.collection_scope(query, category)` separates the literal subject from
+book kind and audience, while retaining the exact original YES24 category. Reviewed bilingual
+aliases live in `configs/discovery-subjects.json`; the existing topic registry is reused for its
+reviewed Korean/English names. Unknown Korean names still support domestic discovery; they do
+not acquire an invented English translation. Plain English names can use a literal search.
+
+The first foreign adapter is Open Library. `open_library_parameters` builds a bounded English
+subject/title query and requests work subjects plus specific edition identifiers. The response
+passes a metadata-only subject/category/type/audience gate before normalization. Type/audience
+or category constraints without evidence are kept in the audit as unconfirmed and excluded from
+this selected foreign catalog. A title-only subject match is explicitly marked unverified when
+other constraints have evidence. No human relevance judgment or difficulty is inferred.
+Unmapped deeper category paths skip foreign search rather than silently widening the selection.
+
+`normalize_scope_response` supports only dynamic discovery topics and cannot replace registered
+topic filters. It selects an English edition with a valid ISBN, converts ISBN-10 to its equivalent
+ISBN-13 when necessary, and preserves the original response and classifications in raw artifacts
+and filter audits. `merge_scope_catalogs` deduplicates exact ISBN overlap and retains primary
+bibliographic values and both sources. Conflicting titles/languages on the same ISBN are
+quarantined; different translation/edition ISBNs remain separate books. Canonical JSONL schemas
+are unchanged. Curated collectors and existing experiment identities are unchanged.
+
+The Backend persists `collection-scope.json`, raw pointers, `open-library-filter-audit.json`,
+and `provider-report.json` alongside each run. An Open Library HTTP/parsing failure leaves the
+domestic catalog usable and records a partial result. Completed snapshots are immutable; a
+partial completed checkpoint does not repeatedly retry the provider in the background. A future
+explicit refresh can create a new snapshot and retry collection. Google Books discovery and
+publisher-content enrichment are later adapters, not implemented in this new-field path yet.
+
+The local economic catalog was expanded from 15 YES24 books to 35 books (20 additional Open
+Library English editions). The actual API query returned 35; the new books are metadata-only
+and have no inferred concepts or diagnosis readiness. API references:
+[Open Library Search](https://openlibrary.org/dev/docs/api/search).
+
+```sh
+uv run pytest tests/test_collection_scope.py tests/test_query_discovery.py
+```
+
+### Google Books scope adapter and provider replay
+
+The new-field path now also supports Google Books through
+`google_books_parameters` and `normalize_google_scope_response`. Its native `subject:` query,
+English language restriction, and maximum 30 candidate volumes are independent of Open
+Library's Solr grammar. Original volume categories and the explicit language/ISBN fields pass
+the same common scope checks. Missing book-kind/audience evidence is not promoted to a match.
+At most 20 Google Books records are normalized, with descriptions kept as source-attributed
+documents. Exact ISBN overlap preserves both sources while retaining the earlier provider's
+bibliographic values; unknown evidence, identity conflicts, duplicate volumes, and limit
+exclusions remain in the audit. Curated Google Books searches are unchanged.
+
+For this new-field adapter, `GOOGLE_BOOKS_API_KEY` can be supplied via the Backend process
+environment or Data-Pipeline's private `.env`. It is attached only to the HTTP request and
+never saved in the raw artifact's request parameters, scope, catalog, or report. Do not reuse
+Gemini credentials implicitly. No dedicated Books key was configured for the local verification;
+the actual public API returned HTTP 429. This demonstrates provider-limit handling, **not**
+successful live Google Books discovery. A dedicated key and its Books API quota need checking
+before a successful live collection claim is possible.
+
+Provider HTTP/response-parsing failures are isolated. Same-request normalization after a code
+change can reuse a compatible raw response from a prior run when provider, topic, and exact
+query parameters match. This is explicit replay of earlier evidence, not a claim of freshly
+collected metadata. New requests have separate workspaces; completed partial results do not
+silently retry failed sources. An explicit refresh/retry workflow remains a separate step.
+
+Local verification of the new three-source adapter retained all 35 existing economic books:
+YES24 15 + replayed Open Library 20; Google Books added 0 due to HTTP 429. All four canonical
+JSONL files stayed byte-identical to the previous two-source run, and the web API still returned
+35. No database import or activation was performed because there was no new catalog data.
+The full pipeline test suite passed 454 tests; Backend Python adapter tests passed 9 tests.
+Mock-response tests cover Google success, category/type/audience constraints, ISBN overlap and
+provenance, credential exclusion, bounded quota retries, and independent provider failure.
+
+API reference: [Google Books usage](https://developers.google.com/books/docs/v1/using).

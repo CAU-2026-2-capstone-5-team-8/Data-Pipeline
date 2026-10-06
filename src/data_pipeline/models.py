@@ -1,9 +1,16 @@
 """Provider-independent canonical dataset models."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from data_pipeline.identifiers import is_valid_isbn_10, is_valid_isbn_13
 
@@ -38,13 +45,30 @@ EvidenceTier = Literal[
 class CanonicalModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    @model_serializer(mode="wrap")
+    def omit_absent_english_fields(self, handler: Any) -> dict[str, Any]:
+        result = handler(self)
+        for field in ("en_title", "en_subtitle", "en_text"):
+            if result.get(field) is None:
+                result.pop(field, None)
+        return result
+
+    @field_validator("en_title", "en_subtitle", "en_text", check_fields=False)
+    @classmethod
+    def english_field_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("English analysis text must not be blank")
+        return value
+
 
 class Book(CanonicalModel):
     book_id: str = Field(pattern=r"^(isbn13:[0-9]{13}|isbn10:[0-9]{9}[0-9X]|book_[0-9a-f]{20})$")
     isbn_10: str | None = None
     isbn_13: str | None = None
     title: str = Field(min_length=1)
+    en_title: str | None = Field(default=None, min_length=1)
     subtitle: str | None = None
+    en_subtitle: str | None = Field(default=None, min_length=1)
     authors: list[str]
     publisher: str | None = None
     published_year: int | None = Field(default=None, ge=1000, le=9999)
@@ -98,6 +122,7 @@ class Document(CanonicalModel):
     book_id: str = Field(min_length=1)
     document_type: DocumentType
     text: str = Field(min_length=1)
+    en_text: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
     content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
@@ -118,6 +143,7 @@ class TocEntry(CanonicalModel):
     order_index: int = Field(ge=0)
     label: str | None = None
     title: str = Field(min_length=1)
+    en_title: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
 
 

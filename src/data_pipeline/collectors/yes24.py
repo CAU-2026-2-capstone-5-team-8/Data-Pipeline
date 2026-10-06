@@ -84,7 +84,11 @@ class Yes24Collector:
         matches is a normal outcome (HTTP 404, errorCode SEARCH_001), not a failure;
         it yields a page with an empty item list rather than raising.
         """
-        plan = self.search_parameters(topic, candidate_limit)
+        return self.search_query(topic_korean_query(topic), candidate_limit)
+
+    def search_query(self, query: str, candidate_limit: int = 100) -> dict[str, Any]:
+        """Bounded literal-query discovery; never assigns a topic or diagnostic readiness."""
+        plan = self.query_parameters(query, candidate_limit)
         pages: list[dict[str, Any]] = []
         collected_count = 0
         for parameters in plan["pages"]:
@@ -130,6 +134,12 @@ class Yes24Collector:
 
         Every page uses the same pageSize because YES24 positions `page` by it.
         """
+        return Yes24Collector.query_parameters(topic_korean_query(topic), candidate_limit)
+
+    @staticmethod
+    def query_parameters(query: str, candidate_limit: int) -> dict[str, Any]:
+        if not isinstance(query, str) or not 2 <= len(query.strip()) <= 120:
+            raise ValueError("query must be 2-120 characters")
         if candidate_limit < 1:
             raise ValueError("candidate_limit must be at least 1")
         page_size = min(candidate_limit, MAX_PAGE_SIZE)
@@ -137,7 +147,7 @@ class Yes24Collector:
         return {
             "pages": [
                 {
-                    "query": topic_korean_query(topic),
+                    "query": query.strip(),
                     "category": "BOOK",
                     "detail": "Y",
                     "pageSize": page_size,

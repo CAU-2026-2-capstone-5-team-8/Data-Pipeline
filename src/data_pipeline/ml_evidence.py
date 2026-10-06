@@ -50,6 +50,7 @@ class MlEvidenceItem(CanonicalModel):
     evidence_id: str = Field(pattern=r"^evidence_[0-9a-f]{20}$")
     evidence_type: MlEvidenceType
     text: str = Field(min_length=1)
+    en_text: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
     provider: str = Field(min_length=1)
     source_type: SourceType
@@ -74,8 +75,7 @@ class MlEvidenceItem(CanonicalModel):
     @field_validator("text")
     @classmethod
     def text_must_not_be_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
+        if not value.strip():
             raise ValueError("evidence text must not be blank")
         return value
 
@@ -278,6 +278,11 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                 identity=f"{book.book_id}:metadata:title",
                 evidence_type="metadata_minimal",
                 text=" — ".join(value for value in (book.title, book.subtitle) if value),
+                en_text=(
+                    " — ".join(value for value in (book.en_title, book.en_subtitle) if value)
+                    if book.en_title and (not book.subtitle or book.en_subtitle)
+                    else None
+                ),
                 edition_relation="canonical_record",
                 metadata_field="title",
                 **_source_fields(metadata_source),
@@ -309,6 +314,7 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                     identity=f"{book.book_id}:document:{document.document_id}",
                     evidence_type=evidence_type,
                     text=document.text,
+                    en_text=document.en_text,
                     edition_relation=_edition_relation(source),
                     document_id=document.document_id,
                     document_type=document.document_type,
@@ -332,6 +338,7 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                     identity=f"{book.book_id}:toc:{entry.toc_entry_id}:{toc_type}",
                     evidence_type=toc_type,
                     text=entry.title,
+                    en_text=entry.en_title,
                     edition_relation=edition_relation,
                     toc_entry_id=entry.toc_entry_id,
                     parent_entry_id=entry.parent_entry_id,

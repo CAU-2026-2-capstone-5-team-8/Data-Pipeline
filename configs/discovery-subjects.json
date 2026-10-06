@@ -1,0 +1,53 @@
+{
+  "economics": {
+    "aliases": [
+      "경제",
+      "경제학",
+      "economics"
+    ],
+    "english_query": "economics",
+    "evidence_pattern": "(?<![a-z])econom(?:y|ic|ics)(?![a-z])",
+    "name": "경제학",
+    "english_name": "Economics",
+    "domain": "social-sciences",
+    "domain_name": "사회과학",
+    "domain_english_name": "Social Sciences",
+    "korean_query": "경제학",
+    "korean_evidence_pattern": "경제",
+    "korean_category_pattern": "^국내도서-(경제 경영|대학교재|사회 정치)(-|$)"
+  },
+  "microeconomics": {
+    "aliases": [
+      "미시경제",
+      "미시경제학",
+      "microeconomics"
+    ],
+    "english_query": "microeconomics",
+    "evidence_pattern": "(?<![a-z])microeconomics(?![a-z])",
+    "name": "미시경제학",
+    "english_name": "Microeconomics",
+    "domain": "social-sciences",
+    "domain_name": "사회과학",
+    "domain_english_name": "Social Sciences",
+    "korean_query": "미시경제학",
+    "korean_evidence_pattern": "미시\\s*경제",
+    "korean_category_pattern": "^국내도서-(경제 경영|대학교재|사회 정치)(-|$)"
+  },
+  "macroeconomics": {
+    "aliases": [
+      "거시경제",
+      "거시경제학",
+      "macroeconomics"
+    ],
+    "english_query": "macroeconomics",
+    "evidence_pattern": "(?<![a-z])macroeconomics(?![a-z])",
+    "name": "거시경제학",
+    "english_name": "Macroeconomics",
+    "domain": "social-sciences",
+    "domain_name": "사회과학",
+    "domain_english_name": "Social Sciences",
+    "korean_query": "거시경제학",
+    "korean_evidence_pattern": "거시\\s*경제",
+    "korean_category_pattern": "^국내도서-(경제 경영|대학교재|사회 정치)(-|$)"
+  }
+}

@@ -48,6 +48,27 @@ canonical entry ID, parent, level, order, label, and full TOC path.
 Document evidence carries the canonical document ID, type, and content hash. Minimal metadata
 evidence identifies whether its value came from the canonical title or topics.
 
+### Optional English analysis text
+
+Enriched canonical books may add `en_title` and `en_subtitle`; TOC records may add `en_title`, and
+documents may add `en_text`. Corresponding evidence items add optional `en_text` while retaining
+their original `text` and TOC path. Title evidence derives English text only when all applicable
+title/subtitle translations exist. Subject evidence already contains canonical English topic IDs.
+Absent English fields are omitted, preserving serialization and hashes of unenriched artifacts.
+New collection/build outputs copy English fields during the common normalization/merge step.
+This adds analysis fields to newly built artifacts and therefore changes their canonical/export
+hashes; archived input snapshots are not rewritten. Korean translation remains a separate step,
+and merging matching original records preserves existing translations while rejecting conflicts.
+
+The additive contract remains `book-evidence-v1`, but strict consumers must be updated before
+reading enriched artifacts. The updated ML consumer selects `en_text` for analysis; untranslated
+Korean evidence is not passed to the English matcher as a fallback. Original book titles remain
+the display values. Source/document content hashes continue to identify the collected original;
+book, evidence/provenance, and artifact hashes bind present English fields too. The exporter
+compares every English field against its canonical record, so a modified translation requires
+rebuilding the export and downstream profiles. It does not represent a translation as newly
+collected provider evidence or as permission to reuse a passage for question generation.
+
 The evidence categories are deterministic provenance labels, not scores:
 
 | Category | Meaning |

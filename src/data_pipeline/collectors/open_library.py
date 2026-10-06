@@ -98,6 +98,18 @@ class OpenLibraryCollector:
         wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
         reraise=True,
     )
+    def search_scope(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Execute server-built scope parameters, without changing curated searches."""
+        response = self.client.get(API_URL, params=parameters)
+        response.raise_for_status()
+        return parse_json_object(response, "open-library")
+
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
     def fetch_edition(self, edition_key: str) -> dict[str, Any]:
         """Fetch one public edition record for higher-quality bibliographic evidence."""
         response = self.client.get(f"{BASE_URL}{edition_key}.json")
