@@ -29,6 +29,7 @@ from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
+from data_pipeline.collectors.springer_books import SpringerBookCollector
 from data_pipeline.collectors.springer_metadata import (
     SpringerMetadataCollector,
     hyphenated_isbn,
@@ -58,6 +59,7 @@ from data_pipeline.normalizers import (
     normalize_public_book_page_response,
     normalize_publisher_document_response,
     normalize_publisher_page_response,
+    normalize_springer_book_response,
     normalize_yes24_response,
 )
 from data_pipeline.open_library_bulk import (
@@ -97,6 +99,10 @@ from data_pipeline.selection_audit import (
     write_selection_review,
 )
 from data_pipeline.source_registry import config_path
+from data_pipeline.springer_book_sources import (
+    SPRINGER_BOOK_SOURCES,
+    springer_book_source,
+)
 from data_pipeline.storage import (
     RawArtifact,
     dataset_exists,
@@ -128,6 +134,9 @@ PublisherDocumentSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition public publisher document slug.")
 ]
 OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public open textbook slug.")]
+SpringerBookSourceOption = Annotated[
+    str, typer.Option(help="Reviewed Springer book landing page slug.")
+]
 ManifestOption = Annotated[
     Path, typer.Option(exists=True, dir_okay=False, help="Versioned dataset JSON manifest.")
 ]
@@ -212,6 +221,23 @@ def _collect_publisher_payload(source_slug: str) -> tuple[dict, dict]:
         raise typer.BadParameter(
             f"publisher page network failure; no data was written: {exc}"
         ) from exc
+
+
+def _collect_springer_book_payload(source_slug: str) -> tuple[dict, dict]:
+    try:
+        with SpringerBookCollector() as collector:
+            parameters = collector.request_parameters(source_slug)
+            return collector.fetch(source_slug), parameters
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        raise typer.BadParameter(
+            f"Springer page returned HTTP {exc.response.status_code}; no data was written"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise typer.BadParameter("Springer page network failure; no data was written") from exc
 
 
 def _collect_public_book_payload(source_slug: str) -> tuple[dict, dict]:
@@ -515,6 +541,8 @@ def _normalize(
             return normalize_publisher_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
             )
+        if provider == "springer-book":
+            return normalize_springer_book_response(payload, topic=topic, retrieved_at=retrieved_at)
         if provider == "public-book-page":
             return normalize_public_book_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
@@ -810,6 +838,69 @@ def collect_public_page(
     typer.echo(f"Canonical output: {processed_directory}")
     typer.echo(f"Public-page documents collected: {len(evidence.documents)}")
     typer.echo(f"Public-page TOC entries collected: {len(evidence.toc)}")
+    typer.echo(format_coverage(dataset))
+
+
+@app.command("collect-springer-book")
+def collect_springer_book(
+    source: SpringerBookSourceOption = "springer-axler-linear-algebra-done-right3",
+    data_dir: Annotated[Path, typer.Option(help="Raw and processed data root.")] = Path("data"),
+) -> None:
+    """Collect one reviewed Springer landing page and merge its chapter TOC."""
+    try:
+        source_spec = springer_book_source(source)
+    except ValueError as exc:
+        choices = ", ".join(sorted(SPRINGER_BOOK_SOURCES))
+        raise typer.BadParameter(f"source must be one of: {choices}") from exc
+
+    retrieved_at = datetime.now(UTC)
+    payload, request_parameters = _collect_springer_book_payload(source)
+    artifact = RawArtifact(
+        provider="springer-book",
+        topic=source_spec.topic,
+        requested_limit=1,
+        retrieved_at=retrieved_at,
+        request_parameters=request_parameters,
+        response=payload,
+    )
+    raw_path = raw_artifact_path(data_dir, artifact)
+    write_raw_response(artifact, raw_path)
+    evidence = _normalize(
+        payload, artifact.provider, artifact.topic, artifact.requested_limit, retrieved_at
+    )
+    processed_directory = data_dir / "processed"
+    try:
+        if not dataset_exists(processed_directory):
+            raise DatasetMergeError(
+                "Springer evidence requires an existing canonical metadata dataset"
+            )
+        existing = read_dataset(processed_directory)
+        existing_errors = validate_dataset(existing)
+        if existing_errors:
+            raise DatasetMergeError("existing dataset is invalid: " + "; ".join(existing_errors))
+        if source_spec.book_id not in {book.book_id for book in existing.books}:
+            raise DatasetMergeError(
+                f"Springer source target is absent from canonical books: {source_spec.book_id}"
+            )
+        dataset = merge_datasets([existing, evidence])
+    except (DatasetMergeError, ValueError) as exc:
+        typer.echo(f"ERROR canonical merge failed: {exc}", err=True)
+        typer.echo(f"Raw response was preserved at: {raw_path}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    errors = validate_dataset(dataset)
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR {error}", err=True)
+        raise typer.Exit(code=1)
+    write_dataset(dataset, processed_directory)
+    typer.echo(f"Raw response: {raw_path}")
+    typer.echo(f"Canonical output: {processed_directory}")
+    typer.echo(f"Springer TOC entries collected: {len(evidence.toc)}")
+    if source_spec.edition_relation != "exact":
+        typer.echo(
+            "NOTE recorded as same-Work alternate-edition evidence, not this edition's contents."
+        )
     typer.echo(format_coverage(dataset))
 
 
