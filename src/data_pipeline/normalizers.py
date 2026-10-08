@@ -16,6 +16,7 @@ from pypdf.errors import PdfReadError
 from selectolax.parser import HTMLParser
 
 from data_pipeline.collectors.base import InvalidProviderResponse
+from data_pipeline.common_fields import is_browsing_spec
 from data_pipeline.diagnostics import NormalizationDiagnostics
 from data_pipeline.identifiers import (
     is_valid_isbn_10,
@@ -43,6 +44,7 @@ from data_pipeline.relevance import open_library_relevance
 from data_pipeline.springer_book_sources import springer_book_source, springer_book_source_id
 from data_pipeline.topics import (
     TOPICS,
+    TopicSpec,
     topic_korean_allowed_category_pattern,
     topic_korean_conflicting_subjects_pattern,
     topic_korean_relevance_pattern,
@@ -179,7 +181,10 @@ def _published_year(value: str | None) -> int | None:
 
 
 def _normalize_google_item(
-    item: dict[str, Any], topic: str, retrieved_at: datetime
+    item: dict[str, Any],
+    topic: str,
+    retrieved_at: datetime,
+    discovery_spec: TopicSpec | None = None,
 ) -> tuple[Book, Source, Document | None] | None:
     info = item.get("volumeInfo", {})
     if not isinstance(info, dict):
@@ -192,6 +197,8 @@ def _normalize_google_item(
 
     authors = _deduplicate_authors(info.get("authors"))
     isbn_10, isbn_13 = _isbns(info)
+    if discovery_spec is not None and isbn_13 is None and isbn_10 is not None:
+        isbn_13 = isbn_10_to_13(isbn_10)
     book_id = _book_id(isbn_10, isbn_13, title, authors, "google_books", external_id)
     source_id = stable_id("source", "google_books", external_id, book_id, retrieved_at.isoformat())
     source_url = str(
@@ -207,7 +214,7 @@ def _normalize_google_item(
         publisher=info.get("publisher"),
         published_year=_published_year(info.get("publishedDate")),
         language=language,
-        topics=TOPICS[topic],
+        topics=[discovery_spec.domain, topic] if discovery_spec else TOPICS[topic],
     )
     source = Source(
         source_id=source_id,
@@ -243,9 +250,14 @@ def normalize_google_books_response(
     limit: int,
     retrieved_at: datetime,
     diagnostics: NormalizationDiagnostics | None = None,
+    discovery_spec: TopicSpec | None = None,
 ) -> CanonicalDataset:
     """Normalize legacy or paginated Google responses into canonical evidence."""
-    if topic not in TOPICS:
+    if discovery_spec is not None and (
+        topic in TOPICS or discovery_spec.slug != topic or not is_browsing_spec(discovery_spec)
+    ):
+        raise ValueError("discovery cannot override registered topics")
+    if topic not in TOPICS and discovery_spec is None:
         raise ValueError(f"unsupported topic: {topic}")
 
     books: list[Book] = []
@@ -265,7 +277,7 @@ def normalize_google_books_response(
                 diagnostics.fail("invalid_provider_response")
             continue
         try:
-            result = _normalize_google_item(item, topic, retrieved_at)
+            result = _normalize_google_item(item, topic, retrieved_at, discovery_spec)
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             logger.warning(
                 "event=normalization_skipped provider=google_books external_id=%s error=%s",
@@ -671,7 +683,10 @@ def _yes24_page_records(response: dict[str, Any]) -> list[Any]:
 
 
 def _normalize_yes24_item(
-    item: dict[str, Any], topic: str, retrieved_at: datetime
+    item: dict[str, Any],
+    topic: str,
+    retrieved_at: datetime,
+    discovery_spec: TopicSpec | None = None,
 ) -> tuple[Book, Source, list[Document], list[TocEntry]] | None:
     """Normalize one YES24 itemList row (identity, description, and TOC if present)."""
     item_id_value = item.get("itemId")
@@ -682,12 +697,23 @@ def _normalize_yes24_item(
     if not isinstance(title_value, str) or not title_value.strip():
         return None
     title = title_value.strip()
-    if not topic_korean_relevance_pattern(topic).search(title):
+    relevance_pattern = (
+        re.compile(discovery_spec.korean_relevance_term_pattern)
+        if discovery_spec
+        else topic_korean_relevance_pattern(topic)
+    )
+    if not relevance_pattern.search(title):
         return None
-    conflicting_pattern = topic_korean_conflicting_subjects_pattern(topic)
+    conflicting_pattern = (
+        None if discovery_spec else topic_korean_conflicting_subjects_pattern(topic)
+    )
     if conflicting_pattern is not None and conflicting_pattern.search(title):
         return None
-    category_pattern = topic_korean_allowed_category_pattern(topic)
+    category_pattern = (
+        re.compile(discovery_spec.korean_allowed_category_pattern)
+        if discovery_spec
+        else topic_korean_allowed_category_pattern(topic)
+    )
     if category_pattern is not None:
         # A missing category cannot show the book belongs to the topic's field.
         category = item.get("goodsSortNm")
@@ -730,7 +756,7 @@ def _normalize_yes24_item(
         publisher=publisher,
         published_year=_yes24_published_year(item.get("publishDate")),
         language="ko",
-        topics=TOPICS[topic],
+        topics=[discovery_spec.domain, topic] if discovery_spec else TOPICS[topic],
     )
 
     is_translation = str(item.get("originalTranslation", "")).strip().upper() == "Y"
@@ -800,9 +826,13 @@ def normalize_yes24_response(
     limit: int,
     retrieved_at: datetime,
     diagnostics: NormalizationDiagnostics | None = None,
+    discovery_spec: TopicSpec | None = None,
 ) -> CanonicalDataset:
     """Normalize one YES24 itemList (detail=Y) search response."""
-    if topic not in TOPICS:
+    if discovery_spec is not None:
+        if topic in TOPICS or discovery_spec.slug != topic or not is_browsing_spec(discovery_spec):
+            raise ValueError("discovery must not override a registered topic")
+    elif topic not in TOPICS:
         raise ValueError(f"unsupported topic: {topic}")
 
     books: list[Book] = []
@@ -821,7 +851,7 @@ def normalize_yes24_response(
                 diagnostics.fail("invalid_provider_response")
             continue
         try:
-            result = _normalize_yes24_item(record, topic, retrieved_at)
+            result = _normalize_yes24_item(record, topic, retrieved_at, discovery_spec)
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             logger.warning(
                 "event=normalization_skipped provider=yes24 item_id=%s error=%s",
@@ -1041,6 +1071,7 @@ def _normalize_open_library_record(
     edition_details: dict[str, dict[str, Any]],
     work_details: dict[str, dict[str, Any]],
     diagnostics: NormalizationDiagnostics | None = None,
+    discovery_spec: TopicSpec | None = None,
 ) -> tuple[Book, list[Source], list[Document], list[TocEntry]] | None:
     """Normalize one work and its selected English edition, retaining evidence sources."""
     work_id = str(record.get("key", "")).strip()
@@ -1102,6 +1133,8 @@ def _normalize_open_library_record(
             diagnostics.fail("unreliable_author_aggregation")
         return None
     isbn_10, isbn_13 = _open_library_isbns(edition)
+    if discovery_spec is not None and isbn_13 is None and isbn_10 is not None:
+        isbn_13 = isbn_10_to_13(isbn_10)
     book_id = _book_id(isbn_10, isbn_13, title, authors, "open_library", external_id)
     source_id = stable_id("source", "open_library", external_id, book_id, retrieved_at.isoformat())
     publisher_values = _string_list(edition.get("publisher"))
@@ -1118,7 +1151,7 @@ def _normalize_open_library_record(
         publisher=publisher,
         published_year=published_year or record.get("first_publish_year"),
         language="en",
-        topics=TOPICS[topic],
+        topics=[discovery_spec.domain, topic] if discovery_spec else TOPICS[topic],
     )
     metadata_source = Source(
         source_id=source_id,
@@ -1235,10 +1268,17 @@ def normalize_open_library_response(
     retrieved_at: datetime,
     diagnostics: NormalizationDiagnostics | None = None,
     relevance_gate: str | None = None,
+    discovery_spec: TopicSpec | None = None,
 ) -> CanonicalDataset:
     """Normalize an Open Library search plus optional edition and work details."""
-    if topic not in TOPICS:
+    if discovery_spec is not None and (
+        topic in TOPICS or discovery_spec.slug != topic or not is_browsing_spec(discovery_spec)
+    ):
+        raise ValueError("discovery cannot override registered topics")
+    if topic not in TOPICS and discovery_spec is None:
         raise ValueError(f"unsupported topic: {topic}")
+    if discovery_spec is not None and relevance_gate is not None:
+        raise ValueError("discovery uses a collection scope gate")
     if relevance_gate not in (None, "topic-evidence-v1"):
         raise ValueError(f"unsupported relevance gate: {relevance_gate}")
 
@@ -1275,6 +1315,7 @@ def normalize_open_library_response(
                 edition_details,
                 work_details,
                 diagnostics,
+                discovery_spec,
             )
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             logger.warning(

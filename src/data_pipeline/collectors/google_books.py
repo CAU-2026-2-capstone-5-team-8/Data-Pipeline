@@ -17,9 +17,10 @@ MAX_PAGE_SIZE = 40
 
 
 class GoogleBooksCollector:
-    def __init__(self, client: httpx.Client | None = None) -> None:
+    def __init__(self, client: httpx.Client | None = None, api_key: str | None = None) -> None:
         """Create a collector with an optional injected client for deterministic tests."""
         self._owns_client = client is None
+        self.api_key = api_key
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(20.0),
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1"},
@@ -81,6 +82,21 @@ class GoogleBooksCollector:
             if not has_valid_total and len(items) < parameters["maxResults"]:
                 break
         return {"pages": pages}
+
+    @retry(
+        retry=retry_if_exception(is_transient_http_error),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+        reraise=True,
+    )
+    def search_scope(self, parameters: dict[str, Any]) -> dict[str, Any]:
+        """Fetch one bounded scope query. Credentials never enter saved query parameters."""
+        request = dict(parameters)
+        if self.api_key:
+            request["key"] = self.api_key
+        response = self.client.get(API_URL, params=request)
+        response.raise_for_status()
+        return parse_json_object(response, "google-books")
 
     @staticmethod
     def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:

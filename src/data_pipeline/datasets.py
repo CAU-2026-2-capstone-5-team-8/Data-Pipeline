@@ -5,12 +5,29 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from data_pipeline.analysis_language import copy_english_fields
 from data_pipeline.models import Book, CanonicalDataset, Source
 from data_pipeline.public_book_sources import preferred_public_toc_source_ids
 
 
 class DatasetMergeError(ValueError):
     """Raised when records with the same deterministic ID disagree."""
+
+
+def _merge_english_fields[Record: BaseModel](
+    existing: Record, incoming: Record, *, exclude: set[str] | None = None
+) -> Record | None:
+    fields = {"en_title", "en_subtitle", "en_text"} & set(type(existing).model_fields)
+    omitted = fields | (exclude or set())
+    if existing.model_dump(exclude=omitted) != incoming.model_dump(exclude=omitted):
+        return None
+    updates = {}
+    for field in fields:
+        old, new = getattr(existing, field), getattr(incoming, field)
+        if old is not None and new is not None and old != new:
+            return None
+        updates[field] = old if old is not None else new
+    return existing.model_copy(update=updates)
 
 
 def _merge_records[Record: BaseModel](records: Iterable[Record], id_field: str) -> list[Record]:
@@ -21,7 +38,10 @@ def _merge_records[Record: BaseModel](records: Iterable[Record], id_field: str) 
         if existing is None:
             merged[record_id] = record
         elif existing != record:
-            raise DatasetMergeError(f"conflicting {id_field}: {record_id}")
+            combined = _merge_english_fields(existing, record)
+            if combined is None:
+                raise DatasetMergeError(f"conflicting {id_field}: {record_id}")
+            merged[record_id] = combined
     return list(merged.values())
 
 
@@ -32,12 +52,11 @@ def _merge_books(books: Iterable[Book]) -> list[Book]:
         if existing is None:
             merged[book.book_id] = book
             continue
-        existing_without_topics = existing.model_dump(exclude={"topics"})
-        incoming_without_topics = book.model_dump(exclude={"topics"})
-        if existing_without_topics != incoming_without_topics:
+        combined = _merge_english_fields(existing, book, exclude={"topics"})
+        if combined is None:
             raise DatasetMergeError(f"conflicting book_id: {book.book_id}")
         topics = list(dict.fromkeys([*existing.topics, *book.topics]))
-        merged[book.book_id] = existing.model_copy(update={"topics": topics})
+        merged[book.book_id] = combined.model_copy(update={"topics": topics})
     return list(merged.values())
 
 
@@ -85,6 +104,8 @@ def _records_from_selected_sources[Record: BaseModel](
 def merge_datasets(datasets: Iterable[CanonicalDataset]) -> CanonicalDataset:
     """Merge datasets and apply explicit reviewed TOC source preferences."""
     items = list(datasets)
+    languages = {book.book_id: book.language for dataset in items for book in dataset.books}
+    items = [copy_english_fields(dataset, languages) for dataset in items]
     sources = _merge_sources(source for dataset in items for source in dataset.sources)
     sources_by_id = {source.source_id: source for source in sources}
     toc = _merge_records(

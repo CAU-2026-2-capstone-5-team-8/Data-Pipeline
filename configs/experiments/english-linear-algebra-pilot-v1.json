@@ -1,0 +1,27 @@
+{
+  "input_snapshot": "discovery-600-20260929",
+  "model": "gemini-3.5-flash-lite",
+  "workers": 3,
+  "book_ids": [
+    "isbn13:9788952117441",
+    "isbn13:9788961055680",
+    "isbn13:9788970505329",
+    "isbn13:9791173400438",
+    "isbn13:9791156644910",
+    "isbn13:9791190017114",
+    "isbn13:9791190017183",
+    "isbn13:9791156645009",
+    "isbn13:9791156645399",
+    "isbn13:9791156644972"
+  ],
+  "analysis_scope": "toc",
+  "prompt_version": "english-book-analysis-v1",
+  "chunk_chars": 6000,
+  "selected_source_hash": "sha256:b82725ea1a727969f4f3e26fc8b30f04766e6cf07f028d9aad812ec1e89c0fdb",
+  "canonical_source_hashes": {
+    "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+    "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf",
+    "documents.jsonl": "sha256:57d218fa07ee131d540469a7a6093af925a9c900cf427b65350d70460db3d8ab",
+    "sources.jsonl": "sha256:aec1947acad699fd3799da0118c38689b27ea53827370152c2156bab0f627ce2"
+  }
+}

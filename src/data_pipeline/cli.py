@@ -16,6 +16,7 @@ import httpx
 import typer
 from dotenv import load_dotenv
 
+from data_pipeline.analysis_language import copy_english_fields
 from data_pipeline.api_toc import (
     normalize_springer_metadata_response,
     normalize_yes24_toc_response,
@@ -36,6 +37,7 @@ from data_pipeline.collectors.springer_metadata import (
 )
 from data_pipeline.collectors.yes24 import MissingApiKey, Yes24Collector
 from data_pipeline.datasets import DatasetMergeError, merge_datasets, without_books
+from data_pipeline.english import DEFAULT_MODEL, GeminiTranslator, enrich_english
 from data_pipeline.manifest import (
     load_manifest,
     select_manifest_raw_paths,
@@ -118,6 +120,54 @@ from data_pipeline.validation import validate_dataset
 load_dotenv()
 
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public book evidence.")
+
+
+@app.command("enrich-english")
+def enrich_english_command(
+    dataset_dir: Annotated[Path, typer.Option("--dataset-dir")],
+    output_dir: Annotated[Path, typer.Option("--output-dir")],
+    book_id: Annotated[list[str] | None, typer.Option("--book-id")] = None,
+    limit: Annotated[int | None, typer.Option(min=1)] = None,
+    workers: Annotated[int, typer.Option(min=1, max=8)] = 3,
+    chunk_chars: Annotated[int, typer.Option(min=500)] = 6000,
+    model: str = DEFAULT_MODEL,
+    scope: str = "all",
+    env_file: Annotated[Path | None, typer.Option("--env-file")] = None,
+    dry_run: bool = False,
+) -> None:
+    """Add English analysis fields without replacing source records."""
+    if env_file is not None:
+        load_dotenv(env_file, override=False)
+    translator = None
+    try:
+        if dry_run:
+            from types import SimpleNamespace
+
+            translator = SimpleNamespace(model=model)
+        else:
+            translator = GeminiTranslator(os.getenv("GEMINI_API_KEY", ""), model)
+        summary = enrich_english(
+            dataset_dir,
+            output_dir,
+            translator,
+            book_ids=book_id,
+            limit=limit,
+            workers=workers,
+            chunk_chars=chunk_chars,
+            dry_run=dry_run,
+            scope=scope,
+        )
+        typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+        if summary["failures"]:
+            raise typer.Exit(1)
+    except (ValueError, OSError) as exc:
+        typer.echo(f"English enrichment failed: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        if isinstance(translator, GeminiTranslator):
+            translator.close()
+
+
 TopicOption = Annotated[str, typer.Option(help="Configured leaf topic slug.")]
 LimitOption = Annotated[int, typer.Option(min=1, max=100, help="Books to normalize.")]
 ProviderOption = Annotated[
@@ -509,6 +559,19 @@ def _request_parameters_match(artifact: RawArtifact, expected: dict) -> bool:
 
 
 def _normalize(
+    payload: dict,
+    provider: str,
+    topic: str,
+    limit: int,
+    retrieved_at: datetime,
+    relevance_gate: str | None = None,
+) -> CanonicalDataset:
+    return copy_english_fields(
+        _normalize_provider(payload, provider, topic, limit, retrieved_at, relevance_gate)
+    )
+
+
+def _normalize_provider(
     payload: dict,
     provider: str,
     topic: str,

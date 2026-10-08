@@ -1,0 +1,76 @@
+{
+  "run_date": "2026-10-02",
+  "base_data_pipeline_commit": "d0097d2",
+  "merged_prs": [
+    45,
+    46
+  ],
+  "selection_manifest": "configs/experiments/english-linear-algebra-pilot-v1.json",
+  "book_count": 10,
+  "toc_title_characters": 8371,
+  "translated_toc_entries": 666,
+  "scope": "toc",
+  "provider": "gemini",
+  "model": "gemini-3.5-flash-lite",
+  "first_run": {
+    "api_requests": 17,
+    "cached_requests": 0,
+    "provider_attempts": 20,
+    "input_tokens": 36435,
+    "output_tokens": 31893,
+    "total_tokens": 68328,
+    "completed_books": 9,
+    "failed_book_ids": [
+      "isbn13:9791173400438"
+    ],
+    "elapsed_seconds": 32.188,
+    "estimated_usd": 0.090663
+  },
+  "resumed_run": {
+    "api_requests": 1,
+    "cached_requests": 16,
+    "provider_attempts": 1,
+    "input_tokens": 631,
+    "output_tokens": 498,
+    "total_tokens": 1129,
+    "completed_books": 10,
+    "elapsed_seconds": 5.482,
+    "estimated_usd": 0.001434
+  },
+  "aggregate": {
+    "measured_execution_seconds": 37.67,
+    "estimated_usd": 0.092097,
+    "input_tokens": 37066,
+    "output_tokens": 32391,
+    "total_tokens": 69457
+  },
+  "cache_replay": {
+    "api_requests": 0,
+    "cached_requests": 17,
+    "identical_four_jsonl_files": true
+  },
+  "original_fields_unchanged": true,
+  "source_hash": "sha256:b82725ea1a727969f4f3e26fc8b30f04766e6cf07f028d9aad812ec1e89c0fdb",
+  "before_matched_books": 4,
+  "after_matched_books": 10,
+  "before_book_concept_pairs": 13,
+  "after_book_concept_pairs": 131,
+  "personalizable_candidates": 10,
+  "ranked_top_k": 5,
+  "question_generation": {
+    "question_spec_id": "q_deecfde83fd3662cb06f",
+    "concept": "matrix",
+    "language": "en-US",
+    "generated_question_id": "gq_ff221010ab034b5c684e392ceb2716a9",
+    "human_review_status": "pending"
+  },
+  "price_source": "https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite",
+  "limits": [
+    "Measured execution time sums two runs and excludes the gap between them.",
+    "Estimated standard-rate token cost is not an invoice and excludes separate question generation.",
+    "Only TOC translations were sent; book descriptions and other document bodies were not sent.",
+    "Coverage increase is not audited recommendation or translation accuracy.",
+    "Stored reader response was replayed offline; active Backend projection and FE catalog were not replaced.",
+    "Approved English question bank, additional prose evidence, and catalog-wide activation remain follow-up work."
+  ]
+}

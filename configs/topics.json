@@ -1,4 +1,16 @@
 {
+  "computer-networks": {
+    "domain": "computer-science",
+    "title": "Computer Networks",
+    "open_library_title": "computer networks",
+    "google_books_subject": "Computer networks",
+    "relevance_term_pattern": "\\b(?:computer\\s+network(?:s|ing)?|data\\s+communications?|tcp/?ip)\\b",
+    "conflicting_subjects_pattern": "\\b(?:social\\s+networks?|neural\\s+networks?|business\\s+networking)\\b",
+    "korean_query": "컴퓨터 네트워크",
+    "korean_relevance_term_pattern": "컴퓨터\\s*네트워크|데이터\\s*통신|TCP\\s*/?\\s*IP|네트워크\\s*(?:개론|원리|기초|입문|프로그래밍|보안)",
+    "korean_conflicting_subjects_pattern": "신경망|소셜|인맥|마케팅|경제|인간관계",
+    "korean_allowed_category_pattern": "^국내도서-(?:IT 모바일|대학교재|수험서 자격증)(?:-|$)"
+  },
   "operating-systems": {
     "domain": "computer-science",
     "title": "Operating Systems",
