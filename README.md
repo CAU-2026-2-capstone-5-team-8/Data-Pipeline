@@ -1488,3 +1488,9 @@ The [follow-up Korean prose pilot](docs/experiments/korean-prose-pilot-2026-10-0
 one 230-character excerpt from the publisher's `中에서` variant. The 98-book copy now has two
 explicit preface excerpts, with no new complete chapter. The other two product descriptions
 remain unpromoted, and a linked exercise-answer PDF is excluded from prose evidence.
+# 서버의 목차 번역 이어받기
+
+`enrich_english(..., scope="toc", max_new_requests=2)`는 원본 파일을 보존하면서
+호출당 새 번역 요청을 제한한다. `pending_books`가 남으면 같은 입력·출력 경로로
+다시 호출한다. 완료된 요청은 캐시에서 읽으며, 미완료와 실패는 별도로 반환한다.
+모든 번역이 완료된 뒤에만 후속 개념 분석에 사용한다.

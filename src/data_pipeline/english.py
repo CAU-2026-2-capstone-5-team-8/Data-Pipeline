@@ -57,7 +57,7 @@ class MissingTranslationKey(ValueError):
 
 
 class GeminiTranslator:
-    def __init__(self, api_key: str, model: str = DEFAULT_MODEL) -> None:
+    def __init__(self, api_key: str, model: str = DEFAULT_MODEL, *, timeout: float = 120) -> None:
         self._api_key = api_key
         if not re.fullmatch(r"[a-zA-Z0-9._-]+", model):
             raise ValueError("invalid translation model")
@@ -68,7 +68,7 @@ class GeminiTranslator:
         self.client = httpx.Client(
             base_url="https://generativelanguage.googleapis.com",
             headers={"x-goog-api-key": api_key},
-            timeout=120,
+            timeout=timeout,
         )
 
     def close(self) -> None:
@@ -224,6 +224,7 @@ def enrich_english(
     chunk_chars: int = 6000,
     dry_run: bool = False,
     scope: str = "all",
+    max_new_requests: int | None = None,
 ) -> dict[str, Any]:
     if scope not in {"all", "toc"}:
         raise ValueError("scope must be all or toc")
@@ -231,6 +232,8 @@ def enrich_english(
         raise ValueError("English enrichment output must differ from the original dataset")
     if not 1 <= workers <= 8 or chunk_chars < 500:
         raise ValueError("workers must be 1..8 and chunk_chars must be at least 500")
+    if max_new_requests is not None and max_new_requests < 1:
+        raise ValueError("max_new_requests must be positive")
     dataset = read_dataset(input_dir)
     validation = validate_dataset(dataset)
     if validation:
@@ -258,14 +261,18 @@ def enrich_english(
         "output_tokens": 0,
         "total_tokens": 0,
         "failures": [],
+        "pending_books": [],
     }
     if dry_run:
         return summary
     cache_dir = output_dir / "translation-cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     start = perf_counter()
+    budget_lock = Lock()
+    remaining = max_new_requests
 
     def process(book: Any) -> tuple[str, dict[str, str], dict[str, int], str | None]:
+        nonlocal remaining
         items = plans[book.book_id]
         resolved = {item["id"]: item["ready"] for item in items if item["ready"] is not None}
         stats = {
@@ -287,6 +294,11 @@ def enrich_english(
                     result = validate_response(cached["response"], payload["items"])
                     stats["cached_requests"] += 1
                 else:
+                    with budget_lock:
+                        if remaining is not None:
+                            if remaining == 0:
+                                return book.book_id, {}, stats, "deferred"
+                            remaining -= 1
                     stats["api_requests"] += 1
                     result, usage = translator.translate(payload)
                     result = validate_response(
@@ -344,6 +356,9 @@ def enrich_english(
     for book_id, fields, stats, error in results:
         for key, value in stats.items():
             summary[key] += value
+        if error == "deferred":
+            summary["pending_books"].append(book_id)
+            continue
         if error:
             summary["failures"].append({"book_id": book_id, "reason": error})
             continue
@@ -361,7 +376,9 @@ def enrich_english(
     if isinstance(translator, GeminiTranslator):
         summary.update(translator.usage_totals)
         summary["provider_attempts"] = translator.provider_attempts
-    summary["completed_books"] = len(plans) - len(summary["failures"])
+    summary["completed_books"] = (
+        len(plans) - len(summary["failures"]) - len(summary["pending_books"])
+    )
     summary["elapsed_seconds"] = round(perf_counter() - start, 3)
     summary["estimated_usd"] = (
         round((summary["input_tokens"] * 0.30 + summary["output_tokens"] * 2.50) / 1_000_000, 6)
