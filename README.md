@@ -1495,7 +1495,7 @@ remain unpromoted, and a linked exercise-answer PDF is excluded from prose evide
 다시 호출한다. 완료된 요청은 캐시에서 읽으며, 미완료와 실패는 별도로 반환한다.
 모든 번역이 완료된 뒤에만 후속 개념 분석에 사용한다.
 
-### Google Books empty-result recovery (2026-10-08)
+## Google Books empty-result recovery (2026-10-08)
 
 New-field scope searches now try the original `subject:` query, then `intitle:`, then
 plain field text, stopping at the first nonempty response. There are at most three
