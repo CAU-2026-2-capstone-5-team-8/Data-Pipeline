@@ -75,6 +75,26 @@ class FakeTranslator:
         }
 
 
+def test_bounded_toc_batches_resume_without_retranslating_or_changing_originals(tmp_path):
+    source, output = tmp_path / "source", tmp_path / "english"
+    write_dataset(fixture_dataset(3), source)
+    original = {p.name: p.read_bytes() for p in source.iterdir()}
+    translator = FakeTranslator()
+    results = [
+        enrich_english(source, output, translator, scope="toc", max_new_requests=1)
+        for _ in range(3)
+    ]
+    assert [len(r["pending_books"]) for r in results] == [2, 1, 0]
+    assert all(r["api_requests"] == 1 and not r["failures"] for r in results)
+    assert len(translator.calls) == 3
+    assert all(t.en_title == "Matrices and vectors" for t in read_dataset(output).toc)
+    assert original == {p.name: p.read_bytes() for p in source.iterdir()}
+    assert (
+        enrich_english(source, output, translator, scope="toc", max_new_requests=1)["api_requests"]
+        == 0
+    )
+
+
 def test_parallel_enrichment_preserves_sources_and_replays_without_api(tmp_path):
     original = fixture_dataset(2)
     source_dir, target = tmp_path / "original", tmp_path / "english"
