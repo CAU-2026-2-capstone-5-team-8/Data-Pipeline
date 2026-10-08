@@ -168,7 +168,7 @@ def test_google_dynamic_scope_cannot_replace_curated_policy():
 
 
 def test_quota_retry_is_bounded_and_403_is_not_retried(monkeypatch):
-    monkeypatch.setattr(GoogleBooksCollector.search_scope.retry, "wait", wait_none())
+    monkeypatch.setattr(GoogleBooksCollector._fetch_page.retry, "wait", wait_none())
     for code, expected in [(429, 3), (403, 1)]:
         seen = []
 
@@ -182,3 +182,67 @@ def test_quota_retry_is_bounded_and_403_is_not_retried(monkeypatch):
         ):
             GoogleBooksCollector(client=client).search_scope({"q": 'subject:"economics"'})
         assert len(seen) == expected
+
+
+def test_empty_subject_falls_back_with_original_responses_and_same_scope_checks():
+    requests = []
+
+    def handler(request):
+        query = request.url.params["q"]
+        requests.append(query)
+        assert request.url.params["key"] == "synthetic-private-key"
+        return httpx.Response(
+            200,
+            json={
+                "items": []
+                if len(requests) < 3
+                else [item(), item("fiction", "Novel", ["Fiction"])]
+            },
+        )
+
+    params = google_books_parameters(collection_scope("경제", CATEGORY))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        raw = GoogleBooksCollector(client, "synthetic-private-key").search_scope(params)
+    assert requests == ['subject:"economics"', 'intitle:"economics"', "economics"]
+    assert len(raw["search_attempts"]) == 3
+    assert raw["search_attempts"][0]["response"] == {"items": []}
+    assert "synthetic-private-key" not in str(raw)
+    dataset, audit = normalize_google_scope_response(
+        raw, collection_scope("경제", CATEGORY), discovery_policy("경제", CATEGORY), NOW
+    )
+    assert len(dataset.books) == 1
+    assert audit[1]["reason"] == "no_subject_evidence"
+
+
+def test_success_stops_fallback_and_failed_request_does_not_restart_search():
+    requests = []
+
+    def handler(request):
+        requests.append(request.url.params["q"])
+        if len(requests) == 1:
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(403)
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        pytest.raises(httpx.HTTPStatusError) as caught,
+    ):
+        GoogleBooksCollector(client, "synthetic-private-key").search_scope(
+            {"q": 'subject:"economics"'}
+        )
+    assert requests == ['subject:"economics"', 'intitle:"economics"']
+    assert "synthetic-private-key" not in str(caught.value)
+    assert "key=" not in str(caught.value.request.url)
+
+
+def test_curated_cli_uses_environment_key_without_persisting_it(monkeypatch):
+    monkeypatch.setenv("GOOGLE_BOOKS_API_KEY", "synthetic-private-key")
+
+    def handler(request):
+        assert request.url.params["key"] == "synthetic-private-key"
+        return httpx.Response(200, json={"items": [item()], "totalItems": 1})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        raw = GoogleBooksCollector(client).search_books("operating-systems", candidate_limit=1)
+    assert "synthetic-private-key" not in str(raw)
+    assert "key" not in raw["pages"][0]["request_parameters"]

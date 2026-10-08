@@ -1494,3 +1494,21 @@ remain unpromoted, and a linked exercise-answer PDF is excluded from prose evide
 호출당 새 번역 요청을 제한한다. `pending_books`가 남으면 같은 입력·출력 경로로
 다시 호출한다. 완료된 요청은 캐시에서 읽으며, 미완료와 실패는 별도로 반환한다.
 모든 번역이 완료된 뒤에만 후속 개념 분석에 사용한다.
+
+## Google Books empty-result recovery (2026-10-08)
+
+New-field scope searches now try the original `subject:` query, then `intitle:`, then
+plain field text, stopping at the first nonempty response. There are at most three
+queries (30 candidate volumes in the normal adapter); an HTTP failure stops the
+search after the existing bounded retry policy. The same ISBN, language, category,
+and topic evidence checks still apply, so a broader query does not imply relevance.
+When fallback is used, the original responses and exact credential-free query
+parameters remain in `search_attempts` in the raw artifact.
+
+`GOOGLE_BOOKS_API_KEY` is now used by the curated CLI collector too. It stays out of
+saved request plans and error URLs. In the local live check, the dedicated key
+returned results; ten-candidate fallback searches accepted six microeconomics books
+and one macroeconomics book under the existing evidence rules. These counts are
+sample observations, not coverage or relevance-quality guarantees. Completed old
+snapshots remain immutable; use the application's failed-provider refresh to fetch
+again. Covers are not separately fetched or downloaded by this change.

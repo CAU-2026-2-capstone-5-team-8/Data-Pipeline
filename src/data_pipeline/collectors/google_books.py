@@ -1,5 +1,7 @@
 """Small, polite Google Books API metadata collector."""
 
+import os
+import re
 from typing import Any
 
 import httpx
@@ -20,7 +22,7 @@ class GoogleBooksCollector:
     def __init__(self, client: httpx.Client | None = None, api_key: str | None = None) -> None:
         """Create a collector with an optional injected client for deterministic tests."""
         self._owns_client = client is None
-        self.api_key = api_key
+        self.api_key = api_key if api_key is not None else os.getenv("GOOGLE_BOOKS_API_KEY")
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(20.0),
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1"},
@@ -47,8 +49,22 @@ class GoogleBooksCollector:
     )
     def _fetch_page(self, parameters: dict[str, Any]) -> dict[str, Any]:
         """Fetch and decode one independently retried Google Books result page."""
-        response = self.client.get(API_URL, params=parameters)
-        response.raise_for_status()
+        request = dict(parameters)
+        if self.api_key:
+            request["key"] = self.api_key
+        safe_request = httpx.Request("GET", API_URL, params=parameters)
+        try:
+            response = self.client.get(API_URL, params=request)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            safe_response = httpx.Response(exc.response.status_code, request=safe_request)
+            raise httpx.HTTPStatusError(
+                f"google-books returned HTTP {exc.response.status_code}",
+                request=safe_request,
+                response=safe_response,
+            ) from None
+        except httpx.RequestError as exc:
+            raise type(exc)("google-books request failed", request=safe_request) from None
         return parse_json_object(response, "google-books")
 
     def search_books(self, topic: str, candidate_limit: int = 20) -> dict[str, Any]:
@@ -83,20 +99,32 @@ class GoogleBooksCollector:
                 break
         return {"pages": pages}
 
-    @retry(
-        retry=retry_if_exception(is_transient_http_error),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
-        reraise=True,
-    )
     def search_scope(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        """Fetch one bounded scope query. Credentials never enter saved query parameters."""
-        request = dict(parameters)
-        if self.api_key:
-            request["key"] = self.api_key
-        response = self.client.get(API_URL, params=request)
-        response.raise_for_status()
-        return parse_json_object(response, "google-books")
+        """Try at most three queries on empty results; preserve every credential-free response.
+
+        Broader discovery still passes the same language, ISBN and subject evidence gate.
+        Provider errors stop the search rather than switching queries to evade a quota.
+        """
+        queries = [parameters["q"]]
+        subject = re.fullmatch(r'subject:"((?:\\.|[^"\\])*)"', parameters["q"])
+        if subject:
+            phrase = subject.group(1)
+            queries.extend(
+                [f'intitle:"{phrase}"', phrase.replace('\\"', '"').replace("\\\\", "\\")]
+            )
+        attempts = []
+        for query in queries:
+            request = dict(parameters, q=query)
+            response = self._fetch_page(request)
+            items = response.get("items", [])
+            if not isinstance(items, list):
+                raise InvalidProviderResponse("google-books returned an invalid 'items' collection")
+            attempts.append({"request_parameters": request, "response": response})
+            if items:
+                break
+        if len(attempts) == 1:
+            return response
+        return {**response, "search_attempts": attempts}
 
     @staticmethod
     def search_parameters(topic: str, candidate_limit: int) -> dict[str, Any]:
