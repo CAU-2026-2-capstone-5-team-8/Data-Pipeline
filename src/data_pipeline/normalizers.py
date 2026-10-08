@@ -4740,8 +4740,16 @@ def normalize_springer_book_response(
     page_title = str(structured.get("name", ""))
     if normalize_bibliographic_text(page_title) != normalize_bibliographic_text(source_spec.title):
         raise InvalidProviderResponse("Springer page does not match the reviewed book title")
-    if source_spec.springer_edition_label and source_spec.springer_edition_label not in html:
-        raise InvalidProviderResponse("Springer page no longer declares the reviewed edition")
+    if source_spec.springer_edition_label:
+        expected_editions = _edition_numbers(source_spec.springer_edition_label)
+        page_edition = structured.get("bookEdition")
+        declared_editions = (
+            _edition_numbers(f"{page_edition} edition")
+            if isinstance(page_edition, (str, int)) and not isinstance(page_edition, bool)
+            else set()
+        )
+        if not expected_editions or declared_editions != expected_editions:
+            raise InvalidProviderResponse("Springer page no longer declares the reviewed edition")
 
     source_id = springer_book_source_id(source_spec)
     toc, page_ranges = _springer_toc_entries(tree, source_spec.book_id, source_id)
