@@ -75,8 +75,8 @@ retries; concurrency does not reduce token charges or raise the provider's proje
 
 `translation-run.json` records the latest run's scope, source hash, failures, token usage including
 thinking, time, and estimated USD at the documented standard rate. It is a per-run record, not a
-cumulative bill. Export enriched data with the existing `export-ml-evidence` command. Consumers
-must support the optional English fields described in [the evidence contract](docs/ml-evidence-contract.md).
+cumulative bill. Export enriched data with `export-ml-evidence --contract-version book-evidence-v3`.
+Consumers must support v3 as described in [the evidence contract](docs/ml-evidence-contract.md).
 
 The pinned [10-book selection](configs/experiments/english-linear-algebra-pilot-v1.json) was tested
 with 666 TOC titles. All were translated after one resumed request, while original fields stayed
