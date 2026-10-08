@@ -1,0 +1,182 @@
+{
+  "schema_version": 2,
+  "dataset": "discovery-600-20260929",
+  "policy": "selection-signals-v2",
+  "topics": {
+    "algorithms": {
+      "book_count": 70,
+      "status_counts": {
+        "evidence_present": 64,
+        "metadata_only": 1,
+        "review_required": 5
+      },
+      "finding_counts": {
+        "conflicting_subject_marker": 5,
+        "no_prose": 70,
+        "no_toc": 1,
+        "title_metadata_only": 1
+      },
+      "evidence_state_counts": {
+        "metadata_only": 1,
+        "toc_and_description": 64,
+        "toc_only": 5
+      },
+      "canonical_hashes": {
+        "books.jsonl": "sha256:c3b5b17c0abb9ba904b793c2a2abc911258cbb2c4f804f1f6a97c39ba1d7db64",
+        "documents.jsonl": "sha256:0e1f6b7768dc5dd2026dfedebd67ad9bce5f5a0a99924815b3990c68a499b1d7",
+        "toc.jsonl": "sha256:0a9b893f6e5c56673141dac60886d5907a1f9479a07469ae92c2f421a0cd06c0",
+        "sources.jsonl": "sha256:4ab368be4b9e8c950081607439afe07230c85f4dbc31c51079b5a7bd27ec932b"
+      },
+      "report_sha256": "sha256:ec56d0a9eae5f3f2597047cb42ad25a3e338e36e2206c7c23ede4ecf8abbce2c",
+      "review_sha256": "sha256:480b477a2ee76d07d3cb8ea6df639b7d4483282ee4aca90bef2ab571305fcd8c"
+    },
+    "databases": {
+      "book_count": 93,
+      "status_counts": {
+        "evidence_present": 90,
+        "metadata_only": 3
+      },
+      "finding_counts": {
+        "no_prose": 93,
+        "no_toc": 3,
+        "title_metadata_only": 3
+      },
+      "evidence_state_counts": {
+        "metadata_only": 3,
+        "toc_and_description": 76,
+        "toc_only": 14
+      },
+      "canonical_hashes": {
+        "books.jsonl": "sha256:2910508fce2299ede5d96bac3907d11faafa9bf8be585208c5d7b412b9ae32a4",
+        "documents.jsonl": "sha256:8db8deb7e92b4552951c7afc0d6464cf57de0a1346018f8d48e3cc1533b67ad4",
+        "toc.jsonl": "sha256:94b6eb635116a789b379d05a407631207c8c986c3cb5a38c80b60327c79affbc",
+        "sources.jsonl": "sha256:e9332e98b8e595de6762bdf2447405f305ebea66ceba2f397a4193cd849c0b78"
+      },
+      "report_sha256": "sha256:8dabd7e6f205aed9a15f1ccb831a063108994b283024b45116dcf4ae70236bed",
+      "review_sha256": "sha256:b0cf8e3ee253f7723768ee4a9395a0df0b00c919eef3d4a453476a447c7fc22f"
+    },
+    "discrete-mathematics": {
+      "book_count": 92,
+      "status_counts": {
+        "evidence_present": 86,
+        "metadata_only": 6
+      },
+      "finding_counts": {
+        "no_prose": 92,
+        "no_toc": 8,
+        "title_metadata_only": 6
+      },
+      "evidence_state_counts": {
+        "description_only": 2,
+        "metadata_only": 6,
+        "toc_and_description": 57,
+        "toc_only": 27
+      },
+      "canonical_hashes": {
+        "books.jsonl": "sha256:812bacfce247589c8e9aa1ca559ac93ca0f149ac0ffb30e867dd62942f085596",
+        "documents.jsonl": "sha256:006cf8435e8775cbc0a6d1756202917af6b47187ab38260b3ab9eb951dee1623",
+        "toc.jsonl": "sha256:8be60717e91934358ba3478372b4f01b78c7aaf7fc98a6763cb1c2e1a5841fc2",
+        "sources.jsonl": "sha256:8e4da311a4d3e07c40b5072b8f8dc74ac3834ef97237cbe2fdcb1c683c63acd7"
+      },
+      "report_sha256": "sha256:570de409ed7aefac44d47bc51d17e4462931399f393d286ac15c7c9869c08c92",
+      "review_sha256": "sha256:1a8b679062e2657e748d52a6099f911c93aaf5d140b392a796bd78bced3be8a8"
+    },
+    "linear-algebra": {
+      "book_count": 98,
+      "status_counts": {
+        "evidence_present": 85,
+        "metadata_only": 13
+      },
+      "finding_counts": {
+        "no_prose": 98,
+        "no_toc": 15,
+        "title_metadata_only": 13
+      },
+      "evidence_state_counts": {
+        "description_only": 2,
+        "metadata_only": 13,
+        "toc_and_description": 59,
+        "toc_only": 24
+      },
+      "canonical_hashes": {
+        "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+        "documents.jsonl": "sha256:57d218fa07ee131d540469a7a6093af925a9c900cf427b65350d70460db3d8ab",
+        "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf",
+        "sources.jsonl": "sha256:aec1947acad699fd3799da0118c38689b27ea53827370152c2156bab0f627ce2"
+      },
+      "report_sha256": "sha256:f4bee2cf80f4e68f1d6f7b3382e5be8d99b6218a97121d469870c0dc20b2213b",
+      "review_sha256": "sha256:80b116662ba1699df3cc32d52a5ca21d3d19389ac49669f7f86c58c224a52ca7"
+    },
+    "operating-systems": {
+      "book_count": 54,
+      "status_counts": {
+        "evidence_present": 49,
+        "metadata_only": 5
+      },
+      "finding_counts": {
+        "no_prose": 54,
+        "no_toc": 5,
+        "title_metadata_only": 5
+      },
+      "evidence_state_counts": {
+        "metadata_only": 5,
+        "toc_and_description": 35,
+        "toc_only": 14
+      },
+      "canonical_hashes": {
+        "books.jsonl": "sha256:7135301904774cd2903504bb4b9b4b5dcd0b869a08f59f44bc54f47be431af21",
+        "documents.jsonl": "sha256:d016ea249e10dfc041693b17c706b00b18b9a8b6d0c7ba7d6395c25f9adc8203",
+        "toc.jsonl": "sha256:eb05bdde6925fda877f2ac3560c371c69382a14bee2b3b0dfdf969855b2f42ac",
+        "sources.jsonl": "sha256:2b06f0c31a4937088e1a3550d9ab2267e48baac1e4c508ce2a6f294d204b3ed5"
+      },
+      "report_sha256": "sha256:6c87778e9440e8aae9bdeced5cba4c860f9feb4d61388f7d4f632d6ed70d3efa",
+      "review_sha256": "sha256:ae128727f76365cbf4758863f9406102e468ab32165b9024b6edc9f03b0ac136"
+    },
+    "probability-statistics": {
+      "book_count": 64,
+      "status_counts": {
+        "evidence_present": 27,
+        "review_required": 37
+      },
+      "finding_counts": {
+        "conflicting_subject_marker": 34,
+        "no_prose": 64,
+        "study_aid_marker": 5
+      },
+      "evidence_state_counts": {
+        "toc_and_description": 59,
+        "toc_only": 5
+      },
+      "canonical_hashes": {
+        "books.jsonl": "sha256:52a89376477e87324eae4245a8fc882c76f09de462a411d4136a149bea2db7c0",
+        "documents.jsonl": "sha256:7c57a1a83855c4d6f2336e21baedbaf2982f9fed8efac58692198eb70740f562",
+        "toc.jsonl": "sha256:5bfefd16afc2bbdd97fb1c09aa44f4833f45626db43273cac403415901e96add",
+        "sources.jsonl": "sha256:26e312fc619054ef5369712b600b4dc014636aa523d9cd9b27e3b530babcda91"
+      },
+      "report_sha256": "sha256:44c8b602f93b01529396f24b86a425152f10f4b1e03e2b1d273690b9b82660cd",
+      "review_sha256": "sha256:c8280bbea6f2f8aa3b1aac0ffc54bf71fe2cc7147493c41aba86401fd920e0ec"
+    }
+  },
+  "book_count": 471,
+  "finding_counts": {
+    "conflicting_subject_marker": 39,
+    "no_prose": 471,
+    "no_toc": 32,
+    "study_aid_marker": 5,
+    "title_metadata_only": 28
+  },
+  "evidence_state_counts": {
+    "description_only": 4,
+    "metadata_only": 28,
+    "toc_and_description": 350,
+    "toc_only": 89
+  },
+  "status_counts": {
+    "evidence_present": 401,
+    "metadata_only": 28,
+    "review_required": 42
+  },
+  "deterministic": true,
+  "canonical_unchanged": true,
+  "human_judgments_filled": false
+}

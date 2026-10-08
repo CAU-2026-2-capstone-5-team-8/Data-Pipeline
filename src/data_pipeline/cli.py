@@ -1,5 +1,6 @@
 """Command-line entry point for the small MVP collection slice."""
 
+import hashlib
 import json
 import os
 import re
@@ -29,6 +30,7 @@ from data_pipeline.collectors.open_textbooks import OpenTextbookCollector
 from data_pipeline.collectors.public_book_pages import PublicBookPageCollector
 from data_pipeline.collectors.publisher_documents import PublisherDocumentCollector
 from data_pipeline.collectors.publisher_pages import PublisherPageCollector
+from data_pipeline.collectors.springer_books import SpringerBookCollector
 from data_pipeline.collectors.springer_metadata import (
     SpringerMetadataCollector,
     hyphenated_isbn,
@@ -59,6 +61,7 @@ from data_pipeline.normalizers import (
     normalize_public_book_page_response,
     normalize_publisher_document_response,
     normalize_publisher_page_response,
+    normalize_springer_book_response,
     normalize_yes24_response,
 )
 from data_pipeline.open_library_bulk import (
@@ -79,12 +82,29 @@ from data_pipeline.publisher_document_sources import (
     PUBLISHER_DOCUMENT_SOURCES,
     publisher_document_source,
 )
+from data_pipeline.publisher_excerpts import (
+    PROVIDER as EXCERPT_PROVIDER,
+)
+from data_pipeline.publisher_excerpts import (
+    fetch_excerpt_page,
+    normalize_preface_excerpt,
+    validate_excerpt_url,
+)
 from data_pipeline.publisher_sources import PUBLISHER_SOURCES, publisher_source
 from data_pipeline.relevance_review import finalize_relevance_review, prepare_relevance_review
 from data_pipeline.reporting import format_book_coverage, format_coverage
 from data_pipeline.scale_comparison import compare_scale_reports
 from data_pipeline.scale_reporting import create_scale_report, write_scale_artifacts
+from data_pipeline.selection_audit import (
+    audit_selection,
+    write_selection_report,
+    write_selection_review,
+)
 from data_pipeline.source_registry import config_path
+from data_pipeline.springer_book_sources import (
+    SPRINGER_BOOK_SOURCES,
+    springer_book_source,
+)
 from data_pipeline.storage import (
     RawArtifact,
     dataset_exists,
@@ -164,6 +184,9 @@ PublisherDocumentSourceOption = Annotated[
     str, typer.Option(help="Reviewed exact-edition public publisher document slug.")
 ]
 OpenTextbookSourceOption = Annotated[str, typer.Option(help="Reviewed public open textbook slug.")]
+SpringerBookSourceOption = Annotated[
+    str, typer.Option(help="Reviewed Springer book landing page slug.")
+]
 ManifestOption = Annotated[
     Path, typer.Option(exists=True, dir_okay=False, help="Versioned dataset JSON manifest.")
 ]
@@ -248,6 +271,23 @@ def _collect_publisher_payload(source_slug: str) -> tuple[dict, dict]:
         raise typer.BadParameter(
             f"publisher page network failure; no data was written: {exc}"
         ) from exc
+
+
+def _collect_springer_book_payload(source_slug: str) -> tuple[dict, dict]:
+    try:
+        with SpringerBookCollector() as collector:
+            parameters = collector.request_parameters(source_slug)
+            return collector.fetch(source_slug), parameters
+    except InvalidProviderResponse as exc:
+        raise typer.BadParameter(f"{exc}; no data was written") from exc
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except httpx.HTTPStatusError as exc:
+        raise typer.BadParameter(
+            f"Springer page returned HTTP {exc.response.status_code}; no data was written"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise typer.BadParameter("Springer page network failure; no data was written") from exc
 
 
 def _collect_public_book_payload(source_slug: str) -> tuple[dict, dict]:
@@ -564,6 +604,8 @@ def _normalize_provider(
             return normalize_publisher_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
             )
+        if provider == "springer-book":
+            return normalize_springer_book_response(payload, topic=topic, retrieved_at=retrieved_at)
         if provider == "public-book-page":
             return normalize_public_book_page_response(
                 payload, topic=topic, retrieved_at=retrieved_at
@@ -862,6 +904,69 @@ def collect_public_page(
     typer.echo(format_coverage(dataset))
 
 
+@app.command("collect-springer-book")
+def collect_springer_book(
+    source: SpringerBookSourceOption = "springer-axler-linear-algebra-done-right3",
+    data_dir: Annotated[Path, typer.Option(help="Raw and processed data root.")] = Path("data"),
+) -> None:
+    """Collect one reviewed Springer landing page and merge its chapter TOC."""
+    try:
+        source_spec = springer_book_source(source)
+    except ValueError as exc:
+        choices = ", ".join(sorted(SPRINGER_BOOK_SOURCES))
+        raise typer.BadParameter(f"source must be one of: {choices}") from exc
+
+    retrieved_at = datetime.now(UTC)
+    payload, request_parameters = _collect_springer_book_payload(source)
+    artifact = RawArtifact(
+        provider="springer-book",
+        topic=source_spec.topic,
+        requested_limit=1,
+        retrieved_at=retrieved_at,
+        request_parameters=request_parameters,
+        response=payload,
+    )
+    raw_path = raw_artifact_path(data_dir, artifact)
+    write_raw_response(artifact, raw_path)
+    evidence = _normalize(
+        payload, artifact.provider, artifact.topic, artifact.requested_limit, retrieved_at
+    )
+    processed_directory = data_dir / "processed"
+    try:
+        if not dataset_exists(processed_directory):
+            raise DatasetMergeError(
+                "Springer evidence requires an existing canonical metadata dataset"
+            )
+        existing = read_dataset(processed_directory)
+        existing_errors = validate_dataset(existing)
+        if existing_errors:
+            raise DatasetMergeError("existing dataset is invalid: " + "; ".join(existing_errors))
+        if source_spec.book_id not in {book.book_id for book in existing.books}:
+            raise DatasetMergeError(
+                f"Springer source target is absent from canonical books: {source_spec.book_id}"
+            )
+        dataset = merge_datasets([existing, evidence])
+    except (DatasetMergeError, ValueError) as exc:
+        typer.echo(f"ERROR canonical merge failed: {exc}", err=True)
+        typer.echo(f"Raw response was preserved at: {raw_path}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    errors = validate_dataset(dataset)
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR {error}", err=True)
+        raise typer.Exit(code=1)
+    write_dataset(dataset, processed_directory)
+    typer.echo(f"Raw response: {raw_path}")
+    typer.echo(f"Canonical output: {processed_directory}")
+    typer.echo(f"Springer TOC entries collected: {len(evidence.toc)}")
+    if source_spec.edition_relation != "exact":
+        typer.echo(
+            "NOTE recorded as same-Work alternate-edition evidence, not this edition's contents."
+        )
+    typer.echo(format_coverage(dataset))
+
+
 @app.command("enrich-toc")
 def enrich_toc(
     data_dir: Annotated[Path, typer.Option(help="Existing raw and processed data root.")] = Path(
@@ -1058,6 +1163,102 @@ def enrich_bibliography(
     write_dataset(updated, processed)
     typer.echo(f"HathiTrust source added for {book.book_id}: {source.url}")
     typer.echo(source.rights_note or "")
+
+
+@app.command("enrich-publisher-excerpt")
+def enrich_publisher_excerpt(
+    data_dir: Annotated[Path, typer.Option(help="Existing canonical data root; read only.")],
+    output_dir: Annotated[Path, typer.Option(help="New experiment root; must not exist.")],
+    isbn: Annotated[str, typer.Option(help="Exact canonical ISBN-13.")],
+    topic: TopicOption,
+    url: Annotated[str | None, typer.Option(help="Public publisher product URL.")] = None,
+    raw: Annotated[
+        Path | None, typer.Option(help="Replay an immutable excerpt raw artifact.")
+    ] = None,
+) -> None:
+    """Add an explicitly attributed preface excerpt to a separate canonical copy."""
+    if (url is None) == (raw is None):
+        raise typer.BadParameter("provide exactly one of --url or --raw")
+    if output_dir.exists() or output_dir.resolve() == data_dir.resolve():
+        raise typer.BadParameter("output-dir must be a new experiment directory")
+    raw_path = raw
+    try:
+        _ensure_topic(topic)
+        processed = data_dir / "processed"
+        hashes = {
+            name: "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest()
+            for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+        }
+        existing = read_dataset(processed)
+        errors = validate_dataset(existing)
+        if errors:
+            raise ValueError("; ".join(errors))
+        book = next((b for b in existing.books if b.isbn_13 == isbn), None)
+        if book is None or topic not in book.topics:
+            raise ValueError("ISBN and topic must identify an existing canonical book")
+        if raw is not None:
+            artifact = read_raw_response(raw)
+            request_url = artifact.response.get("url")
+            if (
+                artifact.provider != EXCERPT_PROVIDER
+                or artifact.topic != topic
+                or artifact.requested_limit != 1
+                or artifact.request_parameters != {"isbn": isbn, "url": request_url}
+            ):
+                raise ValueError("excerpt raw artifact request identity mismatch")
+        else:
+            validate_excerpt_url(url)
+            retrieved_at = datetime.now(UTC)
+            artifact = RawArtifact(
+                provider=EXCERPT_PROVIDER,
+                topic=topic,
+                requested_limit=1,
+                retrieved_at=retrieved_at,
+                request_parameters={"isbn": isbn, "url": url},
+                response=fetch_excerpt_page(url),
+            )
+            raw_path = raw_artifact_path(output_dir, artifact)
+            write_raw_response(artifact, raw_path)
+        evidence = normalize_preface_excerpt(artifact.response, book, artifact.retrieved_at)
+        combined = merge_datasets([existing, evidence])
+        errors = validate_dataset(combined)
+        if errors:
+            raise ValueError("; ".join(errors))
+        if any(
+            "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest() != digest
+            for name, digest in hashes.items()
+        ):
+            raise ValueError(
+                "canonical inputs changed during enrichment; retry from a stable snapshot"
+            )
+        write_dataset(combined, output_dir / "processed")
+        manifest = {
+            "schema_version": 1,
+            "book_id": book.book_id,
+            "topic": topic,
+            "raw_artifact": str(raw_path.resolve()),
+            "raw_content_hash": artifact.content_hash,
+            "input_canonical_hashes": hashes,
+            "output_canonical_hashes": {
+                name: "sha256:"
+                + hashlib.sha256((output_dir / "processed" / name).read_bytes()).hexdigest()
+                for name in hashes
+            },
+            "document_ids": [d.document_id for d in evidence.documents],
+            "coverage": "preface_excerpt_only",
+            "complete_preface": False,
+            "sample_chapter": False,
+        }
+        (output_dir / "enrichment.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    except (ValueError, OSError, httpx.HTTPError) as exc:
+        preserved = (
+            f"; raw response preserved at {raw_path}" if raw_path and raw_path.exists() else ""
+        )
+        raise typer.BadParameter(f"{exc}{preserved}") from exc
+    typer.echo(f"Canonical copy: {output_dir / 'processed'}")
+    typer.echo("Added an attributed preface excerpt; full preface/sample coverage is not implied.")
 
 
 @app.command("collect-publisher-document")
@@ -1399,6 +1600,51 @@ def finalize_relevance_review_command(
     typer.echo(f"Reviewed v2 audit: {v2_output}")
 
 
+@app.command("audit-selection")
+def audit_selection_command(
+    data_dir: Annotated[Path, typer.Option(help="Existing raw and processed data root.")] = Path(
+        "data"
+    ),
+    report: Annotated[Path, typer.Option(dir_okay=False)] = Path("selection-audit.json"),
+    review: Annotated[Path, typer.Option(dir_okay=False)] = Path("selection-review.csv"),
+    topic: Annotated[
+        str | None, typer.Option(help="Audit one topic instead of each book's own.")
+    ] = None,
+    include_context: Annotated[
+        bool, typer.Option(help="Include short verbatim match context for local review.")
+    ] = False,
+) -> None:
+    """Report traceable evidence and review signals, without deciding eligibility."""
+    processed = data_dir / "processed"
+    if report.resolve() == review.resolve() or report.exists() or review.exists():
+        raise typer.BadParameter(
+            "choose distinct new report/review paths; existing files are preserved"
+        )
+    written_report = False
+    try:
+        if not dataset_exists(processed):
+            raise ValueError("audit-selection requires an existing canonical dataset")
+        dataset = read_dataset(processed)
+        result = audit_selection(dataset, topic, include_context=include_context)
+        result["canonical_hashes"] = {
+            name: "sha256:" + hashlib.sha256((processed / name).read_bytes()).hexdigest()
+            for name in ("books.jsonl", "documents.jsonl", "toc.jsonl", "sources.jsonl")
+        }
+        write_selection_report(result, report)
+        written_report = True
+        write_selection_review(result, review)
+    except (OSError, ValueError) as exc:
+        if written_report:
+            report.unlink(missing_ok=True)
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Audited books: {result['book_count']}")
+    for name, count in sorted(result["status_counts"].items()):
+        typer.echo(f"  {name}: {count}")
+    typer.echo(f"Report: {report}")
+    typer.echo(f"Blank human review sheet: {review}")
+    typer.echo("No book was removed; the review sheet records the human decision.")
+
+
 @app.command("bulk-status")
 def bulk_status(
     manifest_path: Annotated[
@@ -1660,6 +1906,12 @@ def report_toc_acquisition(
 
 @app.command("export-ml-evidence")
 def export_ml_evidence_command(
+    contract_version: Annotated[
+        str,
+        typer.Option(
+            help="Evidence contract: book-evidence-v1, book-evidence-v2, or book-evidence-v3."
+        ),
+    ] = "book-evidence-v1",
     dataset_dir: Annotated[
         Path,
         typer.Option(
@@ -1683,7 +1935,10 @@ def export_ml_evidence_command(
     if canonical_errors:
         raise typer.BadParameter("; ".join(canonical_errors))
 
-    records = export_ml_evidence(canonical)
+    try:
+        records = export_ml_evidence(canonical, contract_version)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     evidence_errors = validate_ml_evidence(records, canonical)
     summary = summarize_ml_evidence(records, evidence_errors)
     if evidence_errors:

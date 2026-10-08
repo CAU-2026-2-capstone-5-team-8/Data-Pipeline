@@ -45,6 +45,10 @@ EvidenceTier = Literal[
 class CanonicalModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+
+class EnglishFieldsModel(CanonicalModel):
+    """Optional analysis text; preserve originals and omit absent legacy fields."""
+
     @model_serializer(mode="wrap")
     def omit_absent_english_fields(self, handler: Any) -> dict[str, Any]:
         result = handler(self)
@@ -61,7 +65,7 @@ class CanonicalModel(BaseModel):
         return value
 
 
-class Book(CanonicalModel):
+class Book(EnglishFieldsModel):
     book_id: str = Field(pattern=r"^(isbn13:[0-9]{13}|isbn10:[0-9]{9}[0-9X]|book_[0-9a-f]{20})$")
     isbn_10: str | None = None
     isbn_13: str | None = None
@@ -117,7 +121,21 @@ class Book(CanonicalModel):
         return self
 
 
-class Document(CanonicalModel):
+class TextExtent(CanonicalModel):
+    """Explicit collection evidence about coverage of the named document, not the whole book."""
+
+    scope: Literal["excerpt", "complete_section"]
+    basis: str = Field(min_length=1)
+
+    @field_validator("basis")
+    @classmethod
+    def basis_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text extent requires a nonblank collection basis")
+        return value
+
+
+class Document(EnglishFieldsModel):
     document_id: str = Field(min_length=1)
     book_id: str = Field(min_length=1)
     document_type: DocumentType
@@ -125,17 +143,25 @@ class Document(CanonicalModel):
     en_text: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
     content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    text_extent: TextExtent | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_shape(self, handler):
+        result = handler(self)
+        for field in ("text_extent", "en_text"):
+            if getattr(self, field) is None:
+                result.pop(field, None)
+        return result
 
     @field_validator("text")
     @classmethod
     def text_must_not_be_blank(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
+        if not value.strip():
             raise ValueError("document text must not be blank")
         return value
 
 
-class TocEntry(CanonicalModel):
+class TocEntry(EnglishFieldsModel):
     toc_entry_id: str = Field(min_length=1)
     book_id: str = Field(min_length=1)
     parent_entry_id: str | None = None

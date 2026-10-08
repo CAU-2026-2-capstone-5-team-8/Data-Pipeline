@@ -21,6 +21,7 @@ from data_pipeline.models import (
     EvidenceTier,
     Source,
     SourceType,
+    TextExtent,
     TocEntry,
 )
 
@@ -50,7 +51,6 @@ class MlEvidenceItem(CanonicalModel):
     evidence_id: str = Field(pattern=r"^evidence_[0-9a-f]{20}$")
     evidence_type: MlEvidenceType
     text: str = Field(min_length=1)
-    en_text: str | None = Field(default=None, min_length=1)
     source_id: str = Field(min_length=1)
     provider: str = Field(min_length=1)
     source_type: SourceType
@@ -157,6 +157,50 @@ class MlBookEvidence(CanonicalModel):
     book_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     evidence: list[MlEvidenceItem] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def english_book_requires_v3(self) -> "MlBookEvidence":
+        if self.schema_version < 3 and (
+            self.book.en_title is not None or self.book.en_subtitle is not None
+        ):
+            raise ValueError("English book fields require book-evidence-v3")
+        return self
+
+
+class MlEvidenceItemV2(MlEvidenceItem):
+    source_external_id: str | None
+    source_license: str | None
+    source_rights_note: str | None
+    text_extent: TextExtent | None
+
+    @model_validator(mode="after")
+    def extent_requires_document(self) -> "MlEvidenceItemV2":
+        if self.text_extent is not None and self.document_id is None:
+            raise ValueError("text extent requires document evidence")
+        return self
+
+
+class MlBookEvidenceV2(MlBookEvidence):
+    schema_version: Literal[2] = 2
+    contract_version: Literal["book-evidence-v2"] = "book-evidence-v2"
+    evidence: list[MlEvidenceItemV2] = Field(min_length=1)
+
+
+class MlEvidenceItemV3(MlEvidenceItemV2):
+    en_text: str | None = Field(min_length=1)
+
+    @field_validator("en_text")
+    @classmethod
+    def english_text_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("English analysis text must not be blank")
+        return value
+
+
+class MlBookEvidenceV3(MlBookEvidence):
+    schema_version: Literal[3] = 3
+    contract_version: Literal["book-evidence-v3"] = "book-evidence-v3"
+    evidence: list[MlEvidenceItemV3] = Field(min_length=1)
+
 
 def _provenance_payload(item: MlEvidenceItem | dict[str, Any]) -> dict[str, Any]:
     payload = item.model_dump(mode="json") if isinstance(item, MlEvidenceItem) else dict(item)
@@ -172,8 +216,14 @@ def evidence_provenance_hash(item: MlEvidenceItem | dict[str, Any]) -> str:
 
 def _evidence_item(**values: Any) -> MlEvidenceItem:
     identity = str(values.pop("identity"))
-    evidence_id = stable_id("evidence", CONTRACT_VERSION, identity)
-    draft = MlEvidenceItem.model_validate(
+    version = values.pop("contract_version", CONTRACT_VERSION)
+    evidence_id = stable_id("evidence", version, identity)
+    model = {
+        "book-evidence-v1": MlEvidenceItem,
+        "book-evidence-v2": MlEvidenceItemV2,
+        "book-evidence-v3": MlEvidenceItemV3,
+    }[version]
+    draft = model.model_validate(
         {
             "evidence_id": evidence_id,
             **values,
@@ -244,8 +294,20 @@ def _toc_entries_in_order(entries: list[TocEntry]) -> list[tuple[TocEntry, list[
     return ordered
 
 
-def _source_fields(source: Source) -> dict[str, Any]:
+def _source_fields(source: Source, contract_version: str = CONTRACT_VERSION) -> dict[str, Any]:
     return {
+        "contract_version": contract_version,
+        **({"en_text": None} if contract_version == "book-evidence-v3" else {}),
+        **(
+            {
+                "source_external_id": source.external_id,
+                "source_license": source.license,
+                "source_rights_note": source.rights_note,
+                "text_extent": None,
+            }
+            if contract_version in {"book-evidence-v2", "book-evidence-v3"}
+            else {}
+        ),
         "source_id": source.source_id,
         "provider": source.provider,
         "source_type": source.source_type,
@@ -257,8 +319,26 @@ def _source_fields(source: Source) -> dict[str, Any]:
     }
 
 
-def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
+def export_ml_evidence(
+    dataset: CanonicalDataset, contract_version: str = CONTRACT_VERSION
+) -> list[MlBookEvidence]:
     """Project canonical records into deterministic per-book ML evidence records."""
+    if contract_version not in {"book-evidence-v1", "book-evidence-v2", "book-evidence-v3"}:
+        raise ValueError("unsupported ML evidence contract version")
+    has_english = (
+        any(b.en_title is not None or b.en_subtitle is not None for b in dataset.books)
+        or any(t.en_title is not None for t in dataset.toc)
+        or any(d.en_text is not None for d in dataset.documents)
+    )
+    if has_english and contract_version != "book-evidence-v3":
+        raise ValueError("English analysis fields require --contract-version book-evidence-v3")
+    if contract_version == "book-evidence-v1" and any(d.text_extent for d in dataset.documents):
+        raise ValueError("explicit text extent requires --contract-version book-evidence-v2")
+    record_model = {
+        "book-evidence-v1": MlBookEvidence,
+        "book-evidence-v2": MlBookEvidenceV2,
+        "book-evidence-v3": MlBookEvidenceV3,
+    }[contract_version]
     sources_by_id = {source.source_id: source for source in dataset.sources}
     sources_by_book: dict[str, list[Source]] = defaultdict(list)
     documents_by_book: dict[str, list[Document]] = defaultdict(list)
@@ -278,14 +358,20 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                 identity=f"{book.book_id}:metadata:title",
                 evidence_type="metadata_minimal",
                 text=" — ".join(value for value in (book.title, book.subtitle) if value),
-                en_text=(
-                    " — ".join(value for value in (book.en_title, book.en_subtitle) if value)
-                    if book.en_title and (not book.subtitle or book.en_subtitle)
-                    else None
-                ),
                 edition_relation="canonical_record",
                 metadata_field="title",
-                **_source_fields(metadata_source),
+                **{
+                    **_source_fields(metadata_source, contract_version),
+                    **(
+                        {
+                            "en_text": " — ".join(v for v in (book.en_title, book.en_subtitle) if v)
+                            if book.en_title and (not book.subtitle or book.en_subtitle)
+                            else None
+                        }
+                        if contract_version == "book-evidence-v3"
+                        else {}
+                    ),
+                },
             )
         ]
         evidence.extend(
@@ -295,7 +381,7 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                 text=topic,
                 edition_relation="canonical_record",
                 metadata_field="topics",
-                **_source_fields(metadata_source),
+                **_source_fields(metadata_source, contract_version),
             )
             for topic in sorted(set(book.topics))
         )
@@ -314,12 +400,23 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                     identity=f"{book.book_id}:document:{document.document_id}",
                     evidence_type=evidence_type,
                     text=document.text,
-                    en_text=document.en_text,
                     edition_relation=_edition_relation(source),
                     document_id=document.document_id,
                     document_type=document.document_type,
                     document_content_hash=document.content_hash,
-                    **_source_fields(source),
+                    **{
+                        **_source_fields(source, contract_version),
+                        **(
+                            {"text_extent": document.text_extent}
+                            if contract_version in {"book-evidence-v2", "book-evidence-v3"}
+                            else {}
+                        ),
+                        **(
+                            {"en_text": document.en_text}
+                            if contract_version == "book-evidence-v3"
+                            else {}
+                        ),
+                    },
                 )
             )
 
@@ -338,7 +435,6 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                     identity=f"{book.book_id}:toc:{entry.toc_entry_id}:{toc_type}",
                     evidence_type=toc_type,
                     text=entry.title,
-                    en_text=entry.en_title,
                     edition_relation=edition_relation,
                     toc_entry_id=entry.toc_entry_id,
                     parent_entry_id=entry.parent_entry_id,
@@ -346,12 +442,19 @@ def export_ml_evidence(dataset: CanonicalDataset) -> list[MlBookEvidence]:
                     order_index=entry.order_index,
                     label=entry.label,
                     toc_path=toc_path,
-                    **_source_fields(source),
+                    **{
+                        **_source_fields(source, contract_version),
+                        **(
+                            {"en_text": entry.en_title}
+                            if contract_version == "book-evidence-v3"
+                            else {}
+                        ),
+                    },
                 )
             )
 
         records.append(
-            MlBookEvidence(
+            record_model(
                 book=book,
                 book_content_hash=sha256_json(book.model_dump(mode="json")),
                 evidence=evidence,
@@ -452,7 +555,16 @@ def validate_ml_evidence(records: list[MlBookEvidence], canonical: CanonicalData
         if count > 1:
             errors.append(f"duplicate ML evidence ID: {evidence_id}")
 
-    expected = {record.book.book_id: record for record in export_ml_evidence(canonical)}
+    versions = {r.contract_version for r in records}
+    if len(versions) > 1:
+        errors.append("mixed ML evidence contract versions")
+        return errors
+    try:
+        projection = export_ml_evidence(canonical, next(iter(versions), CONTRACT_VERSION))
+    except ValueError as exc:
+        errors.append(str(exc))
+        return errors
+    expected = {record.book.book_id: record for record in projection}
     for record in records:
         expected_record = expected.get(record.book.book_id)
         if expected_record is not None and record != expected_record:
@@ -492,8 +604,8 @@ def summarize_ml_evidence(
         for item in record.evidence:
             referenced_sources[item.source_id] = item.provider
     return {
-        "schema_version": 1,
-        "contract_version": CONTRACT_VERSION,
+        "schema_version": records[0].schema_version if records else 1,
+        "contract_version": records[0].contract_version if records else CONTRACT_VERSION,
         "total_books": len(records),
         "books_with_toc_evidence": books_with_toc,
         "books_with_exact_toc": books_with_exact,
@@ -535,11 +647,20 @@ def write_ml_evidence(records: list[MlBookEvidence], path: Path) -> None:
 
 def read_ml_evidence(path: Path) -> list[MlBookEvidence]:
     """Load a generated ML evidence JSONL artifact."""
-    return [
-        MlBookEvidence.model_validate_json(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        decoded = json.loads(line)
+        model = (
+            MlBookEvidenceV3
+            if isinstance(decoded, dict) and decoded.get("schema_version") == 3
+            else MlBookEvidenceV2
+            if isinstance(decoded, dict) and decoded.get("schema_version") == 2
+            else MlBookEvidence
+        )
+        records.append(model.model_validate_json(line))
+    return records
 
 
 def write_ml_evidence_summary(summary: dict[str, Any], path: Path) -> None:

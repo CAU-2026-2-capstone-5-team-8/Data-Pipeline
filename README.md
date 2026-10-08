@@ -211,6 +211,15 @@ or recommendation weight. See
 [`docs/ml-evidence-contract.md`](docs/ml-evidence-contract.md) for the contract and validation
 rules.
 
+For explicit document scope and source rights, use `--contract-version book-evidence-v2`.
+The default remains v1 for historical datasets, but refuses documents with explicit `text_extent`
+instead of silently losing that information. Upgrade the ML reader before using v2.
+
+Already stored English fields (`en_title`, `en_subtitle`, `en_text`) require
+`--contract-version book-evidence-v3`. V3 preserves original text, English text, extent and rights;
+it performs no translation and rejects silent downgrade to v1/v2. See the
+[offline original/English comparison](docs/experiments/english-evidence-comparison-2026-10-03.md).
+
 ```bash
 uv run data-pipeline export-ml-evidence \
   --dataset-dir data/experiments/scale-50-bulk-web-20260922/processed \
@@ -1320,3 +1329,162 @@ identity handling, raw replay, refresh, and independent failure. They do not est
 API access or TOC coverage; those require the issued key and a live collection.
 
 API reference: [National Library ISBN bibliography](https://www.nl.go.kr/NL/contents/N31101030500.do).
+
+## Springer book landing pages
+
+Springer publishes a chapter-level table of contents on each book landing page, and
+`link.springer.com/robots.txt` allows `/book*`. `collect-springer-book` fetches one reviewed
+landing page and merges its chapter sequence as canonical TOC evidence.
+
+```bash
+uv run data-pipeline collect-springer-book \
+  --source springer-axler-linear-algebra-done-right3 \
+  --data-dir <dataset root>
+```
+
+A source is declared in `configs/sources/springer-book/<slug>.json`. Because Springer exposes
+the **eBook** ISBN rather than the print ISBN a canonical record usually carries, and keeps one
+landing page per edition, each spec states both identifiers plus `edition_relation`:
+
+| `edition_relation` | Recorded tier | `validation_status` |
+| --- | --- | --- |
+| `exact` | `exact_edition_toc` | `strong` |
+| `same_work` | `same_work_alternate_edition_toc` | `acceptable` |
+
+The first reviewed source is Axler's *Linear Algebra Done Right*. The canonical record is the
+print second edition (9780387982588) while Springer hosts the third, so it is recorded as
+`same_work_alternate_edition_toc`, never as that edition's own contents. Before a page is
+accepted its eBook ISBN, normalized title, declared edition label, and complete chapter
+sequence must all match the reviewed values. Only chapter titles are imported; chapter text
+stays behind the publisher.
+
+The original collector report records a reviewed 12-entry sequence (front matter, ten chapters,
+back matter); that live observation was not repeated during integration. Springer renders a flat chapter list, so the pipeline stores level 1 entries and
+does not invent a hierarchy.
+
+### Springer Nature API: measured entitlement
+
+The page collector needs no API key. The original report records these API entitlement results;
+they are historical observations, not a fresh check of current access:
+
+| Endpoint | Result |
+| --- | --- |
+| `meta/v2/json` | HTTP 401, "API key is invalid or missing" |
+| `metadata/json` | HTTP 401 |
+| `openaccess/json` | HTTP 200, 38,865 records |
+
+The key is valid but entitled only to the Open Access corpus. Querying that corpus for
+`"linear algebra" type:Book` and `"operating systems" type:Book` returned conference
+proceedings and research chapters, not teaching textbooks, so it does not supply the book
+catalog. Reaching Springer textbook metadata by API would need the Metadata API entitlement,
+which this key does not carry.
+
+## Selection audit v3
+
+`audit-selection` reports collected evidence and review signals. It never decides that a book
+is a valid textbook, impossible to resolve, or ready for recommendation, and never removes a book.
+
+```bash
+uv run data-pipeline audit-selection \
+  --data-dir <dataset root containing processed/> \
+  --report <new output directory>/selection-audit.json \
+  --review <new output directory>/selection-review.csv
+```
+
+Report schema v3 retains v2's cautious status vocabulary:
+
+| Status | Meaning |
+| --- | --- |
+| `review_required` | A missing ISBN, topic-term gap, study-aid/exam/subject marker, or alternate-edition TOC needs inspection |
+| `metadata_only` | No documents or TOC were collected and no other review signal took priority |
+| `evidence_present` | Some documents or TOC exist; relevance, completeness and recommendation suitability remain unverified |
+
+`evidence_state` separately distinguishes metadata, descriptions, TOC, and documents labelled
+preface/introduction/preview/sample. Document presence and character count are not prose quality,
+text difficulty, or deep concept coverage. `no_isbn` does not exclude title/author/provider lookup.
+
+English and Korean patterns inspect actual title/subtitle/description text. Assigned topic slugs
+are excluded from the matching evidence. The report records each matched phrase's field, record ID,
+character offsets, document source ID where available, and a source registry with URLs, hashes and
+edition metadata. Book-level source IDs are candidates for tracing metadata, not an assertion that
+every source supplied every field. Multiple configured leaf topics produce distinct audit rows;
+parent domains such as mathematics are not evaluated as leaf topics.
+
+V3 separates `exam_context_marker` (수능, 모의고사, 기출, 고2/고3) from the configured
+`conflicting_subject_marker`: a coding-interview book's mention of past questions is not proof of
+another subject. This changes audit labels only, not the discovery gate or selected books.
+Use `--include-context` to add up to 80 original characters on each side of a match, with a
+`context_start` offset. Keep these verbatim local review reports outside Git; default reports
+include matched terms and offsets without surrounding text.
+
+Both outputs are deterministic and must use new, distinct paths. Existing reports, canonical
+files and human review sheets cannot be overwritten. `human_decision`, `replacement_isbn_13` and
+`notes` remain blank; CSV formula-like text is escaped only in the exported review sheet.
+Canonical hashes and the applied rules are recorded in the JSON report. No extra service is called.
+
+The [471-book measured audit](docs/experiments/selection-signals-2026-10-03.md) found 439 books with
+TOC, no documents labelled prose in this snapshot, and 42 books with review signals. These are
+not 42 confirmed bad books. Generic term matching can flag a relevant textbook's description too.
+The [follow-up review](docs/experiments/selection-review-2026-10-03.md) records the agent's
+observations for all 42 books separately from blank human decisions. Historical v2 measurements
+remain unchanged; v3 reruns flag the same 42 identities.
+
+## Public publisher preface excerpts
+
+`enrich-publisher-excerpt` copies an existing canonical dataset into a **new experiment root**
+and adds an explicitly attributed partial preface. The first adapter supports ordinary public
+Kyungmoon product pages. It checks the product ISBN, canonical title and Korean language, then
+requires the introduction section to end with `머리말 중에서` or `머리말 中에서`, including
+HTML line breaks within the attribution. Generic marketing text, a TOC
+heading, another edition, and an image-only preview do not satisfy this check. There are no
+per-book URL or ISBN allowlists and no change to the curated MVP or original discovery snapshot.
+
+```bash
+uv run data-pipeline enrich-publisher-excerpt \
+  --data-dir data/experiments/discovery-600-20260929/topics/linear-algebra \
+  --output-dir data/experiments/new-preface/live \
+  --isbn 9788961055680 --topic linear-algebra \
+  --url 'https://www.kyungmoon.com/shop/item.php?device=pc&it_id=1652670201'
+
+# Offline replay: same original canonical input, immutable raw artifact, new output.
+uv run data-pipeline enrich-publisher-excerpt \
+  --data-dir data/experiments/discovery-600-20260929/topics/linear-algebra \
+  --output-dir data/experiments/new-preface/replay \
+  --isbn 9788961055680 --topic linear-algebra \
+  --raw <live/raw/kyungmoon_preface_excerpt/linear-algebra/artifact.json>
+```
+
+Use this command's `--raw` mode for excerpt replay; the generic metadata `build` command does
+not consume this new artifact type. The raw response is saved before parsing. Identity or parser
+failure retains it for inspection without publishing canonical files. Redirects, non-HTML,
+HTTP access restrictions and responses over 2 MiB stop collection. Existing output roots are
+rejected so prior inputs and human work cannot be overwritten.
+
+The canonical document uses `preface` and `text_extent.scope=excerpt`; its source `external_id`,
+`rights_note` and the `enrichment.json` manifest explicitly identify **a partial excerpt**, not a complete preface or
+sample chapter. License remains unknown; matching ISBN does not verify printing-specific changes.
+Raw HTML is retained exactly, while HTML text extraction normalizes HTML line endings. No OCR,
+translation, textual difficulty score, or recommendation change is performed.
+
+The [first measured collection](docs/experiments/preface-excerpt-2026-10-03.md) added 1,362
+characters for one of 98 linear-algebra books, with two byte-identical offline replays and an
+unchanged `book-evidence-v1` handoff. Third-party raw HTML and book text remain outside Git.
+
+That result predates structured extent metadata. Current collection/replay records the explicit
+excerpt basis and requires v2 export:
+
+```bash
+uv run data-pipeline export-ml-evidence \
+  --contract-version book-evidence-v2 \
+  --dataset-dir data/experiments/new-preface/replay/processed \
+  --output data/experiments/new-preface/book-evidence-v2.jsonl
+```
+
+The [98-book v2 handoff verification](docs/experiments/text-extent-handoff-2026-10-03.json)
+preserves extent and source rights through ML import, while the archived v1 input still exports
+byte-identically. Historical documents without recorded extent remain unknown.
+
+The [follow-up Korean prose pilot](docs/experiments/korean-prose-pilot-2026-10-03.md) recovers
+one 230-character excerpt from the publisher's `中에서` variant. The 98-book copy now has two
+explicit preface excerpts, with no new complete chapter. The other two product descriptions
+remain unpromoted, and a linked exercise-answer PDF is excluded from prose evidence.

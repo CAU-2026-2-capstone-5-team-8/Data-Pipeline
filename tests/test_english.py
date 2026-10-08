@@ -94,7 +94,7 @@ def test_parallel_enrichment_preserves_sources_and_replays_without_api(tmp_path)
     assert enriched.documents[0].en_text
     assert enriched.sources == original.sources
     assert before == {p.name: p.read_bytes() for p in source_dir.iterdir()}
-    exported = export_ml_evidence(enriched)
+    exported = export_ml_evidence(enriched, contract_version="book-evidence-v3")
     assert validate_ml_evidence(exported, enriched) == []
     assert all(
         item.en_text
@@ -165,7 +165,12 @@ def test_english_copy_needs_no_key_or_api_and_preserves_long_text(tmp_path, monk
     assert result.toc[0].en_title == dataset.toc[0].title
     assert result.documents[0].en_text == dataset.documents[0].text
     assert result.documents[0].content_hash == dataset.documents[0].content_hash
-    assert validate_ml_evidence(export_ml_evidence(result), result) == []
+    assert (
+        validate_ml_evidence(
+            export_ml_evidence(result, contract_version="book-evidence-v3"), result
+        )
+        == []
+    )
 
 
 def test_mixed_languages_at_same_provider_only_translate_korean(tmp_path):
