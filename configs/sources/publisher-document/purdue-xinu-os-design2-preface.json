@@ -1,0 +1,33 @@
+{
+  "slug": "purdue-xinu-os-design2-preface",
+  "provider": "purdue_xinu",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9781498712439",
+  "isbn_10": "1498712436",
+  "title": "Operating System Design: The Xinu Approach",
+  "edition": 2,
+  "document_type": "preface",
+  "external_id": "9781498712439:preface",
+  "home_url": "https://xinu.cs.purdue.edu/",
+  "referrer_url": "https://xinu.cs.purdue.edu/",
+  "document_url": "https://xinu.cs.purdue.edu/preface.pdf",
+  "referrer_heading": "Textbook",
+  "source_type": "author_page",
+  "require_document_link": true,
+  "rights_note": "Public preface PDF linked from the author's Purdue Xinu site and matched to the 2015 second edition by the site's edition history, platform markers, document text, and reviewed page count; no reuse license statement found.",
+  "expected_text_markers": [
+    "Building a computer operating system is like weaving a fine tapestry",
+    "Operating System Design",
+    "Galileo board",
+    "BeagleBone Black",
+    "Douglas Comer"
+  ],
+  "identity_format": "xinu_second_edition",
+  "expected_identity_markers": [
+    "Operating System Design - The Xinu Approach",
+    "Comer publishes a second edition of the Xinu book",
+    "the second edition was published in 2015"
+  ],
+  "document_link_href": "preface.pdf",
+  "expected_page_count": 4
+}

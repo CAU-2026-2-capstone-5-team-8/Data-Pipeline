@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "experiment": "text-extent-handoff-2026-10-03",
+  "contract_version": "book-evidence-v2",
+  "text_scope_version": "text-extent-v1",
+  "validation_boundary": "Local raw replay, contract import and profile generation; no service or database update.",
+  "book_count": 98,
+  "toc_book_count": 83,
+  "legacy_v1_records_imported": 98,
+  "legacy_v1_bytes_unchanged": true,
+  "byte_identical_v2_replays": 2,
+  "original_input_hashes_unchanged": true,
+  "all_98_concept_profiles_and_difficulty_scores_unchanged_by_extent": true,
+  "canonical_hashes": {
+    "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+    "documents.jsonl": "sha256:ef9b6982d3df07d4c4c53c95c451518ccc808a722b787cffcfb93b59b1379c97",
+    "sources.jsonl": "sha256:76b13ae250e61e3197cb391e3ad984d7eb640b50488c1152d4d7bb877bfdcf5b",
+    "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf"
+  },
+  "v2_export_hash": "sha256:f2c9bef8c21a943c30aed319e99123984396780bce2aa07b3f895e8886b285c9",
+  "legacy_v1_export_hash": "sha256:bc4a252d54496ba0561b5ae4f69b821c6e858f8f2c2f124dafc44d8928a135f8",
+  "shared_synthetic_fixture_hash": "sha256:178fbda5bb98ffd1c875c9c3323c875dac5d43b78a4fa62bd2dc2f7bafc0ce57",
+  "feature_config_hash": "sha256:6230d12facf94e46c1daa11d9d83b3929322af2f69a36614d3f553684bfb21d6",
+  "target": {
+    "book_id": "isbn13:9788961055680",
+    "document_id": "doc_2f756e59aff18fe9da65",
+    "document_type": "preface",
+    "character_count": 1362,
+    "document_content_hash": "sha256:cbdf8c14cc3465ccaf16a6aa8f5c5b9a6d957ad41487556d7545e9a6fd7b686f",
+    "source_url": "https://www.kyungmoon.com/shop/item.php?device=pc&it_id=1652670201",
+    "source_license": null,
+    "source_rights_note": "Public publisher product page explicitly attributes this section to a preface excerpt (머리말 중에서). Partial excerpt, not a complete preface or sample chapter. Matched product ISBN and title to the Korean canonical edition; printing-specific differences were not verified. No reuse license established. HTML text extraction only; no OCR or translation.",
+    "text_extent": {
+      "scope": "excerpt",
+      "basis": "Publisher introduction section explicitly ends with 머리말 중에서."
+    },
+    "coverage": {
+      "has_metadata": true,
+      "has_toc": true,
+      "has_description": true,
+      "has_preface": true,
+      "has_introduction": false,
+      "has_preview": false,
+      "has_sample_chapter": false,
+      "has_other_text": false,
+      "toc_entry_count": 69,
+      "document_count": 2,
+      "prose_document_count": 1,
+      "prose_character_count": 1362,
+      "text_scope_version": "text-extent-v1",
+      "excerpt_prose_document_count": 1,
+      "complete_section_prose_document_count": 0,
+      "unknown_extent_prose_document_count": 0
+    },
+    "analyzed_text_scope": "excerpt_only",
+    "analyzed_document_count": 1,
+    "excluded_documents": [],
+    "scores": {
+      "lexical_difficulty": 0.0109375,
+      "syntactic_complexity": 0.3909722222222222,
+      "concept_density": 0.0,
+      "prerequisite_demand": 0.0
+    }
+  },
+  "concept_mapping": {
+    "book_evidence_contract_version": "book-evidence-v2",
+    "total_books": 98,
+    "books_with_matched_concepts": 11,
+    "books_without_matched_concepts": 87,
+    "unique_book_concept_presence_count": 32,
+    "raw_match_occurrence_count": 56,
+    "artifact_hash": "sha256:40541f4e7b33554b8908715cbb4d83f6c665cb34ea16e591dad7025646df9823"
+  },
+  "validation_tests": {
+    "data_pipeline": 464,
+    "ml": 325
+  }
+}

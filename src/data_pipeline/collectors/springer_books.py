@@ -16,10 +16,7 @@ class SpringerBookCollector:
         self._owns_client = client is None
         self.client = client or httpx.Client(
             timeout=httpx.Timeout(20.0),
-            # Springer answers a cookie-less request with a redirect that carries the
-            # same book page, so the reviewed host is followed for that one hop only.
-            follow_redirects=True,
-            max_redirects=2,
+            follow_redirects=False,
             headers={"User-Agent": "cau-capstone-data-pipeline/0.1 (book evidence research)"},
         )
 
@@ -41,7 +38,27 @@ class SpringerBookCollector:
         reraise=True,
     )
     def _fetch_html(self, url: str) -> str:
-        response = self.client.get(url)
+        reviewed = httpx.URL(url)
+        current = reviewed
+        for hop in range(3):
+            if (
+                current.scheme != "https"
+                or current.host != reviewed.host
+                or current.port != reviewed.port
+                or current.username
+                or current.password
+            ):
+                raise InvalidProviderResponse("Springer redirect left its reviewed HTTPS origin")
+            # Override injected clients too: validate every hop before any request.
+            response = self.client.get(current, follow_redirects=False)
+            if not response.is_redirect:
+                break
+            location = response.headers.get("location")
+            if not location or hop == 2:
+                raise InvalidProviderResponse(
+                    "Springer redirect is missing a target or exceeds limit"
+                )
+            current = current.join(location)
         response.raise_for_status()
         if response.url.host != httpx.URL(url).host:
             raise InvalidProviderResponse("Springer page redirected off its reviewed host")

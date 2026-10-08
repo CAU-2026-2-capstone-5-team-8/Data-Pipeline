@@ -1,0 +1,89 @@
+{
+  "experiment_version": "korean-prose-pilot-v1",
+  "book_count": 98,
+  "toc_book_count": 83,
+  "before_prose_books": 1,
+  "after_prose_books": 2,
+  "new_complete_chapters": 0,
+  "input_canonical_hashes": {
+    "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+    "documents.jsonl": "sha256:ef9b6982d3df07d4c4c53c95c451518ccc808a722b787cffcfb93b59b1379c97",
+    "sources.jsonl": "sha256:76b13ae250e61e3197cb391e3ad984d7eb640b50488c1152d4d7bb877bfdcf5b",
+    "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf"
+  },
+  "output_canonical_hashes": {
+    "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+    "documents.jsonl": "sha256:e29f089e1a0a6238046e36603597115638ea48101dc91244241dd487d42c926d",
+    "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf",
+    "sources.jsonl": "sha256:53b3cf7c69cfc55a645c0af29bcfc131ce6238c0a1e51cf5bafeebe5b8d326ef"
+  },
+  "byte_identical_replays": 2,
+  "v2_export_hash": "sha256:bd4270062fa860da046fddce501a2c6e0177fd72744ec0cd97b55cac088acb61",
+  "ml_audit_hash": "sha256:290165b414e8a94837e5bcded4488550f2713797fd304c4bde328dc95ad8a633",
+  "ml_import_records": 98,
+  "raw_artifacts": [
+    {
+      "isbn": "9791160736571",
+      "url": "https://www.kyungmoon.com/shop/item.php?it_id=1698302408&device=pc",
+      "raw_relative_to_data_experiments": "korean-prose-pilot-20261003/9791160736571/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T113303507916Z_c4306110531f.json",
+      "raw_hash": "sha256:c4306110531f7dac17fef1ed6e6751badd45aea1af256947a75bc7c94382c31c"
+    },
+    {
+      "isbn": "9791160737615",
+      "url": "https://www.kyungmoon.com/shop/item.php?it_id=1739843960&device=pc",
+      "raw_relative_to_data_experiments": "korean-prose-pilot-20261003/9791160737615/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T113303845932Z_2ba9c151b5a9.json",
+      "raw_hash": "sha256:2ba9c151b5a941896ab14c1146d9bc473dcac1c6b15c92d837101489f2422ef1"
+    },
+    {
+      "isbn": "9791190017183",
+      "url": "https://www.kyungmoon.com/shop/item.php?it_id=1706857705&device=pc",
+      "raw_relative_to_data_experiments": "korean-prose-pilot-20261003/9791190017183/live/raw/kyungmoon_preface_excerpt/linear-algebra/20261003T113304144586Z_1e2962aebb44.json",
+      "raw_hash": "sha256:1e2962aebb4484ba1dd01bbb5f96c9ce4b8240d02a1786b340fa8a8040117b44"
+    }
+  ],
+  "pdf_probe": {
+    "url": "https://www.kyungmoon.com/data/item/1739843960/file/982985700_CtxVWrFg_ec89a8b661082173747c273875570e2a9e475321.pdf",
+    "retrieved_at": "2026-10-03T11:34:43.042652+00:00",
+    "content_type": "application/pdf",
+    "bytes": 499169,
+    "sha256": "sha256:4cf2e70e4c37aa91c103a1d805af22758bf6439ced2a2946077d09d938ec3b9f",
+    "pages": 42,
+    "inspection": "text pages 1, 2, 42 and rendered page 1",
+    "decision": "excluded_exercise_answers_not_chapter_prose"
+  },
+  "observations": [
+    {
+      "book_id": "isbn13:9788961055680",
+      "document_id": "doc_2f756e59aff18fe9da65",
+      "text_extent": {
+        "scope": "excerpt",
+        "basis": "Publisher introduction section explicitly ends with 머리말 중에서."
+      },
+      "characters": 1362,
+      "tokens": 320,
+      "review_flags": [
+        "declared_language_mismatch",
+        "hangul_present_in_english_baseline_input",
+        "no_configured_concept_alias_matches"
+      ],
+      "excluded_reason": null
+    },
+    {
+      "book_id": "isbn13:9791160736571",
+      "document_id": "doc_ab6ca1b9d3b31bdd8225",
+      "text_extent": {
+        "scope": "excerpt",
+        "basis": "Publisher introduction section explicitly ends with 머리말 中에서."
+      },
+      "characters": 230,
+      "tokens": 49,
+      "review_flags": [
+        "declared_language_mismatch",
+        "hangul_present_in_english_baseline_input"
+      ],
+      "excluded_reason": "below_minimum_tokens"
+    }
+  ],
+  "human_quality_validation": "unavailable",
+  "service_or_database_applied": false
+}

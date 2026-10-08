@@ -1,0 +1,72 @@
+{
+  "slug": "purdue-xinu-os-design2",
+  "provider": "purdue_xinu",
+  "topic": "operating-systems",
+  "book_id": "isbn13:9781498712439",
+  "isbn_13": "9781498712439",
+  "title": "Operating System Design: The Xinu Approach",
+  "authors": [
+    "Douglas Comer"
+  ],
+  "edition": 2,
+  "url": "https://xinu.cs.purdue.edu/cont.html",
+  "toc_format": "xinu_author_table",
+  "expected_toc_count": 492,
+  "expected_root_titles": [
+    "Preface",
+    "About The Author",
+    "Introduction And Overview",
+    "Concurrent Execution And Operating System Services",
+    "An Overview Of The Hardware And Runtime Environment",
+    "List And Queue Manipulation",
+    "Scheduling And Context Switching",
+    "More Process Management",
+    "Coordination Of Concurrent Processes",
+    "Message Passing",
+    "Basic Memory Management",
+    "High-level Memory Management and Virtual Memory",
+    "High-level Message Passing",
+    "Interrupt Processing",
+    "Real-time Clock Management",
+    "Device-independent Input And Output",
+    "An Example Device Driver",
+    "DMA Devices And Drivers (Ethernet)",
+    "A Minimal Internet Protocol Stack",
+    "A Remote Disk Driver",
+    "File Systems",
+    "A Remote File Mechanism",
+    "A Syntactic Namespace",
+    "System Initialization",
+    "Subsystem Initialization And Memory Marking",
+    "Exception Handling",
+    "System Configuration",
+    "An Example User Interface: The Xinu Shell",
+    "Porting An Operating System",
+    "Xinu Design Notes",
+    "Index"
+  ],
+  "expected_chapter_labels": [
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+    "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "A1", "A2"
+  ],
+  "expected_child_counts": [
+    0, 0, 10, 14, 21, 12, 17, 15, 17, 10, 17, 17, 11, 16, 16, 17, 23, 15, 16, 21,
+    27, 20, 22, 10, 11, 11, 9, 19, 5, 5, 0
+  ],
+  "expected_descendant_counts": [
+    0, 0, 10, 14, 25, 12, 19, 15, 17, 10, 17, 17, 11, 20, 16, 17, 26, 15, 16, 21,
+    27, 20, 26, 10, 11, 11, 12, 19, 22, 5, 0
+  ],
+  "identity_format": "xinu_second_edition",
+  "document_format": "none",
+  "source_type": "author_page",
+  "source_edition_id": "purdue-xinu-second-edition-2015",
+  "rights_note": "Public table of contents on the author's Purdue Xinu site; no reuse license statement found.",
+  "evidence_tier": "validated_public_web_toc",
+  "expected_identity_markers": [
+    "Table of Contents For Xinu 2nd Edition",
+    "Galileo (Intel)",
+    "BeagleBone Black (ARM)",
+    "Appendix 2 Xinu Design Notes"
+  ]
+}

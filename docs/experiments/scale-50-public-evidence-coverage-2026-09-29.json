@@ -1,0 +1,363 @@
+{
+  "schema_version": 1,
+  "benchmark": "scale-50-v2",
+  "experiment_date": "2026-09-29",
+  "baseline_commit": "569840bc1d1628d9debe81f832a81711650b0dd2",
+  "branch": "feat/public-evidence-coverage-expansion",
+  "coverage": {
+    "historical_2026_09_22_toc_books": 20,
+    "latest_main_toc_books_before_this_change": 23,
+    "latest_main_toc_entries_before_this_change": 2445,
+    "new_exact_edition_public_web_books": 2,
+    "final_toc_books": 25,
+    "final_toc_entries": 2954,
+    "linear_algebra_toc_books": 11,
+    "operating_systems_toc_books": 14,
+    "same_edition_toc_books": 24,
+    "same_work_alternate_edition_toc_books": 1,
+    "public_web_toc_books": 21,
+    "open_library_structured_toc_books": 4,
+    "toc_unresolved_books": 25
+  },
+  "toc_source_providers": {
+    "ecampus": 18,
+    "open_library": 4,
+    "purdue_xinu": 1,
+    "springer_link": 1,
+    "wiley": 1
+  },
+  "prose_coverage": {
+    "document_rows": 31,
+    "books_with_any_document": 26,
+    "description_rows": 30,
+    "books_with_description": 25,
+    "preface_rows": 1,
+    "books_with_preface": 1,
+    "introduction_rows": 0,
+    "preview_rows": 0,
+    "sample_chapter_rows": 0,
+    "other_rows": 0,
+    "books_without_documents": 24
+  },
+  "api_availability": {
+    "yes24_api_key_present": false,
+    "springer_api_key_present": false,
+    "claim": "The API collectors are present on main, but no live API gain is claimed because both credentials were unavailable."
+  },
+  "search_profiles": [
+    "exact ISBN plus table of contents or contents",
+    "exact ISBN plus preview or sample chapter",
+    "exact ISBN plus PDF",
+    "exact title, author, and year plus table of contents or contents",
+    "exact title, author, and year plus preview, sample, or PDF"
+  ],
+  "discovery": {
+    "targets_reviewed": 27,
+    "durable_candidate_urls_recorded": 18,
+    "accepted": 2,
+    "remaining_unresolved": 25,
+    "books": [
+      {
+        "book_id": "isbn13:9781498712439",
+        "target": "Operating System Design: The Xinu Approach, Douglas Comer, 2nd edition",
+        "outcome": "accepted",
+        "candidate_type": "official author/university TOC and preface",
+        "candidate_url": "https://xinu.cs.purdue.edu/cont.html",
+        "reason": "The official Purdue author page explicitly identifies the Xinu second edition and exposes a complete 492-entry hierarchy; platform markers and reviewed structure bind it to the 2015 second edition."
+      },
+      {
+        "book_id": "book_6efa911685e0a8f7f57d",
+        "target": "Linear algebra, Werner Hildbert Greub, 1963",
+        "outcome": "accepted",
+        "candidate_type": "official publisher book page",
+        "candidate_url": "https://link.springer.com/book/10.1007/978-3-662-01545-2",
+        "reason": "Springer identifies Linear Algebra by Werner H. Greub as the 2nd edition, copyright 1963, DOI 10.1007/978-3-662-01545-2, and exposes 17 front/chapter/back entries. The canonical missing ISBN and misspelled middle name remain selection metadata issues."
+      },
+      {
+        "book_id": "isbn13:9780201509397",
+        "target": "An introduction to operating systems, Harvey M. Deitel, 1990",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN Google Books preview",
+        "candidate_url": "https://books.google.com/books?vid=ISBN9780201509397",
+        "reason": "Only a small visible subset plus hidden sections was exposed; the complete TOC was not publicly retrievable."
+      },
+      {
+        "book_id": "isbn13:9781565920606",
+        "target": "Learning the UNIX Operating System, 3rd edition, 1993",
+        "outcome": "unresolved",
+        "candidate_type": "publisher/trade preview for later editions",
+        "candidate_url": "https://www.oreilly.com/library/view/learning-the-unix/1565923901/",
+        "reason": "Public O'Reilly contents are for a later edition; no provider-native relation justifies attaching them to the target third edition."
+      },
+      {
+        "book_id": "isbn13:9781549660115",
+        "target": "Operating System, Easter SCIENCE and Lokesh KUMAR, 2017",
+        "outcome": "unresolved",
+        "candidate_type": "retailer and bibliographic metadata",
+        "candidate_url": null,
+        "reason": "No trustworthy exact-edition structured TOC or public prose source was found; the unusual title/author metadata needs selection review."
+      },
+      {
+        "book_id": "isbn13:9780070394551",
+        "target": "Operating systems, Madnick and Donovan, 1974",
+        "outcome": "unresolved",
+        "candidate_type": "exact-edition limited preview",
+        "candidate_url": "https://books.google.com/books?vid=ISBN9780070394551",
+        "reason": "The preview exposes only a partial contents view, not a complete public TOC."
+      },
+      {
+        "book_id": "isbn13:9780201612516",
+        "target": "Operating systems, Gary J. Nutt, 2nd edition, 2000",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN library catalog TOC",
+        "candidate_url": null,
+        "reason": "A full catalog TOC was search-visible, but the library endpoint timed out under ordinary HTTP retrieval and could not be preserved or tested."
+      },
+      {
+        "book_id": "isbn13:9780136374060",
+        "target": "Operating systems, Tanenbaum and Woodhull, 1987",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN marketplace/catalog contents",
+        "candidate_url": null,
+        "reason": "Exact-ISBN edition records attribute the 1987 edition to Tanenbaum alone, while the canonical record includes Woodhull; this is an identity/selection conflict rather than safe TOC evidence."
+      },
+      {
+        "book_id": "isbn13:9788131703045",
+        "target": "Operating systems, William Stallings, 2005",
+        "outcome": "unresolved",
+        "candidate_type": "Indian-edition retailer metadata",
+        "candidate_url": null,
+        "reason": "Exact-ISBN metadata was found, but no complete, ordinarily retrievable public TOC for that regional edition."
+      },
+      {
+        "book_id": "isbn13:9780201111859",
+        "target": "Operating systems, William S. Davis, 1987",
+        "outcome": "unresolved",
+        "candidate_type": "retailer metadata and mismatched work description",
+        "candidate_url": "https://openlibrary.org/isbn/9780201111859",
+        "reason": "No complete TOC was exposed, and the available work description refers to a different edition."
+      },
+      {
+        "book_id": "isbn13:9780070419209",
+        "target": "Operating systems, Milan Milenkovic, 1987",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN retailer preview",
+        "candidate_url": null,
+        "reason": "The legitimate retailer preview did not expose contents; unauthorized copies were rejected."
+      },
+      {
+        "book_id": "isbn13:9780074630839",
+        "target": "Systems Programming and Operating Systems, D. M. Dhamdhere, 1996",
+        "outcome": "unresolved",
+        "candidate_type": "retailer/bibliographic metadata",
+        "candidate_url": null,
+        "reason": "No high-confidence exact-edition public TOC or prose source was found."
+      },
+      {
+        "book_id": "isbn13:9780534950934",
+        "target": "Understanding operating systems, Flynn and McHoes, 1997",
+        "outcome": "unresolved",
+        "candidate_type": "exact Open Library record with restricted preview",
+        "candidate_url": "https://openlibrary.org/isbn/9780534950934",
+        "reason": "The exact record is bibliographic only for this workflow; the preview is restricted and no complete public TOC was exposed."
+      },
+      {
+        "book_id": "book_2bd8811d69c06b3696e2",
+        "target": "Applied linear algebra, Ben Noble, 1969",
+        "outcome": "unresolved",
+        "candidate_type": "later-edition records",
+        "candidate_url": null,
+        "reason": "The canonical record has no ISBN; discovered contents belong to a later edition and cannot establish exact-edition identity."
+      },
+      {
+        "book_id": "isbn13:9780136054276",
+        "target": "Differential Equations and Linear Algebra, 2008",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN bibliographic record",
+        "candidate_url": "https://openlibrary.org/isbn/9780136054276",
+        "reason": "The exact ISBN identifies a Student Solutions Manual, not the textbook named by the canonical record; the selection must be corrected."
+      },
+      {
+        "book_id": "isbn13:9780023660450",
+        "target": "Elementary Linear Algebra, Kolman and Hill, 1991",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN metadata/restricted preview",
+        "candidate_url": "https://openlibrary.org/isbn/9780023660450",
+        "reason": "No complete public TOC or publisher sample for the exact edition was available."
+      },
+      {
+        "book_id": "isbn13:9780534074227",
+        "target": "Elementary linear algebra, Stanley I. Grossman, 1987",
+        "outcome": "unresolved",
+        "candidate_type": "other-edition contents",
+        "candidate_url": null,
+        "reason": "The usable contents found belong to another ISBN/edition and lack a provider-native edition relation."
+      },
+      {
+        "book_id": "isbn13:9780201033922",
+        "target": "Introduction to linear algebra, Johnson and Riess, 1981",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN limited preview",
+        "candidate_url": "https://books.google.com/books?vid=ISBN9780201033922",
+        "reason": "Only a few visible sections plus hidden entries were exposed; completeness cannot be validated."
+      },
+      {
+        "book_id": "isbn13:9780132819824",
+        "target": "Introductory Linear Algebra With Applications, 1999",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN bibliographic record",
+        "candidate_url": "https://openlibrary.org/isbn/9780132819824",
+        "reason": "The exact ISBN is a Students Solutions Manual; it must not be treated as the main textbook."
+      },
+      {
+        "book_id": "isbn13:9780135370193",
+        "target": "Linear algebra, Friedberg, Insel, and Spence, 1979",
+        "outcome": "unresolved",
+        "candidate_type": "restricted exact preview and public fifth edition",
+        "candidate_url": "https://www.oreilly.com/library/view/linear-algebra-5th/9780136745495/",
+        "reason": "The public contents are fifth-edition material; the exact first-edition view is incomplete/restricted."
+      },
+      {
+        "book_id": "book_967599cb4ac88187f696",
+        "target": "Linear algebra, Charles W. Curtis, 1963",
+        "outcome": "unresolved",
+        "candidate_type": "later publisher edition",
+        "candidate_url": null,
+        "reason": "The canonical record has no ISBN and the publisher evidence found is for a later edition; exact identity is not established."
+      },
+      {
+        "book_id": "isbn13:9780201119497",
+        "target": "Linear algebra, Fraleigh and Beauregard, 1990",
+        "outcome": "unresolved",
+        "candidate_type": "exact Open Library record with restricted preview",
+        "candidate_url": "https://openlibrary.org/isbn/9780201119497",
+        "reason": "No complete public TOC was exposed outside the restricted preview."
+      },
+      {
+        "book_id": "isbn13:9780716721772",
+        "target": "Linear algebra, Bill Jacob, 1991",
+        "outcome": "unresolved",
+        "candidate_type": "exact-ISBN bibliographic record",
+        "candidate_url": "https://openlibrary.org/isbn/9780716721772",
+        "reason": "The exact ISBN is a solutions manual/study guide, so attaching the main textbook's TOC would be a false positive."
+      },
+      {
+        "book_id": "isbn13:9780126736502",
+        "target": "Linear algebra and its applications, Gilbert Strang, 1976",
+        "outcome": "unresolved",
+        "candidate_type": "restricted exact preview and publisher second edition",
+        "candidate_url": "https://shop.elsevier.com/books/linear-algebra-and-its-applications/strang/978-0-12-673660-1",
+        "reason": "The public publisher TOC is for the second edition; exact-edition sources expose metadata or restricted preview only."
+      },
+      {
+        "book_id": "isbn13:9780138493080",
+        "target": "Linear algebra with applications, Steven J. Leon, 1998",
+        "outcome": "unresolved",
+        "candidate_type": "later-edition contents and restricted exact record",
+        "candidate_url": "https://openlibrary.org/isbn/9780138493080",
+        "reason": "No complete exact-edition public TOC was found; usable contents belong to later editions."
+      },
+      {
+        "book_id": "isbn13:9780131907294",
+        "target": "Linear algebra with applications, Otto Bretscher, 1997",
+        "outcome": "unresolved",
+        "candidate_type": "search-visible exact-ISBN catalog and different digital SKU",
+        "candidate_url": "https://www.kriso.lv/linear-algebra-applications-db-9780131907294.html",
+        "reason": "The search-visible catalog is not ordinarily retrievable, while eCampus declares no edition and names a distinct 2-Download SKU."
+      },
+      {
+        "book_id": "book_09c91e7b456682eb19fb",
+        "target": "Linear algebra, Serge Lang, 1966",
+        "outcome": "unresolved",
+        "candidate_type": "later-edition publisher/PDF sources",
+        "candidate_url": "https://link.springer.com/book/10.1007/978-1-4757-1949-9",
+        "reason": "The canonical record has no ISBN; public contents/PDFs are later editions and cannot be attached to the 1966 Addison-Wesley edition."
+      }
+    ]
+  },
+  "selection_review": {
+    "missing_isbn_book_ids": [
+      "book_09c91e7b456682eb19fb",
+      "book_2bd8811d69c06b3696e2",
+      "book_6efa911685e0a8f7f57d",
+      "book_967599cb4ac88187f696"
+    ],
+    "wrong_or_conflicting_identity_book_ids": [
+      "isbn13:9780132819824",
+      "isbn13:9780136054276",
+      "isbn13:9780136374060",
+      "isbn13:9780716721772"
+    ]
+  },
+  "implemented_sources": [
+    {
+      "slug": "purdue-xinu-os-design2",
+      "book_id": "isbn13:9781498712439",
+      "toc_entries": 492,
+      "document_type": null,
+      "live_http": "200 text/html",
+      "identity_limit": "The TOC page does not state an ISBN; matching uses the official author/university site, explicit second-edition label, platform markers, year corroboration, and full reviewed shape."
+    },
+    {
+      "slug": "purdue-xinu-os-design2-preface",
+      "book_id": "isbn13:9781498712439",
+      "toc_entries": 0,
+      "document_type": "preface",
+      "live_http": "200 application/pdf",
+      "identity_limit": "The four-page PDF is linked from the official Xinu site and must match reviewed text markers; no license statement was found."
+    },
+    {
+      "slug": "springer-greub-linear-algebra2",
+      "book_id": "book_6efa911685e0a8f7f57d",
+      "toc_entries": 17,
+      "document_type": null,
+      "live_http": "303 public identity redirect chain, then 200 text/html",
+      "identity_limit": "The canonical target lacks an ISBN and misspells the author's middle name; the official publisher title, author, second-edition marker, 1963 copyright, DOI/eISBN, and full shape are all required."
+    }
+  ],
+  "raw_artifacts_created": [
+    "data/experiments/scale-50-public-evidence-20260929/raw/public_book_page/linear-algebra/20260929T104537589540Z_68ba4aceefd6.json",
+    "data/experiments/scale-50-public-evidence-20260929/raw/public_book_page/linear-algebra/20260929T112728163521Z_d58a113ff875.json",
+    "data/experiments/scale-50-public-evidence-20260929/raw/public_book_page/operating-systems/20260929T104538638003Z_184c457f6126.json",
+    "data/experiments/scale-50-public-evidence-20260929/raw/public_book_page/operating-systems/20260929T104539564702Z_100fb87c0072.json",
+    "data/experiments/scale-50-public-evidence-20260929/raw/public_book_page/operating-systems/20260929T111749123328Z_4402af05f844.json",
+    "data/experiments/scale-50-public-evidence-20260929/raw/publisher_document/operating-systems/20260929T111749946966Z_33a0a72e22a0.json"
+  ],
+  "offline_rebuild": {
+    "independent_builds": 2,
+    "byte_identical": true,
+    "relevance_gate": "topic-evidence-v1",
+    "open_library_index": "data/indexes/open_library/scale-targets-2026-08-31.sqlite",
+    "sha256": {
+      "books.jsonl": "9ada88e82d80936520d103aa55e291927ad5aeb85bf6ac4dca26384b020dd127",
+      "documents.jsonl": "014586a6893f8cc2bbee6bdc99cd567f900d25190cf28eed008a59f640627dc0",
+      "toc.jsonl": "2d7ea2f05a0523c50966be94874353ca7e9993cfe8658c1a736b009ceec73028",
+      "sources.jsonl": "686112dcc33854eae7a69c7c8dc673953e71ed1523e044de6c605a1f4311917a"
+    }
+  },
+  "downstream_export": {
+    "contract_version": "book-evidence-v1",
+    "total_books": 50,
+    "books_with_toc_evidence": 25,
+    "books_with_exact_toc": 24,
+    "books_with_public_web_toc": 21,
+    "books_with_same_work_alternate_toc": 1,
+    "metadata_fallback_only": 25,
+    "validation_errors": [],
+    "new_book_evidence": {
+      "book_6efa911685e0a8f7f57d": {
+        "toc_public_web_exact_rows": 17,
+        "document_rows": 0,
+        "provider": "springer_link"
+      },
+      "isbn13:9781498712439": {
+        "toc_public_web_exact_rows": 492,
+        "document_rows": 1,
+        "document_types": [
+          "preface"
+        ],
+        "provider": "purdue_xinu"
+      }
+    }
+  }
+}

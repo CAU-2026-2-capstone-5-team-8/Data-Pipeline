@@ -1,0 +1,1937 @@
+{
+  "schema_version": 1,
+  "assessment_author": "codex-agent",
+  "is_human_ground_truth": false,
+  "dataset": "discovery-600-20260929",
+  "audit_policy": "selection-signals-v3",
+  "input_canonical_hashes": {
+    "algorithms": {
+      "books.jsonl": "sha256:c3b5b17c0abb9ba904b793c2a2abc911258cbb2c4f804f1f6a97c39ba1d7db64",
+      "documents.jsonl": "sha256:0e1f6b7768dc5dd2026dfedebd67ad9bce5f5a0a99924815b3990c68a499b1d7",
+      "toc.jsonl": "sha256:0a9b893f6e5c56673141dac60886d5907a1f9479a07469ae92c2f421a0cd06c0",
+      "sources.jsonl": "sha256:4ab368be4b9e8c950081607439afe07230c85f4dbc31c51079b5a7bd27ec932b"
+    },
+    "databases": {
+      "books.jsonl": "sha256:2910508fce2299ede5d96bac3907d11faafa9bf8be585208c5d7b412b9ae32a4",
+      "documents.jsonl": "sha256:8db8deb7e92b4552951c7afc0d6464cf57de0a1346018f8d48e3cc1533b67ad4",
+      "toc.jsonl": "sha256:94b6eb635116a789b379d05a407631207c8c986c3cb5a38c80b60327c79affbc",
+      "sources.jsonl": "sha256:e9332e98b8e595de6762bdf2447405f305ebea66ceba2f397a4193cd849c0b78"
+    },
+    "discrete-mathematics": {
+      "books.jsonl": "sha256:812bacfce247589c8e9aa1ca559ac93ca0f149ac0ffb30e867dd62942f085596",
+      "documents.jsonl": "sha256:006cf8435e8775cbc0a6d1756202917af6b47187ab38260b3ab9eb951dee1623",
+      "toc.jsonl": "sha256:8be60717e91934358ba3478372b4f01b78c7aaf7fc98a6763cb1c2e1a5841fc2",
+      "sources.jsonl": "sha256:8e4da311a4d3e07c40b5072b8f8dc74ac3834ef97237cbe2fdcb1c683c63acd7"
+    },
+    "linear-algebra": {
+      "books.jsonl": "sha256:2ca7e8df020ebf139f64a13c9733e0de16868ea104908a1d5bba9003e51857d0",
+      "documents.jsonl": "sha256:57d218fa07ee131d540469a7a6093af925a9c900cf427b65350d70460db3d8ab",
+      "toc.jsonl": "sha256:4ddb83257db69a699d5de997cd03f7c76003ebc89cd02303a8fa644ea7aabadf",
+      "sources.jsonl": "sha256:aec1947acad699fd3799da0118c38689b27ea53827370152c2156bab0f627ce2"
+    },
+    "operating-systems": {
+      "books.jsonl": "sha256:7135301904774cd2903504bb4b9b4b5dcd0b869a08f59f44bc54f47be431af21",
+      "documents.jsonl": "sha256:d016ea249e10dfc041693b17c706b00b18b9a8b6d0c7ba7d6395c25f9adc8203",
+      "toc.jsonl": "sha256:eb05bdde6925fda877f2ac3560c371c69382a14bee2b3b0dfdf969855b2f42ac",
+      "sources.jsonl": "sha256:2b06f0c31a4937088e1a3550d9ab2267e48baac1e4c508ce2a6f294d204b3ed5"
+    },
+    "probability-statistics": {
+      "books.jsonl": "sha256:52a89376477e87324eae4245a8fc882c76f09de462a411d4136a149bea2db7c0",
+      "documents.jsonl": "sha256:7c57a1a83855c4d6f2336e21baedbaf2982f9fed8efac58692198eb70740f562",
+      "toc.jsonl": "sha256:5bfefd16afc2bbdd97fb1c09aa44f4833f45626db43273cac403415901e96add",
+      "sources.jsonl": "sha256:26e312fc619054ef5369712b600b4dc014636aa523d9cd9b27e3b530babcda91"
+    }
+  },
+  "book_count": 42,
+  "agent_observation_counts": {
+    "degree_exam": 1,
+    "coding_interview": 3,
+    "law_exam": 1,
+    "school_exam_or_curriculum": 37
+  },
+  "finding_counts": {
+    "conflicting_subject_marker": 1,
+    "exam_context_marker": 39,
+    "no_prose": 471,
+    "no_toc": 32,
+    "title_metadata_only": 28,
+    "study_aid_marker": 5
+  },
+  "books": [
+    {
+      "book_id": "isbn13:9791138327848",
+      "title": "시대에듀 독학사 컴퓨터공학과 4단계 알고리즘",
+      "topic": "algorithms",
+      "agent_observation": "degree_exam",
+      "agent_note": "소개에서 독학사 평가영역과 시험 대비 구성을 설명한다. 알고리즘 분야의 시험 대비 자료다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_28e786afc313c3dcfe73",
+          "source_id": "source_a38dbd6754f906773fca",
+          "matched_text": "모의고사",
+          "start": 356,
+          "end": 360
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_a38dbd6754f906773fca",
+          "url": "https://www.yes24.com/product/goods/111155761",
+          "content_hash": "sha256:3eed178cd97f097fa4e7f912921e78a01135a055566ce940cb4ee19ad90297f5"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791163037316",
+      "title": "Do it! 알고리즘 코딩 테스트 자바 편",
+      "topic": "algorithms",
+      "agent_observation": "coding_interview",
+      "agent_note": "소개가 개발자 채용 코딩 테스트와 알고리즘 학습을 다룬다. 기출 언급만으로 다른 분야라고 판단할 수 없다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_ac3183b94c02b5a6fa46",
+          "source_id": "source_283814d986e7eb77e1b2",
+          "matched_text": "모의고사",
+          "start": 372,
+          "end": 376
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_ac3183b94c02b5a6fa46",
+          "source_id": "source_283814d986e7eb77e1b2",
+          "matched_text": "기출",
+          "start": 182,
+          "end": 184
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_283814d986e7eb77e1b2",
+          "url": "https://www.yes24.com/product/goods/148122935",
+          "content_hash": "sha256:be026a44fa667ed033aa9740cdd2c71831c90488e03a13435c5354df947b614a"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791163037514",
+      "title": "Do it! 알고리즘 코딩 테스트 C++ 편",
+      "topic": "algorithms",
+      "agent_observation": "coding_interview",
+      "agent_note": "소개가 개발자 채용 코딩 테스트와 알고리즘 학습을 다룬다. 기출 언급만으로 다른 분야라고 판단할 수 없다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a752bb637e516ee68ba9",
+          "source_id": "source_51af056b64bdb8ac9e3a",
+          "matched_text": "모의고사",
+          "start": 372,
+          "end": 376
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a752bb637e516ee68ba9",
+          "source_id": "source_51af056b64bdb8ac9e3a",
+          "matched_text": "기출",
+          "start": 182,
+          "end": 184
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_51af056b64bdb8ac9e3a",
+          "url": "https://www.yes24.com/product/goods/150240159",
+          "content_hash": "sha256:1d6a842b8a1113e5435dffb3503997b3de4c7e766eee22c574f2760fed0f072f"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791189909178",
+      "title": "파이썬 알고리즘 인터뷰",
+      "topic": "algorithms",
+      "agent_observation": "coding_interview",
+      "agent_note": "소개가 개발자 채용 코딩 테스트와 알고리즘 학습을 다룬다. 기출 언급만으로 다른 분야라고 판단할 수 없다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_7317700360dc731a6227",
+          "source_id": "source_78c227ca1ab5b9652f48",
+          "matched_text": "기출",
+          "start": 335,
+          "end": 337
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_7317700360dc731a6227",
+          "source_id": "source_78c227ca1ab5b9652f48",
+          "matched_text": "기출",
+          "start": 88,
+          "end": 90
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_78c227ca1ab5b9652f48",
+          "url": "https://www.yes24.com/product/goods/91084402",
+          "content_hash": "sha256:39563b4fd7635bc38c70e2047a712d894adf899d74a3db487c358fb58784de1b"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791194713401",
+      "title": "알고리즘 객관식 상업등기법 및 비송사건절차법",
+      "topic": "algorithms",
+      "agent_observation": "law_exam",
+      "agent_note": "제목과 소개가 상업등기법 및 법무사 시험을 다룬다. 컴퓨터 알고리즘 주제와 구분할 필요가 있다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_fc39f8296a601a99fff1",
+          "source_id": "source_88da092c40b89ab925bc",
+          "matched_text": "기출",
+          "start": 234,
+          "end": 236
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_fc39f8296a601a99fff1",
+          "source_id": "source_88da092c40b89ab925bc",
+          "matched_text": "기출",
+          "start": 270,
+          "end": 272
+        },
+        {
+          "finding": "conflicting_subject_marker",
+          "field": "text",
+          "record_id": "doc_fc39f8296a601a99fff1",
+          "source_id": "source_88da092c40b89ab925bc",
+          "matched_text": "등기법",
+          "start": 19,
+          "end": 22
+        },
+        {
+          "finding": "conflicting_subject_marker",
+          "field": "text",
+          "record_id": "doc_fc39f8296a601a99fff1",
+          "source_id": "source_88da092c40b89ab925bc",
+          "matched_text": "등기법",
+          "start": 297,
+          "end": 300
+        },
+        {
+          "finding": "conflicting_subject_marker",
+          "field": "title",
+          "record_id": "isbn13:9791194713401",
+          "matched_text": "등기법",
+          "start": 11,
+          "end": 14
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_88da092c40b89ab925bc",
+          "url": "https://www.yes24.com/product/goods/182778236",
+          "content_hash": "sha256:080be830852b5394451857c771fc96f41d6b321cf79703a7c29be37e82182370"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788900490268",
+      "title": "절대등급 확률과 통계 내신 1등급 문제서 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9788900490268",
+          "matched_text": "내신",
+          "start": 12,
+          "end": 14
+        },
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9788900490268",
+          "matched_text": "문제서",
+          "start": 19,
+          "end": 22
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_a80cf9227c8098273e86",
+          "url": "https://www.yes24.com/product/goods/176904739",
+          "content_hash": "sha256:225538d094bececf5c12576b0719877e94a4b2d7b766907204132cc56b26dbbd"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788905058296",
+      "title": "풍산자 필수유형 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다. 제목은 확률과 통계지만 소개 첫 문장이 미적분Ⅰ을 지칭한다. 제공자 메타데이터 확인이 필요하다.",
+      "metadata_issues": [
+        "description_title_subject_disagreement"
+      ],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a1ce5ae2bc87968736ec",
+          "source_id": "source_d89b046242700d34c36e",
+          "matched_text": "기출",
+          "start": 318,
+          "end": 320
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a1ce5ae2bc87968736ec",
+          "source_id": "source_d89b046242700d34c36e",
+          "matched_text": "기출",
+          "start": 328,
+          "end": 330
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a1ce5ae2bc87968736ec",
+          "source_id": "source_d89b046242700d34c36e",
+          "matched_text": "수능",
+          "start": 315,
+          "end": 317
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a1ce5ae2bc87968736ec",
+          "source_id": "source_d89b046242700d34c36e",
+          "matched_text": "기출",
+          "start": 309,
+          "end": 311
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_d89b046242700d34c36e",
+          "url": "https://www.yes24.com/product/goods/160646646",
+          "content_hash": "sha256:074e3f32c5c9b67a72bb9150cb00cb9cfd079e6e2e6e26580f6d0cb6f7f463ad"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788928330447",
+      "title": "일품 고등 확률과 통계 (2026년용)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a54096be114e4a9f2db6",
+          "source_id": "source_cb660d4091bb55ed75b8",
+          "matched_text": "기출",
+          "start": 78,
+          "end": 80
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a54096be114e4a9f2db6",
+          "source_id": "source_cb660d4091bb55ed75b8",
+          "matched_text": "수능",
+          "start": 104,
+          "end": 106
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_cb660d4091bb55ed75b8",
+          "url": "https://www.yes24.com/product/goods/95076812",
+          "content_hash": "sha256:de98a1e0fcffc2076e42383f64427b60588d0604da77e1b77d0953a710adf7d2"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788928349043",
+      "title": "신사고 쎈 고등 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_6f4b75900a3a81d71d94",
+          "source_id": "source_8d7b3bbbd504021809a4",
+          "matched_text": "수능",
+          "start": 23,
+          "end": 25
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_8d7b3bbbd504021809a4",
+          "url": "https://www.yes24.com/product/goods/140840006",
+          "content_hash": "sha256:1094a4932812b4011f2ba0bd4b58fda734aef538e3b7a3a97f7ae54e7250c59a"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788928349111",
+      "title": "라이트쎈 고등 확률과 통계 (2027년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0ed996cc4d288922dd2a",
+          "source_id": "source_c6cfc1908aaa863aa71b",
+          "matched_text": "기출",
+          "start": 123,
+          "end": 125
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_c6cfc1908aaa863aa71b",
+          "url": "https://www.yes24.com/product/goods/141264297",
+          "content_hash": "sha256:e697a523479cfc69050cd5dd0426bf14c19cea256903af8b4cb81ddb10459df8"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788928350452",
+      "title": "신사고 베이직쎈 고등 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_9893595786852c0f6efc",
+          "source_id": "source_6929e84e4e76b15ca43f",
+          "matched_text": "기출",
+          "start": 230,
+          "end": 232
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_9893595786852c0f6efc",
+          "source_id": "source_6929e84e4e76b15ca43f",
+          "matched_text": "기출",
+          "start": 269,
+          "end": 271
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_6929e84e4e76b15ca43f",
+          "url": "https://www.yes24.com/product/goods/174789553",
+          "content_hash": "sha256:4d10c341bf37b4dca192b6a17a1c81dbcddf5015e8fe42806a47e404eb6eee06"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788960764545",
+      "title": "BLACKLABEL 블랙라벨 확률과 통계 (2026년용)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1f031d224612d3a4c4b5",
+          "source_id": "source_73170fa9549948635ca3",
+          "matched_text": "수능",
+          "start": 359,
+          "end": 361
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1f031d224612d3a4c4b5",
+          "source_id": "source_73170fa9549948635ca3",
+          "matched_text": "기출",
+          "start": 336,
+          "end": 338
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1f031d224612d3a4c4b5",
+          "source_id": "source_73170fa9549948635ca3",
+          "matched_text": "수능",
+          "start": 64,
+          "end": 66
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1f031d224612d3a4c4b5",
+          "source_id": "source_73170fa9549948635ca3",
+          "matched_text": "기출",
+          "start": 231,
+          "end": 233
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1f031d224612d3a4c4b5",
+          "source_id": "source_73170fa9549948635ca3",
+          "matched_text": "수능",
+          "start": 319,
+          "end": 321
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_73170fa9549948635ca3",
+          "url": "https://www.yes24.com/product/goods/72101745",
+          "content_hash": "sha256:080b77afaeb162b3fed7616d00f4821288fd3d7623025b4f25372699f6c11628"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788960765528",
+      "title": "The 개념 블랙라벨 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c0be9c0d3c61dfbfceb4",
+          "source_id": "source_429a78e0528b946d2e81",
+          "matched_text": "기출",
+          "start": 175,
+          "end": 177
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_429a78e0528b946d2e81",
+          "url": "https://www.yes24.com/product/goods/193095310",
+          "content_hash": "sha256:3c50896b0e5712e76aa1b98eec099adda39d72bd9dff7db612226088ab939475"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788961335393",
+      "title": "개념원리 RPM 알피엠 확률과통계 (2026년용)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_267a4dd8d60ffc1f2403",
+          "source_id": "source_75b96f0170407aa236c7",
+          "matched_text": "모의고사",
+          "start": 47,
+          "end": 51
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_267a4dd8d60ffc1f2403",
+          "source_id": "source_75b96f0170407aa236c7",
+          "matched_text": "수능",
+          "start": 53,
+          "end": 55
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_267a4dd8d60ffc1f2403",
+          "source_id": "source_75b96f0170407aa236c7",
+          "matched_text": "기출",
+          "start": 56,
+          "end": 58
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_75b96f0170407aa236c7",
+          "url": "https://www.yes24.com/product/goods/110351764",
+          "content_hash": "sha256:9869a0b61e52456a549fa0321b01d2dd3a74a3b218e3512cd32ad8fac2d9d2d7"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788961336185",
+      "title": "개념원리 RPM 알피엠 고등 확률과 통계 (2027년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c04c075c4a50e4e56031",
+          "source_id": "source_45ed56d042f1d1e03080",
+          "matched_text": "고3",
+          "start": 27,
+          "end": 29
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c04c075c4a50e4e56031",
+          "source_id": "source_45ed56d042f1d1e03080",
+          "matched_text": "고3",
+          "start": 32,
+          "end": 34
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_45ed56d042f1d1e03080",
+          "url": "https://www.yes24.com/product/goods/144062147",
+          "content_hash": "sha256:7d27cd7ad124b7ce55a9ab4dba98144e2fa642b7c778aca03b0e8c0e2d0aed72"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788961336291",
+      "title": "개념원리 확률과 통계 (2027년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_3fd9fc10e5e81bfc152c",
+          "source_id": "source_65309b220c94acee4bde",
+          "matched_text": "고3",
+          "start": 28,
+          "end": 30
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_3fd9fc10e5e81bfc152c",
+          "source_id": "source_65309b220c94acee4bde",
+          "matched_text": "고3",
+          "start": 33,
+          "end": 35
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_65309b220c94acee4bde",
+          "url": "https://www.yes24.com/product/goods/144062148",
+          "content_hash": "sha256:94d94d024c52a1dea8c8350ad6909c21fe3a2879ef769eeee183fbc9c4a82a2d"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9788961337779",
+      "title": "개념원리 확률과 통계 + 개념원리 RPM 확률과 통계 + 핵심개념팩 증정 세트 (2027년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_b75510a485379d3ed9e8",
+          "source_id": "source_cd47ca8806c88e77ec8d",
+          "matched_text": "고3",
+          "start": 41,
+          "end": 43
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_b75510a485379d3ed9e8",
+          "source_id": "source_cd47ca8806c88e77ec8d",
+          "matched_text": "고3",
+          "start": 46,
+          "end": 48
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_cd47ca8806c88e77ec8d",
+          "url": "https://www.yes24.com/product/goods/148193825",
+          "content_hash": "sha256:5a3fca131de68eb1439bbb174f84fc2d86a3ca753113203cb09905f111f6966a"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791124251065",
+      "title": "2027 FUNDAMENTAL N제 수학1+ 수학2 + 확률과 통계 세트 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_3182ea77e8e894de7bb9",
+          "source_id": "source_25cf9f36d26fa3a84ca6",
+          "matched_text": "수능",
+          "start": 39,
+          "end": 41
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_25cf9f36d26fa3a84ca6",
+          "url": "https://www.yes24.com/product/goods/174083925",
+          "content_hash": "sha256:cf9cd40943ed47f5b58c0e35156bae1d34a16b6c43c1800e87f04c4b4be520ca"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791124251119",
+      "title": "2027 한석원의 4의규칙 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_60b2f5841c7a0d6c9bf3",
+          "source_id": "source_2899fa19d512dbe47737",
+          "matched_text": "수능",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_60b2f5841c7a0d6c9bf3",
+          "source_id": "source_2899fa19d512dbe47737",
+          "matched_text": "수능",
+          "start": 58,
+          "end": 60
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_2899fa19d512dbe47737",
+          "url": "https://www.yes24.com/product/goods/178164653",
+          "content_hash": "sha256:d65ce8f13b156c25ad1509ca5ec4d664467bf34e4db44efdcfa43e2a3fb945fa"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791124251133",
+      "title": "2027 한석원의 4의규칙 수학1 + 수학2 + 확률과 통계 세트 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_788faad90135d723fc56",
+          "source_id": "source_57b40697a67acda48117",
+          "matched_text": "수능",
+          "start": 2,
+          "end": 4
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_788faad90135d723fc56",
+          "source_id": "source_57b40697a67acda48117",
+          "matched_text": "수능",
+          "start": 69,
+          "end": 71
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_57b40697a67acda48117",
+          "url": "https://www.yes24.com/product/goods/181789733",
+          "content_hash": "sha256:7d335112041f017f56c109071dc04fa6e891d0a7c9cb8e594f7fdf82680131ec"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791124251201",
+      "title": "2027 STOP ERROR! 수학1 + 수학2 + 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "수능",
+          "start": 101,
+          "end": 103
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "기출",
+          "start": 190,
+          "end": 192
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "모의고사",
+          "start": 328,
+          "end": 332
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "기출",
+          "start": 23,
+          "end": 25
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "수능",
+          "start": 55,
+          "end": 57
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "기출",
+          "start": 354,
+          "end": 356
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "기출",
+          "start": 85,
+          "end": 87
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c5bc320ac4bfecdcf2d3",
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "matched_text": "수능",
+          "start": 435,
+          "end": 437
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_dad09e0878e85c3dbc7d",
+          "url": "https://www.yes24.com/product/goods/194526341",
+          "content_hash": "sha256:1a2d2fa6f08a7935a3550eadb9e7ac26ba6568a3a034ee349c220d0bcb101476"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791125335528",
+      "title": "내신 HIGH-END 내신하이엔드 확률과 통계",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_b9e88b2b6647a8d26307",
+          "source_id": "source_280b57f7316571b39134",
+          "matched_text": "기출",
+          "start": 102,
+          "end": 104
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_b9e88b2b6647a8d26307",
+          "source_id": "source_280b57f7316571b39134",
+          "matched_text": "기출",
+          "start": 1,
+          "end": 3
+        },
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9791125335528",
+          "matched_text": "내신",
+          "start": 12,
+          "end": 14
+        },
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9791125335528",
+          "matched_text": "내신",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_b9e88b2b6647a8d26307",
+          "source_id": "source_280b57f7316571b39134",
+          "matched_text": "기출",
+          "start": 126,
+          "end": 128
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_280b57f7316571b39134",
+          "url": "https://www.yes24.com/product/goods/96396221",
+          "content_hash": "sha256:7c558ce30c7d7fcb47865b425ac166e8b58d612a58a7d88ac03197433f0c6751"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791138918077",
+      "title": "어삼쉬사 Plus 확률과 통계",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "기출",
+          "start": 169,
+          "end": 171
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "기출",
+          "start": 201,
+          "end": 203
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "수능",
+          "start": 3,
+          "end": 5
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "수능",
+          "start": 159,
+          "end": 161
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "기출",
+          "start": 237,
+          "end": 239
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "수능",
+          "start": 123,
+          "end": 125
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_279209f22236795f0117",
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "matched_text": "모의고사",
+          "start": 164,
+          "end": 168
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_9cb08d9c2ab1769d4a2e",
+          "url": "https://www.yes24.com/product/goods/122680842",
+          "content_hash": "sha256:f43c09f7e05735ee84a1287b58c88a41a45c8a9a60957740fb7893c569eb65b4"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791138930611",
+      "title": "수학의 바이블 유형ON 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_7f1d6d554a2cd6be4a6a",
+          "source_id": "source_e9f399a97b5930d40a1c",
+          "matched_text": "수능",
+          "start": 302,
+          "end": 304
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_7f1d6d554a2cd6be4a6a",
+          "source_id": "source_e9f399a97b5930d40a1c",
+          "matched_text": "수능",
+          "start": 284,
+          "end": 286
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_e9f399a97b5930d40a1c",
+          "url": "https://www.yes24.com/product/goods/149615245",
+          "content_hash": "sha256:d9277371ce98a1637ab88bdf782826dc32f75adced978827be3271c1c3312cd0"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791138934367",
+      "title": "유형+내신 고쟁이 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_e152ebc81690d0e1ee92",
+          "source_id": "source_d4d5ab7d26782b492518",
+          "matched_text": "수능",
+          "start": 123,
+          "end": 125
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_e152ebc81690d0e1ee92",
+          "source_id": "source_d4d5ab7d26782b492518",
+          "matched_text": "기출",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9791138934367",
+          "matched_text": "내신",
+          "start": 3,
+          "end": 5
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_d4d5ab7d26782b492518",
+          "url": "https://www.yes24.com/product/goods/176535004",
+          "content_hash": "sha256:00c0a2918f156bb3a872ddba3a5fbd93a43b4befbe76b27736cb3d9330859262"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791138939126",
+      "title": "어삼쉬사 확률과 통계 (2027년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "수능",
+          "start": 153,
+          "end": 155
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "기출",
+          "start": 195,
+          "end": 197
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "기출",
+          "start": 231,
+          "end": 233
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "수능",
+          "start": 117,
+          "end": 119
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "모의고사",
+          "start": 158,
+          "end": 162
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a5edd7dae3f3f576f4cd",
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "matched_text": "기출",
+          "start": 163,
+          "end": 165
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_376c2f8ee746957e4fbe",
+          "url": "https://www.yes24.com/product/goods/194490787",
+          "content_hash": "sha256:d2a8cd6c02a1925723674810cfa71126a4a031ab4e744bca8f55ad7853478004"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791162408438",
+      "title": "일등급 수학 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1cb5b669710d47850e32",
+          "source_id": "source_e2ba5a570b9594f948c7",
+          "matched_text": "수능",
+          "start": 122,
+          "end": 124
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_1cb5b669710d47850e32",
+          "source_id": "source_e2ba5a570b9594f948c7",
+          "matched_text": "수능",
+          "start": 193,
+          "end": 195
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_e2ba5a570b9594f948c7",
+          "url": "https://www.yes24.com/product/goods/153508109",
+          "content_hash": "sha256:e28f59dbca74862c8ca3a4e41b1a1adec4925ded431fe017f77e52d7983281e6"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791166769900",
+      "title": "2027 한완수 : 한권으로 완성하는 수학 확률과 통계 (상) (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_950146b0f78ee1acacf2",
+          "source_id": "source_1daec2abefc41a69091b",
+          "matched_text": "수능",
+          "start": 155,
+          "end": 157
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_950146b0f78ee1acacf2",
+          "source_id": "source_1daec2abefc41a69091b",
+          "matched_text": "수능",
+          "start": 106,
+          "end": 108
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_950146b0f78ee1acacf2",
+          "source_id": "source_1daec2abefc41a69091b",
+          "matched_text": "수능",
+          "start": 119,
+          "end": 121
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_950146b0f78ee1acacf2",
+          "source_id": "source_1daec2abefc41a69091b",
+          "matched_text": "기출",
+          "start": 186,
+          "end": 188
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_950146b0f78ee1acacf2",
+          "source_id": "source_1daec2abefc41a69091b",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_950146b0f78ee1acacf2",
+          "source_id": "source_1daec2abefc41a69091b",
+          "matched_text": "수능",
+          "start": 19,
+          "end": 21
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_1daec2abefc41a69091b",
+          "url": "https://www.yes24.com/product/goods/179604468",
+          "content_hash": "sha256:d9494c4b9bc950edaea215bf253d1a8faf0836bdf8e2247e19e63b2651e5bc9e"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791166769917",
+      "title": "2027 한완수 : 한권으로 완성하는 수학 확률과 통계 (하) (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_472afb1104b935a7b376",
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "matched_text": "기출",
+          "start": 185,
+          "end": 187
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_472afb1104b935a7b376",
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "matched_text": "수능",
+          "start": 154,
+          "end": 156
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_472afb1104b935a7b376",
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "matched_text": "수능",
+          "start": 106,
+          "end": 108
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_472afb1104b935a7b376",
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "matched_text": "수능",
+          "start": 119,
+          "end": 121
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_472afb1104b935a7b376",
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_472afb1104b935a7b376",
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "matched_text": "수능",
+          "start": 19,
+          "end": 21
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_3f8e56a3bd328ee1dc98",
+          "url": "https://www.yes24.com/product/goods/179604591",
+          "content_hash": "sha256:cae7258113c01b451daf26325e584c93e8b9b928b1e7c04bd13f8b8620097b95"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791173475993",
+      "title": "1등급 만들기 확률과 통계 310제 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_a025ce997b772efd343d",
+          "source_id": "source_b8085e8fcda883f67ff3",
+          "matched_text": "기출",
+          "start": 9,
+          "end": 11
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_b8085e8fcda883f67ff3",
+          "url": "https://www.yes24.com/product/goods/146890679",
+          "content_hash": "sha256:865cddd6faa4e71b329c3e74c73ccb7537f3da62a81a18bc135876ecf5b37470"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791176230148",
+      "title": "2027 이해원 N제 시즌1 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_3eedb6fbdbb184883680",
+          "source_id": "source_b72c36bf86daae89dc41",
+          "matched_text": "수능",
+          "start": 46,
+          "end": 48
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_3eedb6fbdbb184883680",
+          "source_id": "source_b72c36bf86daae89dc41",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_b72c36bf86daae89dc41",
+          "url": "https://www.yes24.com/product/goods/179604807",
+          "content_hash": "sha256:d90e13340cf937d8394cb27c15d9767a54c4c6d3175d6b3b7511f3c55f53e94f"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791176230650",
+      "title": "2027 이해원 N제 시즌2 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_cc3893bb3a9ae8dea5d1",
+          "source_id": "source_877e4a64e060a29b609c",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_cc3893bb3a9ae8dea5d1",
+          "source_id": "source_877e4a64e060a29b609c",
+          "matched_text": "수능",
+          "start": 46,
+          "end": 48
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_877e4a64e060a29b609c",
+          "url": "https://www.yes24.com/product/goods/188801040",
+          "content_hash": "sha256:a17489915838cb37c369920fc4bc5f1a045269190afe50ad9c9dbbebb1d34739"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791176230698",
+      "title": "2027 설맞이 아카이브 확률과 통계 시즌1 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_afa9a14f531a5569746f",
+          "source_id": "source_de6be20a209d1b1c12b4",
+          "matched_text": "기출",
+          "start": 175,
+          "end": 177
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_afa9a14f531a5569746f",
+          "source_id": "source_de6be20a209d1b1c12b4",
+          "matched_text": "수능",
+          "start": 255,
+          "end": 257
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_afa9a14f531a5569746f",
+          "source_id": "source_de6be20a209d1b1c12b4",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_de6be20a209d1b1c12b4",
+          "url": "https://www.yes24.com/product/goods/187048551",
+          "content_hash": "sha256:8e9f8daf155a0cb6e97c48b68bccfbaeb5fb661734edbb44eb6264c67ec03042"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791176231169",
+      "title": "2027 설맞이 아카이브 확률과 통계 시즌2 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_46f170dc154a41957f5d",
+          "source_id": "source_697e691cd70c30b71f9b",
+          "matched_text": "수능",
+          "start": 3,
+          "end": 5
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_697e691cd70c30b71f9b",
+          "url": "https://www.yes24.com/product/goods/192598044",
+          "content_hash": "sha256:970846ff1f196d910d6e3baf3ab4c64c15d47bdae6c93df0f821df29ad75cffa"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791191229837",
+      "title": "짱 쉬운 유형 확장판 확률과 통계 (2026년용)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "모의고사",
+          "start": 232,
+          "end": 236
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "수능",
+          "start": 174,
+          "end": 176
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "수능",
+          "start": 123,
+          "end": 125
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "수능",
+          "start": 0,
+          "end": 2
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "수능",
+          "start": 43,
+          "end": 45
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "수능",
+          "start": 61,
+          "end": 63
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_c935a685ab7ddd3fd6f5",
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "matched_text": "모의고사",
+          "start": 77,
+          "end": 81
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_953ab9fdabc8c7bcf70c",
+          "url": "https://www.yes24.com/product/goods/124516034",
+          "content_hash": "sha256:4a43eeb32606bd354cd80e95afe68287e003f570453eea2ff8bc0a6c14491541"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791192229508",
+      "title": "개념 있는 수학자 : 대수·미적분·확률과 통계 편",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_345f87bc5b61d5ffaa1b",
+          "source_id": "source_b233dce536758c537c2c",
+          "matched_text": "수능",
+          "start": 6,
+          "end": 8
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_b233dce536758c537c2c",
+          "url": "https://www.yes24.com/product/goods/140190779",
+          "content_hash": "sha256:cceb1150860b8dad424d1138bca6945e19c70e7aa10121d638fc768bf05dd797"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791193575307",
+      "title": "MAPL 마플 교과서 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_9814beedf266d67615f4",
+          "source_id": "source_658cf65c8fb12c0539af",
+          "matched_text": "모의고사",
+          "start": 144,
+          "end": 148
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_9814beedf266d67615f4",
+          "source_id": "source_658cf65c8fb12c0539af",
+          "matched_text": "모의고사",
+          "start": 156,
+          "end": 160
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_9814beedf266d67615f4",
+          "source_id": "source_658cf65c8fb12c0539af",
+          "matched_text": "수능",
+          "start": 4,
+          "end": 6
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_9814beedf266d67615f4",
+          "source_id": "source_658cf65c8fb12c0539af",
+          "matched_text": "수능",
+          "start": 163,
+          "end": 165
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_658cf65c8fb12c0539af",
+          "url": "https://www.yes24.com/product/goods/193083028",
+          "content_hash": "sha256:0516517b256c63b58cf098fb0797786033fcbffde0eaabe2a8e9d38c24342034"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791193575314",
+      "title": "MAPL 마플 시너지 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_ac7c2fd7d17f3bcfc34b",
+          "source_id": "source_f67ab1cf63b15272ced0",
+          "matched_text": "수능",
+          "start": 4,
+          "end": 6
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_f67ab1cf63b15272ced0",
+          "url": "https://www.yes24.com/product/goods/195097514",
+          "content_hash": "sha256:47416fef4f97f504c314d428b64029740519dc70a17fa9cb78c3dedbc8ff187a"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791194559337",
+      "title": "짱 중요한 유형 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_2bbcdd879ec637e05b54",
+          "source_id": "source_37836731e8f8cd22e5fb",
+          "matched_text": "수능",
+          "start": 106,
+          "end": 108
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_2bbcdd879ec637e05b54",
+          "source_id": "source_37836731e8f8cd22e5fb",
+          "matched_text": "수능",
+          "start": 16,
+          "end": 18
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_2bbcdd879ec637e05b54",
+          "source_id": "source_37836731e8f8cd22e5fb",
+          "matched_text": "기출",
+          "start": 37,
+          "end": 39
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_2bbcdd879ec637e05b54",
+          "source_id": "source_37836731e8f8cd22e5fb",
+          "matched_text": "기출",
+          "start": 54,
+          "end": 56
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_37836731e8f8cd22e5fb",
+          "url": "https://www.yes24.com/product/goods/179605805",
+          "content_hash": "sha256:6855dc7fb2faac8f367a0f01665245c2088e069ec9ea9204dba38730534ba51a"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791194559498",
+      "title": "짱 내신 Final 확률과 통계 (중간고사) (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9791194559498",
+          "matched_text": "내신",
+          "start": 2,
+          "end": 4
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_ed339967a3a0239a0965",
+          "url": "https://www.yes24.com/product/goods/193987028",
+          "content_hash": "sha256:5cb1053420f64969b3e1417e23330086a9270a6577dd00dc2390a5d3d31e7fcb"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791194559511",
+      "title": "짱 어려운 유형 확률과 통계 (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0d0e68dbef51406294ad",
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "matched_text": "수능",
+          "start": 181,
+          "end": 183
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0d0e68dbef51406294ad",
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "matched_text": "수능",
+          "start": 104,
+          "end": 106
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0d0e68dbef51406294ad",
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "matched_text": "수능",
+          "start": 11,
+          "end": 13
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0d0e68dbef51406294ad",
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "matched_text": "기출",
+          "start": 27,
+          "end": 29
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0d0e68dbef51406294ad",
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "matched_text": "기출",
+          "start": 44,
+          "end": 46
+        },
+        {
+          "finding": "exam_context_marker",
+          "field": "text",
+          "record_id": "doc_0d0e68dbef51406294ad",
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "matched_text": "수능",
+          "start": 158,
+          "end": 160
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_46f92e9f1eedbfff8da9",
+          "url": "https://www.yes24.com/product/goods/195612260",
+          "content_hash": "sha256:87ea3852c4912dd56e35784e8e0488ebf8fd19a9de078f95e5a4caa8e95d9af7"
+        }
+      ],
+      "human_decision": ""
+    },
+    {
+      "book_id": "isbn13:9791194559535",
+      "title": "짱 내신 Final 확률과 통계 (기말고사) (2026년)",
+      "topic": "probability-statistics",
+      "agent_observation": "school_exam_or_curriculum",
+      "agent_note": "제목 또는 소개가 고등학교 교육과정, 내신, 수능 대비 목적을 나타낸다. 전공 교재 적합성은 별도 검토 대상이다.",
+      "metadata_issues": [],
+      "signals": [
+        {
+          "finding": "study_aid_marker",
+          "field": "title",
+          "record_id": "isbn13:9791194559535",
+          "matched_text": "내신",
+          "start": 2,
+          "end": 4
+        }
+      ],
+      "sources": [
+        {
+          "source_id": "source_e480fbc7a9726ae15f5d",
+          "url": "https://www.yes24.com/product/goods/196816596",
+          "content_hash": "sha256:5a4026164658c718bc2d488eb1c54159a0c218f2f56e4083e72b397f554d636d"
+        }
+      ],
+      "human_decision": ""
+    }
+  ]
+}

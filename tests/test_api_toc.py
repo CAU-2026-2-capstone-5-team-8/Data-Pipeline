@@ -14,6 +14,9 @@ from data_pipeline.api_toc import (
 from data_pipeline.cli import _metadata_candidate_limit, app
 from data_pipeline.collectors.base import InvalidProviderResponse
 from data_pipeline.collectors.google_books import GoogleBooksCollector
+from data_pipeline.collectors.springer_metadata import (
+    MIN_REQUEST_INTERVAL_SECONDS as SPRINGER_MIN_REQUEST_INTERVAL_SECONDS,
+)
 from data_pipeline.collectors.springer_metadata import SpringerMetadataCollector, hyphenated_isbn
 from data_pipeline.collectors.yes24 import Yes24Collector
 from data_pipeline.models import Book, CanonicalDataset, Source, TocEntry
@@ -316,6 +319,30 @@ def test_yes24_collector_sends_key_as_header_and_returns_not_found_body() -> Non
     assert "yk_live_test" not in json.dumps(Yes24Collector.request_parameters(YES24_ISBN))
 
 
+def test_yes24_item_detail_probe_uses_exact_isbn_without_exposing_key() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"success": True, "data": {"items": []}}, request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        collector = Yes24Collector("yk_live_test", client=client)
+        payload = collector.fetch_detail(YES24_ISBN)
+
+    assert payload["success"] is True
+    assert captured[0].headers["X-Api-Key"] == "yk_live_test"
+    assert captured[0].url.path == "/v1/goods/itemDetail"
+    assert dict(captured[0].url.params) == {
+        "searchType": "ISBN13",
+        "query": YES24_ISBN,
+        "detail": "Y",
+    }
+    assert collector.request_count == 1
+    assert collector.response_status_counts == {"200": 1}
+    assert "yk_live_test" not in json.dumps(collector.detail_request_parameters(YES24_ISBN))
+
+
 def test_collectors_require_an_api_key() -> None:
     with pytest.raises(ValueError, match="YES24_API_KEY"):
         Yes24Collector("")
@@ -345,6 +372,9 @@ def test_springer_collector_hyphenates_pages_and_keeps_key_out_of_raw() -> None:
     assert all(request.url.params["api_key"] == "secret-key" for request in captured)
     assert len(payload["pages"]) == 2
     assert "secret-key" not in json.dumps(payload)
+    assert collector.request_count == 2
+    assert collector.page_request_count == 2
+    assert collector.response_status_counts == {"200": 2}
 
 
 def test_springer_collector_treats_404_as_no_records() -> None:
@@ -354,6 +384,10 @@ def test_springer_collector_treats_404_as_no_records() -> None:
     with httpx.Client(transport=transport) as client:
         payload = SpringerMetadataCollector("k", client=client).fetch_chapters(SPRINGER_ISBN)
     assert payload == {"query": "isbn:978-3-319-11080-6", "pages": []}
+
+
+def test_springer_collector_stays_below_basic_plan_per_minute_limit() -> None:
+    assert SPRINGER_MIN_REQUEST_INTERVAL_SECONDS >= 0.6
 
 
 # --- CLI -----------------------------------------------------------------------
@@ -426,7 +460,14 @@ def test_enrich_api_toc_fills_missing_tocs_only(tmp_path, monkeypatch) -> None:
     report = json.loads(
         (tmp_path / "reports" / "api-toc-enrichment-yes24.json").read_text(encoding="utf-8")
     )
-    assert report["status_counts"] == {"added": 1, "no_toc": 1}
+    assert report["status_counts"] == {"added": 1, "no_product": 1}
+    assert report["telemetry"] == {
+        "requests": 2,
+        "logical_requests": 2,
+        "retries": 0,
+        "http_status_counts": {},
+    }
+    assert all(attempt["title"] == "Example Linear Algebra" for attempt in report["attempts"])
     raw_files = list((tmp_path / "raw").rglob("*.json"))
     assert len(raw_files) == 2
     assert all("yk_live_test" not in path.read_text(encoding="utf-8") for path in raw_files)

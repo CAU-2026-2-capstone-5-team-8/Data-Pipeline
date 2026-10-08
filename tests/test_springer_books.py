@@ -3,9 +3,13 @@
 import json
 from datetime import UTC, datetime
 
+import httpx
 import pytest
+import typer
 
+from data_pipeline.cli import _collect_springer_book_payload
 from data_pipeline.collectors.base import InvalidProviderResponse
+from data_pipeline.collectors.springer_books import SpringerBookCollector
 from data_pipeline.normalizers import normalize_springer_book_response
 from data_pipeline.springer_book_sources import springer_book_source
 
@@ -140,3 +144,62 @@ def test_url_outside_the_allowlist_is_rejected() -> None:
             topic=source.topic,
             retrieved_at=datetime(2026, 9, 23, tzinfo=UTC),
         )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://link.springer.com/book/x",
+        "https://127.0.0.1/x",
+        "https://link.springer.com:444/x",
+        "https://user:pass@link.springer.com/x",
+    ],
+)
+def test_redirect_is_rejected_before_requesting_unreviewed_target(target):
+    requests = []
+
+    def handle(request):
+        requests.append(str(request.url))
+        return httpx.Response(302, headers={"Location": target})
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(handle), follow_redirects=True) as client,
+        pytest.raises(InvalidProviderResponse, match="reviewed HTTPS origin"),
+    ):
+        SpringerBookCollector(client).fetch(SLUG)
+    assert requests == [springer_book_source(SLUG).url]
+
+
+def test_reviewed_redirect_succeeds_and_loop_is_bounded():
+    requests = []
+
+    def handle(request):
+        requests.append(str(request.url))
+        if len(requests) == 1:
+            return httpx.Response(302, headers={"Location": "/book/accepted"})
+        return httpx.Response(200, headers={"Content-Type": "text/html"}, text="<html>ok</html>")
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        assert SpringerBookCollector(client).fetch(SLUG)["html"] == "<html>ok</html>"
+    assert len(requests) == 2
+    requests.clear()
+
+    def loop(request):
+        requests.append(str(request.url))
+        return httpx.Response(302, headers={"Location": "/book/again"})
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(loop)) as client,
+        pytest.raises(InvalidProviderResponse, match="exceeds limit"),
+    ):
+        SpringerBookCollector(client).fetch(SLUG)
+    assert len(requests) == 3
+
+
+def test_network_failure_is_a_cli_error(monkeypatch):
+    def fail(self, slug):
+        raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr(SpringerBookCollector, "fetch", fail)
+    with pytest.raises(typer.BadParameter, match="network failure; no data was written"):
+        _collect_springer_book_payload(SLUG)

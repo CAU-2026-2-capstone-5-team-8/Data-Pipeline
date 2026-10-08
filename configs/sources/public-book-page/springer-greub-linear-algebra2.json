@@ -1,0 +1,52 @@
+{
+  "slug": "springer-greub-linear-algebra2",
+  "provider": "springer_link",
+  "topic": "linear-algebra",
+  "book_id": "book_6efa911685e0a8f7f57d",
+  "isbn_13": null,
+  "title": "Linear algebra.",
+  "authors": [
+    "Werner Hildbert Greub"
+  ],
+  "edition": 2,
+  "url": "https://link.springer.com/book/10.1007/978-3-662-01545-2",
+  "toc_format": "springer_book_chapters",
+  "expected_toc_count": 17,
+  "expected_root_titles": [
+    "Front Matter",
+    "Linear spaces",
+    "Linear transformations",
+    "Matrices",
+    "Determinants",
+    "Oriented linear spaces",
+    "Multilinear mappings",
+    "Tensor-Algebra",
+    "Exterior Algebra",
+    "Duality in exterior algebra",
+    "Inner product spaces",
+    "Linear mappings of inner product spaces",
+    "Symmetric bilinear functions",
+    "Quadrics",
+    "Unitary Spaces",
+    "Invariant subspaces",
+    "Back Matter"
+  ],
+  "expected_chapter_labels": [
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"
+  ],
+  "identity_format": "springer_book",
+  "document_format": "none",
+  "source_type": "publisher_page",
+  "rights_note": "Public table of contents on the official Springer book page; no reuse license statement found.",
+  "evidence_tier": "validated_public_web_toc",
+  "source_title": "Linear Algebra",
+  "source_authors": [
+    "Werner H. Greub"
+  ],
+  "source_isbn": "9783662015452",
+  "source_edition_id": "10.1007/978-3-662-01545-2",
+  "published_year": 1963,
+  "allowed_redirect_hosts": [
+    "springer.com"
+  ]
+}

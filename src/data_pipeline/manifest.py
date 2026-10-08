@@ -16,7 +16,7 @@ SourceSpecificProvider = Literal[
     "publisher-document",
     "publisher-page",
 ]
-MetadataProvider = Literal["google-books", "open-library", "internet-archive"]
+MetadataProvider = Literal["google-books", "open-library", "internet-archive", "yes24"]
 ManifestProvider = SourceSpecificProvider | MetadataProvider
 SOURCE_SPECIFIC_PROVIDERS = {
     "open-textbook",
