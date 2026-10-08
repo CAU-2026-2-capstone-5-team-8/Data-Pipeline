@@ -344,7 +344,8 @@ def merge_scope_catalogs(
     for book in foreign.books:
         existing = books.get(book.book_id)
         if existing and (
-            existing.language != book.language or _name(existing.title) != _name(book.title)
+            (existing.language != book.language and "und" not in {existing.language, book.language})
+            or _name(existing.title) != _name(book.title)
         ):
             rejected.add(book.book_id)
             audit.append({"book_id": book.book_id, "reason": "isbn_identity_conflict"})

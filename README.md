@@ -1282,3 +1282,41 @@ Mock-response tests cover Google success, category/type/audience constraints, IS
 provenance, credential exclusion, bounded quota retries, and independent provider failure.
 
 API reference: [Google Books usage](https://developers.google.com/books/docs/v1/using).
+
+### National Library of Korea ISBN bibliography
+
+Put the National Library **ISBN bibliography** API key in the gitignored
+`Data-Pipeline/.env` (the same variable is already listed in `.env.example`):
+
+```dotenv
+NL_GO_KR_API_KEY=your-issued-key
+```
+
+This is the National Library of Korea, **not** the National Museum of Korea.
+The Backend topic worker reads this file on every worker invocation; restarting the
+server is unnecessary just to change this key. A completed discovery retains its original
+evidence, so use **책 목록 갱신** to add the source to an already prepared field.
+
+`NationalLibraryCollector` searches the ISBN bibliography's `title` field with a
+server-selected Korean query, requests printed books, and retrieves at most 30 candidates.
+The app normalizes at most 20 eligible records per source. It does not expand collection
+limits or paginate this provider in this first adapter. The new source participates in
+common-field discovery, collection, and catalog refresh. No key produces `not_configured`
+and no HTTP request; authentication, HTTP, or response failures are isolated from other sources.
+Refresh preserves existing books and does not publish diagnosis approval itself.
+
+The canonical four-JSONL contract is unchanged. Exact ISBN/title overlaps retain primary
+bibliographic values and preserve the new source's descriptions and structured TOC. The API's
+`BOOK_TB_CNT`, `BOOK_INTRODUCTION`, and `BOOK_SUMMARY` text fields are preserved when present;
+legacy file URLs are not automatically fetched. KDC/DDC/SUBJECT stay in the raw response and
+filter audit, without becoming inferred concept or difficulty labels. Unknown language is
+`und`; a planned publication date is not asserted to be an actual publication year.
+Missing evidence remains missing. Conflicting ISBN identities are quarantined.
+
+The key is sent only as `cert_key` in the HTTP request, not persisted query parameters,
+canonical URLs, or provider reports. HTTP errors exposed to the worker carry sanitized URLs.
+Synthetic tests verify normalization, credential exclusion, bounded retries, duplicate and
+identity handling, raw replay, refresh, and independent failure. They do not establish real
+API access or TOC coverage; those require the issued key and a live collection.
+
+API reference: [National Library ISBN bibliography](https://www.nl.go.kr/NL/contents/N31101030500.do).
