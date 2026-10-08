@@ -34,6 +34,7 @@ def page(source, *, titles=None, isbn=None, name=None, edition_label=None) -> st
         "isbn": source.ebook_isbn if isbn is None else isbn,
     }
     label = source.springer_edition_label if edition_label is None else edition_label
+    structured["bookEdition"] = label
     return (
         f'<script type="application/ld+json">{json.dumps(structured)}</script>'
         f"<div>{label}</div>"
@@ -110,7 +111,9 @@ def test_changed_chapter_sequence_is_rejected() -> None:
 
 def test_missing_table_of_contents_is_rejected() -> None:
     source = springer_book_source(SLUG)
-    structured = json.dumps({"@type": "Book", "name": source.title, "isbn": source.ebook_isbn})
+    structured = json.dumps(
+        {"@type": "Book", "name": source.title, "isbn": source.ebook_isbn, "bookEdition": 3}
+    )
     html = f'<script type="application/ld+json">{structured}</script><div>3rd edition</div>'
 
     with pytest.raises(InvalidProviderResponse, match="table of contents"):
@@ -203,3 +206,23 @@ def test_network_failure_is_a_cli_error(monkeypatch):
     monkeypatch.setattr(SpringerBookCollector, "fetch", fail)
     with pytest.raises(typer.BadParameter, match="network failure; no data was written"):
         _collect_springer_book_payload(SLUG)
+
+
+@pytest.mark.parametrize("declared", [None, "", "5th edition", True])
+def test_unrelated_edition_text_cannot_validate_identity(declared):
+    source = springer_book_source(SLUG)
+    html = page(source).replace(
+        '"bookEdition": "3rd edition"', f'"bookEdition": {json.dumps(declared)}'
+    )
+    assert "<div>3rd edition</div>" in html
+    with pytest.raises(InvalidProviderResponse, match="reviewed edition"):
+        normalize(source, html)
+
+
+@pytest.mark.parametrize("declared", [3, "3", "3rd edition", "Third edition"])
+def test_structured_edition_accepts_equivalent_forms(declared):
+    source = springer_book_source(SLUG)
+    html = page(source).replace(
+        '"bookEdition": "3rd edition"', f'"bookEdition": {json.dumps(declared)}'
+    )
+    assert normalize(source, html).toc
